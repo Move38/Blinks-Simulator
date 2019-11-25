@@ -1,104 +1,74 @@
-// global
-var dimensions = {
-  width: window.innerWidth,
-  height:window.innerHeight
-};
+var engine;
+var blocks = [];
 
-// setup matter
-Matter.use('matter-attractors');
+function setup() {
+    var canvas = createCanvas(windowWidth, windowHeight);
 
-var Engine = Matter.Engine,
-    Render = Matter.Render,
-    Runner = Matter.Runner,
-    Composites = Matter.Composites,
-    Common = Matter.Common,
-    MouseConstraint = Matter.MouseConstraint,
-    Mouse = Matter.Mouse,
-    World = Matter.World,
-    Bodies = Matter.Bodies;
+    // setup matter
+    engine = Matter.Engine.create();
+    engine.world.gravity.y = 0;
+    engine.world.gravity.scale = 0;
+    Matter.Engine.run(engine);
 
-// create engine
-var engine = Engine.create(),
-    world = engine.world;
-    world.gravity.y = 0;
-    world.gravity.scale = 0
+    // add hexgons
+    blocks.push(generateBlock(width/2 - 24, height/2, 48));
+    blocks.push(generateBlock(width/2 + 24, height/2, 48));
+    console.log(blocks[0]);
 
-// create renderer
-var render = Render.create({
-    element: document.body,
-    engine: engine,
-    options: {
-        width: dimensions.width,
-        height: dimensions.height,
-        showAngleIndicator: true,
-    }
-});
+    // add walls
+    Matter.World.add(engine.world, [
+        Matter.Bodies.rectangle(windowWidth/2, -20, windowWidth, 40, { isStatic: true }), //top
+        Matter.Bodies.rectangle(windowWidth/2, windowHeight + 20, windowWidth, 40, { isStatic: true }), //bottom
+        Matter.Bodies.rectangle(windowWidth + 20, windowHeight/2, 40, windowHeight, { isStatic: true }), //right
+        Matter.Bodies.rectangle(-20, windowHeight/2, 40, windowHeight, { isStatic: true }) //left
+    ]);
 
-Render.run(render);
+    // add mouse interaction
+    var mouse = Matter.Mouse.create(canvas.elt);
+    mouse.pixelRatio = pixelDensity();
+    Matter.World.add(
+        engine.world,
+        Matter.MouseConstraint.create(engine, {
+            mouse: mouse
+        })
+    );
+}
 
-// create runner
-var runner = Runner.create();
-Runner.run(runner, engine);
+function draw() {
+    background(0);  
+    drawBlocks();
+}
 
-// add bodies
-var stack = Composites.stack(dimensions.width/2 - 240, dimensions.height/2 - 45, 6, 1, 0, 0, function(x, y) {
-    var sides = 6;
-
-    // round bodies corners
-    var chamfer = {
-        radius: 10
-    };
-    return Bodies.polygon(x, y, sides, 48, { 
-        // density: 0.1,
+function generateBlock(x, y, s){
+    var block = Matter.Bodies.polygon(x, y, 6, s, { 
         friction: 0.8,
-        frictionAir: 0.00001,
-        // restitution: 0.8,
-        plugin: {
-            attractors: [
-                function(bodyA, bodyB) {
-                    var force = {
-                        x: (bodyA.position.x - bodyB.position.x) * 1e-6,
-                        y: (bodyA.position.y - bodyB.position.y) * 1e-6,
-                    };
-                    // apply force to both bodies
-                    Matter.Body.applyForce(bodyA, bodyA.position, Matter.Vector.neg(force));
-                    Matter.Body.applyForce(bodyB, bodyB.position, force);
-                }
-            ]
-        },
-        chamfer: chamfer 
-    });
-});
-
-World.add(world, stack);
-
-// add walls
-World.add(world, [
-    Bodies.rectangle(dimensions.width/2, -20, dimensions.width, 40, { isStatic: true }), //top
-    Bodies.rectangle(dimensions.width/2, dimensions.height + 20, dimensions.width, 40, { isStatic: true }), //bottom
-    Bodies.rectangle(dimensions.width + 20, dimensions.height/2, 40, dimensions.height, { isStatic: true }), //right
-    Bodies.rectangle(-20, dimensions.height/2, 40, dimensions.height, { isStatic: true }) //left
-]);
-
-// add mouse control
-var mouse = Mouse.create(render.canvas),
-    mouseConstraint = MouseConstraint.create(engine, {
-        mouse: mouse,
-        constraint: {
-            stiffness: 0.2,
-            render: {
-                visible: false
-            }
+        frictionAir: 0.8,
+        chamfer: {
+            radius: 10 //rounded corner
         }
     });
+    Matter.World.addBody(engine.world, block);
+    return block;
+}
 
-World.add(world, mouseConstraint);
-
-// keep the mouse in sync with rendering
-render.mouse = mouse;
-
-// fit the render viewport to the scene
-Render.lookAt(render, {
-    min: { x: 0, y: 0 },
-    max: { x: dimensions.width, y: dimensions.height }
-});
+function drawBlocks(){
+    for(var i=0; i<blocks.length; i++){
+        var one = blocks[i];
+        // draw stroke
+        stroke(255);
+        noFill();
+        beginShape();
+        for(var j=0; j<one.vertices.length; j++ ){
+            var ver = one.vertices[j];
+            vertex(ver.x, ver.y);
+        }
+        endShape(CLOSE);
+        
+        // draw angle indicator
+        stroke(255, 0, 0);
+        line(one.position.x, 
+            one.position.y, 
+            one.vertices[0].x/2 + one.vertices[one.vertices.length-1].x/2, 
+            one.vertices[0].y/2 + one.vertices[one.vertices.length-1].y/2);
+    }
+}
