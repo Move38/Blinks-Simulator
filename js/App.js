@@ -142,35 +142,41 @@ function endDrag(){
 }
 
 function checkLocations(){
+    // get the closest block
+    var minDist = windowWidth;
+    var targetOne;
     for(var i=0; i<blocks.length; i++){
         var one = blocks[i];
         if(one.id !== curr_dragging.id){
             var d = dist(curr_dragging.position.x, curr_dragging.position.y, one.position.x, one.position.y);
-            if(d < BLOCK_RADIUS * 5) {
-                var p1 = [one.position.x, one.position.y];
-                var p2 = [curr_dragging.position.x, curr_dragging.position.y];
-                var pInter;
-                for(var j=0; j<=one.vertices.length; j++){
-                    var vert1 = one.vertices[j];
-                    var vert2 = one.vertices[(j + 1) % 6];
-                    var q1 = [vert1.x, vert1.y];
-                    var q2 = [vert2.x, vert2.y];
-                    var lineIntersect = decomp.lineSegmentsIntersect(p1, p2, q1, q2);
-                    if(lineIntersect){
-                        pInter = {
-                            x: (vert1.x + vert2.x) / 2,
-                            y: (vert1.y + vert2.y) / 2
-                        }
-                        break;
-                    }
-                }
-                updateTargetShadow(one, pInter);
-                break;
-            }
-            else {
-                clearTargetShadow();
+            if(d < minDist) {
+                minDist = d; 
+                targetOne = one;
             }
         }
+    }
+    if(minDist < BLOCK_RADIUS * 4.5) {
+        var p1 = [targetOne.position.x, targetOne.position.y];
+        var p2 = [curr_dragging.position.x, curr_dragging.position.y];
+        var pInter;
+        for(var j=0; j<=targetOne.vertices.length; j++){
+            var vert1 = targetOne.vertices[j];
+            var vert2 = targetOne.vertices[(j + 1) % 6];
+            var q1 = [vert1.x, vert1.y];
+            var q2 = [vert2.x, vert2.y];
+            var lineIntersect = decomp.lineSegmentsIntersect(p1, p2, q1, q2);
+            if(lineIntersect){
+                pInter = {
+                    x: (vert1.x + vert2.x) / 2,
+                    y: (vert1.y + vert2.y) / 2
+                }
+                break;
+            }
+        }
+        updateTargetShadow(targetOne, pInter);
+    }
+    else {
+        clearTargetShadow();
     }
 }
 
