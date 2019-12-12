@@ -3,9 +3,12 @@ var BLOCK_SIDES = 6;
 var TOTAL_BLOCK = 6;
 
 var engine;
+var mouse;
 var mouseConstraints;
-var curr_dragging;
-var target_shadow;
+var pMousePosition;
+var currDragging;
+var currDraggingGroup;
+var targetShadow;
 var blocks = [];
 var groups = [];
 
@@ -37,7 +40,7 @@ function setup() {
     ]);
 
     // add mouse interaction
-    var mouse = Matter.Mouse.create(canvas.elt);
+    mouse = Matter.Mouse.create(canvas.elt);
     mouseConstraints = Matter.MouseConstraint.create(engine, {
         mouse: mouse
     });
@@ -46,34 +49,107 @@ function setup() {
         engine.world,
         mouseConstraints
     );
+    // initialize previous mouse structure
+    pMousePosition = {
+        x: mouse.position.x,
+        y: mouse.position.y
+    };
 
     Matter.Events.on(mouseConstraints, 'mousedown', function () {
         console.log('mouse down', mouseConstraints.body);
-        if (mouseConstraints.body) {
-            Matter.Body.setStatic(mouseConstraints.body, false);
-        }
     });
 
     Matter.Events.on(mouseConstraints, 'startdrag', function () {
-        // console.log('start drag', mouseConstraints.body);
-        curr_dragging = mouseConstraints.body;
-        startDrag();
+        var groupsToHighlight = getGroupsToHighlight();
+        if (groupsToHighlight !== undefined) {
+            currDraggingGroup = groupsToHighlight;
+            console.log('start group dragging', currDraggingGroup);
+            // record previous mouse position for moving the whole group
+            pMousePosition = {
+                x: mouse.position.x,
+                y: mouse.position.y
+            };
+        }
+        else if (mouseConstraints.body) {
+            // set single block for free to drag around
+            Matter.Body.setStatic(mouseConstraints.body, false);
+            currDragging = mouseConstraints.body;
+            console.log('start block dragging', currDragging);
+        }
     });
     Matter.Events.on(mouseConstraints, 'mousemove', function () {
-        // console.log('mouse move');
-        if (curr_dragging) {
-            duringDrag();
+        console.log('mouse move', currDragging, currDraggingGroup);
+        if (currDragging === undefined && currDraggingGroup === undefined) {
+            // check groups to highlight on hover
+            var groupsToHighlight = getGroupsToHighlight();
+            if (groupsToHighlight === undefined) {
+                // reset all blocks to default
+                for (var i = 0; i < blocks.length; i++) {
+                    var one = blocks[i];
+                    one.isHighlighted = false;
+                    // highlight individual blocks if on hover
+                    if (Matter.Bounds.contains(one.bounds, mouse.position)) {
+                        if (Matter.Vertices.contains(one.vertices, mouse.position)) {
+                            one.isHighlighted = true;
+                        }
+                    }
+                }
+            }
+            else {
+                // highlight blocks inside that group
+                for (var i = 0; i < blocks.length; i++) {
+                    var one = blocks[i];
+                    one.isHighlighted = (one.group === groupsToHighlight);
+                }
+            }
+        }
+        // if group is on dragging
+        else if (currDraggingGroup !== undefined) {
+            var offset = {
+                x: mouse.position.x - pMousePosition.x,
+                y: mouse.position.y - pMousePosition.y
+            }
+            offsetGroupPosition(currDraggingGroup, offset);
+            pMousePosition.x = mouse.position.x;
+            pMousePosition.y = mouse.position.y;
+        }
+        // if indiviual block is on dragging
+        else {
+            checkLocations();
         }
     });
     Matter.Events.on(mouseConstraints, 'enddrag', function () {
-        if (curr_dragging) {
-            console.log('end drag', curr_dragging);
-            endDrag();
-            curr_dragging = null;
+        // end individual block dragging
+        if (currDragging) {
+            console.log('end individual drag', currDragging);
+            if (targetShadow) {
+                Matter.Body.setPosition(currDragging, {
+                    x: targetShadow.body.position.x + targetShadow.offset.x,
+                    y: targetShadow.body.position.y + targetShadow.offset.y
+                })
+                // limit to 0 to 60
+                var angleDiff = degrees(targetShadow.body.angle - currDragging.angle + PI * 2) % 60
+                // update to -30 to 30 for minimal rotation
+                angleDiff = angleDiff > 30 ? angleDiff - 60 : angleDiff;
+                var angle = (currDragging.angle + radians(angleDiff))
+                Matter.Body.setAngle(currDragging, angle);
+                clearTargetShadow();
+            }
+            updateGroups();
+            // set block to static if it belongs to a new group
+            if (currDragging.group !== undefined) {
+                Matter.Body.setStatic(currDragging, true);
+            }
+            currDragging = undefined;
         }
     });
     Matter.Events.on(mouseConstraints, 'mouseup', function () {
         console.log('mouse up');
+        // end group dragging
+        if (currDraggingGroup !== undefined) {
+            console.log('end group dragging', currDraggingGroup);
+            currDraggingGroup = undefined;
+        }
     });
 }
 
@@ -81,7 +157,7 @@ function draw() {
     background(0);
     drawTargetShadow();
     drawBlocks();
-    drawGroupAreas();
+    // drawGroupAreas();
 }
 
 /* RENDER */
@@ -92,7 +168,12 @@ function drawBlocks() {
         var vertices = Matter.Vertices.chamfer(one.vertices, 10, -1, 2, 14); //default chamfer
         // draw block
         noStroke();
-        fill(255, 240);
+        if (one.isHighlighted) {
+            fill(240, 196, 196);
+        }
+        else {
+            fill(240);
+        }
         beginShape();
         for (var j = 0; j < vertices.length; j++) {
             var ver = vertices[j];
@@ -115,9 +196,9 @@ function drawBlocks() {
 }
 
 function drawTargetShadow() {
-    if (!target_shadow) return;
+    if (!targetShadow) return;
     // update round radius
-    var vertices = Matter.Vertices.chamfer(target_shadow.vertices, 10, -1, 2, 14); //default chamfer
+    var vertices = Matter.Vertices.chamfer(targetShadow.vertices, 10, -1, 2, 14); //default chamfer
     noStroke();
     fill(255, 64);
     beginShape();
@@ -129,7 +210,8 @@ function drawTargetShadow() {
 }
 
 function drawGroupAreas() {
-    noStroke();
+    // noStroke();
+    stroke(0, 0, 255, 128);
     fill(255, 255, 0, 128);
     for (var i = 0; i < groups.length; i++) {
         var area = groups[i].areas;
@@ -141,35 +223,6 @@ function drawGroupAreas() {
 }
 
 /* EVENTS */
-function startDrag() {
-    // console.log('start drag', curr_dragging);
-}
-
-function duringDrag() {
-    // console.log('during drag', curr_dragging);
-    checkLocations();
-}
-
-function endDrag() {
-    // console.log('end drag', curr_dragging);
-    if (target_shadow) {
-        Matter.Body.setPosition(curr_dragging, {
-            x: target_shadow.body.position.x + target_shadow.offset.x,
-            y: target_shadow.body.position.y + target_shadow.offset.y
-        })
-        // limit to 0 to 60
-        var angleDiff = degrees(target_shadow.body.angle - curr_dragging.angle + PI * 2) % 60
-        // update to -30 to 30 for minimal rotation
-        angleDiff = angleDiff > 30 ? angleDiff - 60 : angleDiff;
-        var angle = (curr_dragging.angle + radians(angleDiff))
-        Matter.Body.setAngle(curr_dragging, angle);
-        clearTargetShadow();
-    }
-    updateGroups();
-    if (curr_dragging.group !== 0) {
-        Matter.Body.setStatic(curr_dragging, true);
-    }
-}
 
 
 /* TARGET SHADOW */
@@ -179,8 +232,8 @@ function checkLocations() {
     var targetOne;
     for (var i = 0; i < blocks.length; i++) {
         var one = blocks[i];
-        if (one.id !== curr_dragging.id) {
-            var d = dist(curr_dragging.position.x, curr_dragging.position.y, one.position.x, one.position.y);
+        if (one.id !== currDragging.id) {
+            var d = dist(currDragging.position.x, currDragging.position.y, one.position.x, one.position.y);
             if (d < minDist) {
                 minDist = d;
                 targetOne = one;
@@ -189,7 +242,7 @@ function checkLocations() {
     }
     if (minDist < BLOCK_RADIUS * 4.5) {
         var p1 = [targetOne.position.x, targetOne.position.y];
-        var p2 = [curr_dragging.position.x, curr_dragging.position.y];
+        var p2 = [currDragging.position.x, currDragging.position.y];
         var pInter;
         for (var j = 0; j < targetOne.vertices.length; j++) {
             var vert1 = targetOne.vertices[j];
@@ -213,14 +266,14 @@ function checkLocations() {
 }
 
 function clearTargetShadow() {
-    target_shadow = null;
+    targetShadow = null;
 }
 
 function updateTargetShadow(body, p) {
     var offsetX = (p.x - body.position.x) * 2;
     var offsetY = (p.y - body.position.y) * 2;
     // console.log('draw target location', body, p, offsetX, offsetY);
-    target_shadow = {
+    targetShadow = {
         body: body,
         offset: {
             x: offsetX,
@@ -230,7 +283,7 @@ function updateTargetShadow(body, p) {
     }
     for (var i = 0; i < body.vertices.length; i++) {
         var ver = body.vertices[i];
-        target_shadow.vertices.push({
+        targetShadow.vertices.push({
             x: ver.x + offsetX,
             y: ver.y + offsetY
         })
@@ -243,7 +296,7 @@ function updateGroups() {
     //reset groups & connections
     groups = [];
     for (var r = 0; r < blocks.length; r++) {
-        blocks[r].group = 0;
+        blocks[r].group = undefined;
         blocks[r].connected = [0, 0, 0, 0, 0, 0];
     }
     // loop
@@ -253,20 +306,20 @@ function updateGroups() {
             var b2 = blocks[j];
             var d = dist(b1.position.x, b1.position.y, b2.position.x, b2.position.y);
             if (d < BLOCK_RADIUS * 3.47) {
-                if (b1.group === 0 && b2.group === 0) {
-                    b1.group = b2.group = groups.length + 1;
+                if (b1.group === undefined && b2.group === undefined) {
+                    b1.group = b2.group = groups.length;
                     groups.push({
                         blocks: [b1.id, b2.id],
                         areas: []
                     });
                     createConnection(b1, b2);
                 }
-                else if (b1.group === 0) {
+                else if (b1.group === undefined) {
                     b1.group = b2.group;
                     addToGroups(b1.id, b2.id);
                     createConnection(b1, b2);
                 }
-                else if (b2.group === 0) {
+                else if (b2.group === undefined) {
                     b2.group = b1.group;
                     addToGroups(b2.id, b1.id);
                     createConnection(b1, b2);
@@ -300,34 +353,65 @@ function addToGroups(from, to) {
 
 function mergeGroups(from, to) {
     // console.log('merge groups: ', groups, from, to);
-    for (var i = 0; i < groups[from - 1].blocks.length; i++) {
-        var id = groups[from - 1].blocks[i];
-        var block = getBlockFromID(id);
-        if (!block) {
+    for (var i = 0; i < groups[from].blocks.length; i++) {
+        var id = groups[from].blocks[i];
+        var one = getBlockFromID(id);
+        if (!one) {
             console.warn('unable to locate block based on ID');
         }
-        block.group = to;
-        groups[to - 1].blocks.push(id);
+        one.group = to;
+        groups[to].blocks.push(id);
     }
-    groups.splice(from - 1, 1);
+    groups.splice(from, 1);
 }
 
 function calculateGroupArea() {
     for (var i = 0; i < groups.length; i++) {
-        var blocks = groups[i].blocks;
+        var bks = groups[i].blocks;
         var pts = [];
-        for (var j = 0; j < blocks.length; j++) {
-            var block = getBlockFromID(blocks[j]);
-            pts.push([block.position.x, block.position.y]);
+        for (var j = 0; j < bks.length; j++) {
+            var one = getBlockFromID(bks[j]);
+            pts.push([one.position.x, one.position.y]);
         }
         var triangles = Delaunator.from(pts).triangles;
         for (var p = 0; p < triangles.length; p += 3) {
-            groups[i].areas.push([
-                pts[triangles[p]],
-                pts[triangles[p + 1]],
-                pts[triangles[p + 2]]
-            ]);
+            var p1 = pts[triangles[p]];
+            var p2 = pts[triangles[p + 1]];
+            var p3 = pts[triangles[p + 2]];
+            // filter out far stretched triangles 
+            var s1 = dist(p1[0], p1[1], p2[0], p2[1]);
+            var s2 = dist(p1[0], p1[1], p3[0], p3[1]);
+            var s3 = dist(p2[0], p2[1], p3[0], p3[1]);
+            if ((s1 / s2 < 1.733 && s1 / s2 > 0.577)
+                && (s2 / s3 < 1.733 && s2 / s3 > 0.577)
+                && (s1 / s3 < 1.733 && s1 / s3 > 0.577)) {
+                groups[i].areas.push([p1, p2, p3]);
+            }
         }
+    }
+}
+
+function getGroupsToHighlight() {
+    for (var i = 0; i < groups.length; i++) {
+        for (var j = 0; j < groups[i].areas.length; j++) {
+            var area = groups[i].areas[j];
+            if (pointInsideTriangle([mouse.position.x, mouse.position.y], area)) {
+                return i;
+            }
+        }
+    }
+    return undefined;
+}
+
+function offsetGroupPosition(id, offset) {
+    console.log(id, offset);
+    var bks = groups[id].blocks;
+    for (var i = 0; i < bks.length; i++) {
+        var one = getBlockFromID(bks[i]);
+        Matter.Body.setPosition(one, {
+            x: one.position.x + offset.x,
+            y: one.position.y + offset.y
+        });
     }
 }
 
@@ -379,4 +463,16 @@ function generateBlock(x, y, s) {
     });
     Matter.World.addBody(engine.world, block);
     return block;
+}
+
+/* Utilities */
+// https://stackoverflow.com/questions/2049582/how-to-determine-if-a-point-is-in-a-2d-triangle
+function pointInsideTriangle(p, tr) {
+    var area = 0.5 * (-tr[1][1] * tr[2][0] + tr[0][1] * (-tr[1][0] + tr[2][0]) + tr[0][0] * (tr[1][1] - tr[2][1]) + tr[1][0] * tr[2][1]);
+    var s = 1 / (2 * area) * (tr[0][1] * tr[2][0] - tr[0][0] * tr[2][1] + (tr[2][1] - tr[0][1]) * p[0] + (tr[0][0] - tr[2][0]) * p[1]);
+    var t = 1 / (2 * area) * (tr[0][0] * tr[1][1] - tr[0][1] * tr[1][0] + (tr[0][1] - tr[1][1]) * p[0] + (tr[1][0] - tr[0][0]) * p[1]);
+    if (s > 0 && t > 0 && 1 - s - t > 0) {
+        return true;
+    }
+    return false;
 }
