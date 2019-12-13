@@ -81,7 +81,7 @@ function draw() {
     background(0);
     drawTargetShadow();
     drawBlocks();
-    // drawGroupAreas();
+    drawGroupAreas();
 }
 
 /* RENDER */
@@ -138,11 +138,12 @@ function drawGroupAreas() {
     stroke(0, 0, 255, 128);
     fill(255, 255, 0, 128);
     for (var i = 0; i < groups.length; i++) {
-        var area = groups[i].areas;
-        for (var j = 0; j < area.length; j++) {
-            var one = area[j];
-            triangle(one[0][0], one[0][1], one[1][0], one[1][1], one[2][0], one[2][1]);
+        beginShape();
+        for (var j = 0; j < groups[i].area.length; j++) {
+            var ver = groups[i].area[j];
+            vertex(ver.x, ver.y);
         }
+        endShape(CLOSE);
     }
 }
 
@@ -185,6 +186,7 @@ function onMouseMoveEvent() {
                 if (Matter.Bounds.contains(one.bounds, mouse.position)) {
                     if (Matter.Vertices.contains(one.vertices, mouse.position)) {
                         one.isHighlighted = true;
+                        // console.log('on hover: ', one.id);
                     }
                 }
             }
@@ -327,7 +329,10 @@ function updateGroups() {
     }
     // loop
     for (var i = 0; i < blocks.length; i++) {
-        for (var j = i + 1; j < blocks.length; j++) {
+        for (var j = 1; j < blocks.length; j++) {
+            if(i === j){
+                continue;
+            }
             var b1 = blocks[i];
             var b2 = blocks[j];
             var d = dist(b1.position.x, b1.position.y, b2.position.x, b2.position.y);
@@ -336,9 +341,8 @@ function updateGroups() {
                     b1.group = b2.group = groups.length;
                     groups.push({
                         blocks: [b1.id, b2.id],
-                        areas: []
+                        area: []
                     });
-                    createConnection(b1, b2);
                 }
                 else if (b1.group === undefined) {
                     b1.group = b2.group;
@@ -348,7 +352,6 @@ function updateGroups() {
                 else if (b2.group === undefined) {
                     b2.group = b1.group;
                     addToGroups(b2.id, b1.id);
-                    createConnection(b1, b2);
                 }
                 else if (b1.group !== b2.group) {
                     // merge groups
@@ -358,8 +361,8 @@ function updateGroups() {
                     else {
                         mergeGroups(b1.group, b2.group);
                     }
-                    createConnection(b1, b2);
                 }
+                createConnection(b1, b2);
             }
         }
     }
@@ -392,38 +395,70 @@ function mergeGroups(from, to) {
 }
 
 function calculateGroupArea() {
+    // find the bottom right vector as starting point
+    // then run CW to get all the points
     for (var i = 0; i < groups.length; i++) {
         var bks = groups[i].blocks;
-        var pts = [];
-        for (var j = 0; j < bks.length; j++) {
+        // clear area
+        groups[i].area = [];
+
+        // find bottom right block
+        var brBlk = getBlockFromID(bks[0]);
+        for (var j = 1; j < bks.length; j++) {
             var one = getBlockFromID(bks[j]);
-            pts.push([one.position.x, one.position.y]);
-        }
-        var triangles = Delaunator.from(pts).triangles;
-        for (var p = 0; p < triangles.length; p += 3) {
-            var p1 = pts[triangles[p]];
-            var p2 = pts[triangles[p + 1]];
-            var p3 = pts[triangles[p + 2]];
-            // filter out far stretched triangles 
-            var s1 = dist(p1[0], p1[1], p2[0], p2[1]);
-            var s2 = dist(p1[0], p1[1], p3[0], p3[1]);
-            var s3 = dist(p2[0], p2[1], p3[0], p3[1]);
-            if ((s1 / s2 < 1.733 && s1 / s2 > 0.577)
-                && (s2 / s3 < 1.733 && s2 / s3 > 0.577)
-                && (s1 / s3 < 1.733 && s1 / s3 > 0.577)) {
-                groups[i].areas.push([p1, p2, p3]);
+            if (one.bounds.max.x + one.bounds.max.y > brBlk.bounds.max.x + brBlk.bounds.max.y) {
+                brBlk = one;
             }
+        }
+        // find bottom right vertice
+        var brPt = brBlk.vertices[0];
+        for (var p = 1; p < brBlk.vertices.length; p++) {
+            var pt = brBlk.vertices[p];
+            if (pt.x + pt.y > brPt.x + brPt.y) {
+                brPt = pt;
+            }
+        }
+
+        // add bottom right vertices to group area polygon as the starting point
+        groups[i].area.push(brPt);
+        // find all vertices from the outer lines
+        var currBlk = brBlk;
+        var currPt = brBlk.vertices[(brPt.index + 1) % BLOCK_SIDES];
+        // used to not crash the app
+        var counter = 0;
+        while (currPt !== brPt || counter > groups[i].blocks.length * BLOCK_SIDES) {
+            // check whether currPt is a connection point
+            var connBlkID = currBlk.connected[(currPt.index + 1) % BLOCK_SIDES];
+            groups[i].area.push(currPt);
+            // console.log('here', currPt, currBlk, connBlkID);
+            if (connBlkID !== 0) {
+                // it's connected, move to next block
+                var preBlkID = currBlk.id;
+                currBlk = getBlockFromID(connBlkID);
+                for (var c = 0; c < BLOCK_SIDES; c++) {
+                    if (currBlk.connected[c] === preBlkID) {
+                        currPt = currBlk.vertices[(c + 1) % BLOCK_SIDES];
+                        break;
+                    }
+                }
+            }
+            else {
+                // not connected, move to next vertice
+                currPt = currBlk.vertices[(currPt.index + 1) % BLOCK_SIDES];
+            }
+            counter ++;
+        }
+        if(counter > groups[i].blocks.length * BLOCK_SIDES){
+            console.warn('Could not find group area');
+            groups[i].area = [];
         }
     }
 }
 
 function getGroupsToHighlight() {
     for (var i = 0; i < groups.length; i++) {
-        for (var j = 0; j < groups[i].areas.length; j++) {
-            var area = groups[i].areas[j];
-            if (pointInsideTriangle([mouse.position.x, mouse.position.y], area)) {
-                return i;
-            }
+        if (Matter.Vertices.contains(groups[i].area, mouse.position)) {
+            return i;
         }
     }
     return undefined;
@@ -444,6 +479,7 @@ function offsetGroupPosition(id, offset) {
 /* CONNECTIONS */
 
 function createConnection(b1, b2) {
+    // console.log('create connection with', b1.id, b2.id);
     var p1 = [b1.position.x, b1.position.y];
     var p2 = [b2.position.x, b2.position.y];
     for (var i = 0; i < b1.vertices.length; i++) {
@@ -489,16 +525,4 @@ function generateBlock(x, y, s) {
     });
     Matter.World.addBody(engine.world, block);
     return block;
-}
-
-/* Utilities */
-// https://stackoverflow.com/questions/2049582/how-to-determine-if-a-point-is-in-a-2d-triangle
-function pointInsideTriangle(p, tr) {
-    var area = 0.5 * (-tr[1][1] * tr[2][0] + tr[0][1] * (-tr[1][0] + tr[2][0]) + tr[0][0] * (tr[1][1] - tr[2][1]) + tr[1][0] * tr[2][1]);
-    var s = 1 / (2 * area) * (tr[0][1] * tr[2][0] - tr[0][0] * tr[2][1] + (tr[2][1] - tr[0][1]) * p[0] + (tr[0][0] - tr[2][0]) * p[1]);
-    var t = 1 / (2 * area) * (tr[0][0] * tr[1][1] - tr[0][1] * tr[1][0] + (tr[0][1] - tr[1][1]) * p[0] + (tr[1][0] - tr[0][0]) * p[1]);
-    if (s > 0 && t > 0 && 1 - s - t > 0) {
-        return true;
-    }
-    return false;
 }
