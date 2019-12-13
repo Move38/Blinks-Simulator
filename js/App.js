@@ -8,6 +8,7 @@ var mouseConstraints;
 var pMousePosition;
 var currDragging;
 var currDraggingGroup;
+var currDraggingOffset;
 var targetShadow;
 var blocks = [];
 var groups = [];
@@ -54,102 +55,25 @@ function setup() {
         x: mouse.position.x,
         y: mouse.position.y
     };
+    currDraggingOffset = {
+        x: 0, y: 0
+    }
+
+    // Matter.Events.on(mouseConstraints, 'startdrag', function () {
+    // });
+    // Matter.Events.on(mouseConstraints, 'enddrag', function () {
+    // });
 
     Matter.Events.on(mouseConstraints, 'mousedown', function () {
-        console.log('mouse down', mouseConstraints.body);
+        onMouseDownEvent();
     });
 
-    Matter.Events.on(mouseConstraints, 'startdrag', function () {
-        var groupsToHighlight = getGroupsToHighlight();
-        if (groupsToHighlight !== undefined) {
-            currDraggingGroup = groupsToHighlight;
-            console.log('start group dragging', currDraggingGroup);
-            // record previous mouse position for moving the whole group
-            pMousePosition = {
-                x: mouse.position.x,
-                y: mouse.position.y
-            };
-        }
-        else if (mouseConstraints.body) {
-            // set single block for free to drag around
-            Matter.Body.setStatic(mouseConstraints.body, false);
-            currDragging = mouseConstraints.body;
-            console.log('start block dragging', currDragging);
-        }
-    });
     Matter.Events.on(mouseConstraints, 'mousemove', function () {
-        console.log('mouse move', currDragging, currDraggingGroup);
-        if (currDragging === undefined && currDraggingGroup === undefined) {
-            // check groups to highlight on hover
-            var groupsToHighlight = getGroupsToHighlight();
-            if (groupsToHighlight === undefined) {
-                // reset all blocks to default
-                for (var i = 0; i < blocks.length; i++) {
-                    var one = blocks[i];
-                    one.isHighlighted = false;
-                    // highlight individual blocks if on hover
-                    if (Matter.Bounds.contains(one.bounds, mouse.position)) {
-                        if (Matter.Vertices.contains(one.vertices, mouse.position)) {
-                            one.isHighlighted = true;
-                        }
-                    }
-                }
-            }
-            else {
-                // highlight blocks inside that group
-                for (var i = 0; i < blocks.length; i++) {
-                    var one = blocks[i];
-                    one.isHighlighted = (one.group === groupsToHighlight);
-                }
-            }
-        }
-        // if group is on dragging
-        else if (currDraggingGroup !== undefined) {
-            var offset = {
-                x: mouse.position.x - pMousePosition.x,
-                y: mouse.position.y - pMousePosition.y
-            }
-            offsetGroupPosition(currDraggingGroup, offset);
-            pMousePosition.x = mouse.position.x;
-            pMousePosition.y = mouse.position.y;
-        }
-        // if indiviual block is on dragging
-        else {
-            checkLocations();
-        }
+        onMouseMoveEvent();
     });
-    Matter.Events.on(mouseConstraints, 'enddrag', function () {
-        // end individual block dragging
-        if (currDragging) {
-            console.log('end individual drag', currDragging);
-            if (targetShadow) {
-                Matter.Body.setPosition(currDragging, {
-                    x: targetShadow.body.position.x + targetShadow.offset.x,
-                    y: targetShadow.body.position.y + targetShadow.offset.y
-                })
-                // limit to 0 to 60
-                var angleDiff = degrees(targetShadow.body.angle - currDragging.angle + PI * 2) % 60
-                // update to -30 to 30 for minimal rotation
-                angleDiff = angleDiff > 30 ? angleDiff - 60 : angleDiff;
-                var angle = (currDragging.angle + radians(angleDiff))
-                Matter.Body.setAngle(currDragging, angle);
-                clearTargetShadow();
-            }
-            updateGroups();
-            // set block to static if it belongs to a new group
-            if (currDragging.group !== undefined) {
-                Matter.Body.setStatic(currDragging, true);
-            }
-            currDragging = undefined;
-        }
-    });
+
     Matter.Events.on(mouseConstraints, 'mouseup', function () {
-        console.log('mouse up');
-        // end group dragging
-        if (currDraggingGroup !== undefined) {
-            console.log('end group dragging', currDraggingGroup);
-            currDraggingGroup = undefined;
-        }
+        onMouseUpEvent();
     });
 }
 
@@ -223,7 +147,109 @@ function drawGroupAreas() {
 }
 
 /* EVENTS */
+function onMouseDownEvent() {
+    console.log('mouse down');
+    // record previous mouse position
+    pMousePosition = {
+        x: mouse.position.x,
+        y: mouse.position.y
+    };
+    var groupsToHighlight = getGroupsToHighlight();
+    if (groupsToHighlight !== undefined) {
+        currDraggingGroup = groupsToHighlight;
+        console.log('start group dragging', currDraggingGroup);
+    }
+    else if (mouseConstraints.body) {
+        // set single block for free to drag around
+        Matter.Body.setStatic(mouseConstraints.body, false);
+        currDragging = mouseConstraints.body;
+        console.log('start block dragging', currDragging);
+    }
+}
 
+function onMouseMoveEvent() {
+    console.log('mouse move');
+    var mouseDiff = {
+        x: mouse.position.x - pMousePosition.x,
+        y: mouse.position.y - pMousePosition.y
+    }
+    if (currDragging === undefined && currDraggingGroup === undefined) {
+        // check groups to highlight on hover
+        var groupsToHighlight = getGroupsToHighlight();
+        if (groupsToHighlight === undefined) {
+            // reset all blocks to default
+            for (var i = 0; i < blocks.length; i++) {
+                var one = blocks[i];
+                one.isHighlighted = false;
+                // highlight individual blocks if on hover
+                if (Matter.Bounds.contains(one.bounds, mouse.position)) {
+                    if (Matter.Vertices.contains(one.vertices, mouse.position)) {
+                        one.isHighlighted = true;
+                    }
+                }
+            }
+        }
+        else {
+            // highlight blocks inside that group
+            for (var i = 0; i < blocks.length; i++) {
+                var one = blocks[i];
+                one.isHighlighted = (one.group === groupsToHighlight);
+            }
+        }
+    }
+    // if group is on dragging
+    else if (currDraggingGroup !== undefined) {
+        offsetGroupPosition(currDraggingGroup, mouseDiff);
+    }
+    // if indiviual block is on dragging
+    else {
+        // update block angle on dragging
+        // angle = atan2(cross(a,b), dot(a,b))
+        currDraggingOffset.x = mouse.position.x - currDragging.position.x;
+        currDraggingOffset.y = mouse.position.y - currDragging.position.y;
+        var addedVec = Matter.Vector.add(currDraggingOffset, Matter.Vector.mult(mouseDiff, Matter.Vector.magnitude(currDraggingOffset) / BLOCK_RADIUS));
+        var rotationAngle = Math.atan2(Matter.Vector.cross(currDraggingOffset, addedVec), Matter.Vector.dot(currDraggingOffset, addedVec));
+        Matter.Body.setAngle(currDragging, currDragging.angle + rotationAngle);
+        console.log(currDraggingOffset, mouseDiff, currDragging.angle, rotationAngle);
+        checkLocations();
+    }
+    // update previous mouse position
+    pMousePosition.x = mouse.position.x;
+    pMousePosition.y = mouse.position.y;
+}
+
+function onMouseUpEvent() {
+    console.log('mouse up');
+    // end individual block dragging
+    if (currDragging) {
+        console.log('end individual drag', currDragging);
+        if (targetShadow) {
+            Matter.Body.setPosition(currDragging, {
+                x: targetShadow.body.position.x + targetShadow.offset.x,
+                y: targetShadow.body.position.y + targetShadow.offset.y
+            })
+            // limit to 0 to 60
+            var angleDiff = degrees(targetShadow.body.angle - currDragging.angle + PI * 2) % 60
+            // update to -30 to 30 for minimal rotation
+            angleDiff = angleDiff > 30 ? angleDiff - 60 : angleDiff;
+            var angle = (currDragging.angle + radians(angleDiff))
+            Matter.Body.setAngle(currDragging, angle);
+            clearTargetShadow();
+        }
+        updateGroups();
+        // set block to static if it belongs to a new group
+        if (currDragging.group !== undefined) {
+            Matter.Body.setStatic(currDragging, true);
+        }
+        currDragging = undefined;
+    }
+    // end group dragging
+    if (currDraggingGroup !== undefined) {
+        console.log('end group dragging', currDraggingGroup);
+        currDraggingGroup = undefined;
+        calculateGroupArea();
+    }
+}
 
 /* TARGET SHADOW */
 function checkLocations() {
