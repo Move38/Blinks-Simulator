@@ -247,7 +247,7 @@ function onMouseUpEvent() {
     if (currDraggingGroup !== undefined) {
         console.log('end group dragging', currDraggingGroup);
         currDraggingGroup = undefined;
-        calculateGroupArea();
+        updateGroups();
     }
 }
 
