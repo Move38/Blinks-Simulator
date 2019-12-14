@@ -1,3 +1,14 @@
+var Engine = Matter.Engine;
+var World = Matter.World;
+var Body = Matter.Body;
+var Bodies = Matter.Bodies;
+var Bounds = Matter.Bounds;
+var Vector = Matter.Vector;
+var Vertices = Matter.Vertices;
+var Events = Matter.Events;
+var Mouse = Matter.Mouse;
+var MouseConstraint = Matter.MouseConstraint;
+
 var BLOCK_RADIUS = 24;
 var BLOCK_SIDES = 6;
 var TOTAL_BLOCK = 6;
@@ -17,10 +28,10 @@ function setup() {
     var canvas = createCanvas(windowWidth, windowHeight);
 
     // setup matter
-    engine = Matter.Engine.create();
+    engine = Engine.create();
     engine.world.gravity.y = 0;
     engine.world.gravity.scale = 0;
-    Matter.Engine.run(engine);
+    Engine.run(engine);
 
     // add hexgons
     for (var i = 0; i < TOTAL_BLOCK; i++) {
@@ -33,20 +44,20 @@ function setup() {
     console.log(blocks[0]);
 
     // add walls
-    Matter.World.add(engine.world, [
-        Matter.Bodies.rectangle(windowWidth / 2, -20, windowWidth, 40, { isStatic: true }), //top
-        Matter.Bodies.rectangle(windowWidth / 2, windowHeight + 20, windowWidth, 40, { isStatic: true }), //bottom
-        Matter.Bodies.rectangle(windowWidth + 20, windowHeight / 2, 40, windowHeight, { isStatic: true }), //right
-        Matter.Bodies.rectangle(-20, windowHeight / 2, 40, windowHeight, { isStatic: true }) //left
+    World.add(engine.world, [
+        Bodies.rectangle(windowWidth / 2, -20, windowWidth, 40, { isStatic: true }), //top
+        Bodies.rectangle(windowWidth / 2, windowHeight + 20, windowWidth, 40, { isStatic: true }), //bottom
+        Bodies.rectangle(windowWidth + 20, windowHeight / 2, 40, windowHeight, { isStatic: true }), //right
+        Bodies.rectangle(-20, windowHeight / 2, 40, windowHeight, { isStatic: true }) //left
     ]);
 
     // add mouse interaction
-    mouse = Matter.Mouse.create(canvas.elt);
-    mouseConstraints = Matter.MouseConstraint.create(engine, {
+    mouse = Mouse.create(canvas.elt);
+    mouseConstraints = MouseConstraint.create(engine, {
         mouse: mouse
     });
     mouse.pixelRatio = pixelDensity();
-    Matter.World.add(
+    World.add(
         engine.world,
         mouseConstraints
     );
@@ -59,20 +70,20 @@ function setup() {
         x: 0, y: 0
     }
 
-    // Matter.Events.on(mouseConstraints, 'startdrag', function () {
+    // Events.on(mouseConstraints, 'startdrag', function () {
     // });
-    // Matter.Events.on(mouseConstraints, 'enddrag', function () {
+    // Events.on(mouseConstraints, 'enddrag', function () {
     // });
 
-    Matter.Events.on(mouseConstraints, 'mousedown', function () {
+    Events.on(mouseConstraints, 'mousedown', function () {
         onMouseDownEvent();
     });
 
-    Matter.Events.on(mouseConstraints, 'mousemove', function () {
+    Events.on(mouseConstraints, 'mousemove', function () {
         onMouseMoveEvent();
     });
 
-    Matter.Events.on(mouseConstraints, 'mouseup', function () {
+    Events.on(mouseConstraints, 'mouseup', function () {
         onMouseUpEvent();
     });
 }
@@ -89,7 +100,7 @@ function drawBlocks() {
     for (var i = 0; i < blocks.length; i++) {
         var one = blocks[i];
         // update round radius
-        var vertices = Matter.Vertices.chamfer(one.vertices, 10, -1, 2, 14); //default chamfer
+        var vertices = Vertices.chamfer(one.vertices, 10, -1, 2, 14); //default chamfer
         // draw block
         noStroke();
         if (one.isHighlighted) {
@@ -122,7 +133,7 @@ function drawBlocks() {
 function drawTargetShadow() {
     if (!targetShadow) return;
     // update round radius
-    var vertices = Matter.Vertices.chamfer(targetShadow.vertices, 10, -1, 2, 14); //default chamfer
+    var vertices = Vertices.chamfer(targetShadow.vertices, 10, -1, 2, 14); //default chamfer
     noStroke();
     fill(255, 64);
     beginShape();
@@ -168,7 +179,7 @@ function onMouseDownEvent() {
     }
     else if (mouseConstraints.body) {
         // set single block for free to drag around
-        Matter.Body.setStatic(mouseConstraints.body, false);
+        Body.setStatic(mouseConstraints.body, false);
         currDragging = mouseConstraints.body;
         console.log('start block dragging', currDragging);
     }
@@ -189,8 +200,8 @@ function onMouseMoveEvent() {
                 var one = blocks[i];
                 one.isHighlighted = false;
                 // highlight individual blocks if on hover
-                if (Matter.Bounds.contains(one.bounds, mouse.position)) {
-                    if (Matter.Vertices.contains(one.vertices, mouse.position)) {
+                if (Bounds.contains(one.bounds, mouse.position)) {
+                    if (Vertices.contains(one.vertices, mouse.position)) {
                         one.isHighlighted = true;
                         // console.log('on hover: ', one.id);
                     }
@@ -215,9 +226,9 @@ function onMouseMoveEvent() {
         // angle = atan2(cross(a,b), dot(a,b))
         currDraggingOffset.x = mouse.position.x - currDragging.position.x;
         currDraggingOffset.y = mouse.position.y - currDragging.position.y;
-        var addedVec = Matter.Vector.add(currDraggingOffset, Matter.Vector.mult(mouseDiff, Matter.Vector.magnitude(currDraggingOffset) / BLOCK_RADIUS));
-        var rotationAngle = Math.atan2(Matter.Vector.cross(currDraggingOffset, addedVec), Matter.Vector.dot(currDraggingOffset, addedVec));
-        Matter.Body.setAngle(currDragging, currDragging.angle + rotationAngle);
+        var addedVec = Vector.add(currDraggingOffset, Vector.mult(mouseDiff, Vector.magnitude(currDraggingOffset) / BLOCK_RADIUS));
+        var rotationAngle = Math.atan2(Vector.cross(currDraggingOffset, addedVec), Vector.dot(currDraggingOffset, addedVec));
+        Body.setAngle(currDragging, currDragging.angle + rotationAngle);
         console.log(currDraggingOffset, mouseDiff, currDragging.angle, rotationAngle);
         checkLocations();
     }
@@ -232,7 +243,7 @@ function onMouseUpEvent() {
     if (currDragging) {
         console.log('end individual drag', currDragging);
         if (targetShadow) {
-            Matter.Body.setPosition(currDragging, {
+            Body.setPosition(currDragging, {
                 x: targetShadow.body.position.x + targetShadow.offset.x,
                 y: targetShadow.body.position.y + targetShadow.offset.y
             })
@@ -241,13 +252,13 @@ function onMouseUpEvent() {
             // update to -30 to 30 for minimal rotation
             angleDiff = angleDiff > 30 ? angleDiff - 60 : angleDiff;
             var angle = (currDragging.angle + radians(angleDiff))
-            Matter.Body.setAngle(currDragging, angle);
+            Body.setAngle(currDragging, angle);
             clearTargetShadow();
         }
         updateGroups();
         // set block to static if it belongs to a new group
         if (currDragging.group !== undefined) {
-            Matter.Body.setStatic(currDragging, true);
+            Body.setStatic(currDragging, true);
         }
         currDragging = undefined;
     }
@@ -476,7 +487,7 @@ function offsetGroupPosition(id, offset) {
     var bks = groups[id].blocks;
     for (var i = 0; i < bks.length; i++) {
         var one = getBlockFromID(bks[i]);
-        Matter.Body.setPosition(one, {
+        Body.setPosition(one, {
             x: one.position.x + offset.x,
             y: one.position.y + offset.y
         });
@@ -525,12 +536,12 @@ function getBlockFromID(id) {
 }
 
 function generateBlock(x, y, s) {
-    var block = Matter.Bodies.polygon(x, y, BLOCK_SIDES, s, {
+    var block = Bodies.polygon(x, y, BLOCK_SIDES, s, {
         friction: 0.8,
         frictionAir: 0.8,
         isStatic: true
     });
-    Matter.World.addBody(engine.world, block);
+    World.addBody(engine.world, block);
     return block;
 }
 
