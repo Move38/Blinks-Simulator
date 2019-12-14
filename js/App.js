@@ -81,7 +81,7 @@ function draw() {
     background(0);
     drawTargetShadow();
     drawBlocks();
-    drawGroupAreas();
+    // drawGroupAreas();
 }
 
 /* RENDER */
@@ -134,16 +134,22 @@ function drawTargetShadow() {
 }
 
 function drawGroupAreas() {
-    // noStroke();
-    stroke(0, 0, 255, 128);
-    fill(255, 255, 0, 128);
     for (var i = 0; i < groups.length; i++) {
+        stroke(0, 0, 255, 128);
+        fill(255, 255, 0, 128);
         beginShape();
-        for (var j = 0; j < groups[i].area.length; j++) {
-            var ver = groups[i].area[j];
+        for (var j = 0; j < groups[i].innerarea.length; j++) {
+            var ver = groups[i].innerarea[j];
             vertex(ver.x, ver.y);
         }
         endShape(CLOSE);
+        for (var j = 0; j < groups[i].innerarea.length; j++) {
+            var ver = groups[i].innerarea[j];
+            fill(255, 0, 0);
+            noStroke();
+            ellipse(ver.x, ver.y, 4, 4);
+            vertex(ver.x, ver.y);
+        }
     }
 }
 
@@ -330,7 +336,7 @@ function updateGroups() {
     // loop
     for (var i = 0; i < blocks.length; i++) {
         for (var j = 1; j < blocks.length; j++) {
-            if(i === j){
+            if (i === j) {
                 continue;
             }
             var b1 = blocks[i];
@@ -340,8 +346,7 @@ function updateGroups() {
                 if (b1.group === undefined && b2.group === undefined) {
                     b1.group = b2.group = groups.length;
                     groups.push({
-                        blocks: [b1.id, b2.id],
-                        area: []
+                        blocks: [b1.id, b2.id]
                     });
                 }
                 else if (b1.group === undefined) {
@@ -428,16 +433,16 @@ function calculateGroupArea() {
         var counter = 0;
         while (currPt !== brPt || counter > groups[i].blocks.length * BLOCK_SIDES) {
             // check whether currPt is a connection point
-            var connBlkID = currBlk.connected[(currPt.index + 1) % BLOCK_SIDES];
+            var connBlkID = currBlk.connected[currPt.index];
             groups[i].area.push(currPt);
-            // console.log('here', currPt, currBlk, connBlkID);
+            // console.log('here', currBlk.id, currPt.index, connBlkID);
             if (connBlkID !== 0) {
                 // it's connected, move to next block
                 var preBlkID = currBlk.id;
                 currBlk = getBlockFromID(connBlkID);
                 for (var c = 0; c < BLOCK_SIDES; c++) {
                     if (currBlk.connected[c] === preBlkID) {
-                        currPt = currBlk.vertices[(c + 1) % BLOCK_SIDES];
+                        currPt = currBlk.vertices[(c + 2) % BLOCK_SIDES];
                         break;
                     }
                 }
@@ -446,18 +451,20 @@ function calculateGroupArea() {
                 // not connected, move to next vertice
                 currPt = currBlk.vertices[(currPt.index + 1) % BLOCK_SIDES];
             }
-            counter ++;
+            counter++;
         }
-        if(counter > groups[i].blocks.length * BLOCK_SIDES){
+        if (counter > groups[i].blocks.length * BLOCK_SIDES) {
             console.warn('Could not find group area');
             groups[i].area = [];
         }
+        groups[i].innerarea = hmpoly.createPaddingPolygon(groups[i].area, BLOCK_RADIUS);
+        // console.log(groups[i].area);
     }
 }
 
 function getGroupsToHighlight() {
     for (var i = 0; i < groups.length; i++) {
-        if (Matter.Vertices.contains(groups[i].area, mouse.position)) {
+        if (pointInsidePolygon(groups[i].innerarea, mouse.position)) {
             return i;
         }
     }
@@ -489,7 +496,7 @@ function createConnection(b1, b2) {
         var q2 = [vert2.x, vert2.y];
         var lineIntersect = decomp.lineSegmentsIntersect(p1, p2, q1, q2);
         if (lineIntersect) {
-            b1.connected[(i + 1) % b1.vertices.length] = b2.id;
+            b1.connected[i] = b2.id;
             break;
         }
     }
@@ -500,7 +507,7 @@ function createConnection(b1, b2) {
         var q2 = [vert2.x, vert2.y];
         var lineIntersect = decomp.lineSegmentsIntersect(p1, p2, q1, q2);
         if (lineIntersect) {
-            b2.connected[(j + 1) % b2.vertices.length] = b1.id;
+            b2.connected[j] = b1.id;
             break;
         }
     }
@@ -525,4 +532,19 @@ function generateBlock(x, y, s) {
     });
     Matter.World.addBody(engine.world, block);
     return block;
+}
+
+/* UTILITIES */
+
+function pointInsidePolygon(vs, pt) {
+    var inside = false;
+    for (var i = 0, j = vs.length - 1; i < vs.length; j = i++) {
+        var xi = vs[i].x, yi = vs[i].y;
+        var xj = vs[j].x, yj = vs[j].y;
+
+        var intersect = ((yi > pt.y) != (yj > pt.y))
+            && (pt.x < (xj - xi) * (pt.y - yi) / (yj - yi) + xi);
+        if (intersect) inside = !inside;
+    }
+    return inside;
 }
