@@ -23,6 +23,7 @@ var currDraggingOffset;
 var targetShadow;
 var blocks = [];
 var groups = [];
+var connections = [];
 
 function setup() {
     var canvas = createCanvas(windowWidth, windowHeight);
@@ -92,7 +93,8 @@ function draw() {
     background(0);
     drawTargetShadow();
     drawBlocks();
-    // drawGroupAreas();
+    drawGroupAreas();
+    drawConnections();
 }
 
 /* RENDER */
@@ -122,6 +124,7 @@ function drawBlocks() {
             y: one.vertices[0].y / 2 + one.vertices[one.vertices.length - 1].y / 2
         }
         stroke(255, 0, 0, 64);
+        strokeWeight(1);
         line(one.position.x,
             one.position.y,
             one.position.x + (midPoint.x - one.position.x) * 0.88,
@@ -146,8 +149,8 @@ function drawTargetShadow() {
 
 function drawGroupAreas() {
     for (var i = 0; i < groups.length; i++) {
-        stroke(0, 0, 255, 128);
-        fill(255, 255, 0, 128);
+        stroke(0, 0, 255, 64);
+        fill(255, 255, 0, 64);
         beginShape();
         for (var j = 0; j < groups[i].innerarea.length; j++) {
             var ver = groups[i].innerarea[j];
@@ -161,6 +164,21 @@ function drawGroupAreas() {
             ellipse(ver.x, ver.y, 4, 4);
             vertex(ver.x, ver.y);
         }
+    }
+}
+
+function drawConnections() {
+    stroke(0, 255, 0, 64);
+    strokeWeight(4);
+    for (var i = 0; i < connections.length; i++) {
+        var b1 = getBlockFromID(connections[i][0]);
+        var b2 = getBlockFromID(connections[i][1]);
+        
+        line(b1.position.x,
+            b1.position.y,
+            b2.position.x,
+            b2.position.y
+        );
     }
 }
 
@@ -340,6 +358,7 @@ function updateTargetShadow(body, p) {
 function updateGroups() {
     //reset groups & connections
     groups = [];
+    connections = [];
     for (var r = 0; r < blocks.length; r++) {
         blocks[r].group = undefined;
         blocks[r].connected = [0, 0, 0, 0, 0, 0];
@@ -495,9 +514,23 @@ function offsetGroupPosition(id, offset) {
 }
 
 /* CONNECTIONS */
+function addConnection(b1, b2) {
+    // sort from small to big
+    var id1 = b1 < b2 ? b1 : b2;
+    var id2 = b1 < b2 ? b2 : b1;
+    // check whether it's existed
+    var filtered = connections.filter(function (p) {
+        return (p[0] === id1 && p[1] === id2);
+    });
+    if (filtered.length === 0) {
+        connections.push([id1, id2]);
+    }
+    // console.log('connection', connections);
+}
 
 function createConnection(b1, b2) {
     // console.log('create connection with', b1.id, b2.id);
+    addConnection(b1.id, b2.id);
     var p1 = [b1.position.x, b1.position.y];
     var p2 = [b2.position.x, b2.position.y];
     for (var i = 0; i < b1.vertices.length; i++) {
