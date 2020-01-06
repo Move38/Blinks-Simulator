@@ -200,6 +200,7 @@ function drawMouseLine() {
     endShape();
 }
 
+// todo: loop from beginning of the line segment instead of from group order
 function updateGroupAfterMouseDrag() {
     if (mouseLines.length < 2) {
         return;
@@ -220,6 +221,7 @@ function updateGroupAfterMouseDrag() {
             }
             return !INTERSECTED;
         });
+        console.log('filtered conn', filteredConn);
         if (filteredConn.length < currGroup.connections.length) {
             // divide group
             // console.log('con:', currGroup.connections);
@@ -270,7 +272,6 @@ function updateGroupAfterMouseDrag() {
             }
             else if (sets.length === 2) {
                 // reset curr grout to set 0
-                console.log('there', sets);
                 currGroup.blocks = sets[0];
                 currGroup.connections = [];
                 sets[0].map(function (id) {
@@ -289,8 +290,17 @@ function updateGroupAfterMouseDrag() {
                     connections: []
                 });
             }
-            else {
-                console.warn('Invalid sets');
+            else if (sets.length === 0) {
+                currGroup.blocks.map(function(id){
+                    var b = getBlockFromID(id);
+                    b.group = undefined;
+                    b.connected = [0, 0, 0, 0, 0, 0];
+                });
+                groups.splice(i, 1);
+                break;
+            }
+            else{
+                console.warn('Invalid sets', sets);
             }
 
             filteredConn.map(function (c) {
@@ -302,16 +312,13 @@ function updateGroupAfterMouseDrag() {
     }
     console.log('Updated Groups:', groups);
     calculateGroupArea();
-    
+
     // separate groups 
 }
 
 /* EVENTS */
 function onMouseDownEvent() {
     console.log('mouse down');
-    // start of drawing lines
-    mouseStartOnDrag = true;
-    mouseLines.push([mouse.position.x, mouse.position.y]);
 
     // record previous mouse position
     pMousePosition = {
@@ -329,12 +336,18 @@ function onMouseDownEvent() {
         currDragging = mouseConstraints.body;
         console.log('start block dragging', currDragging);
     }
+    else {
+        // start of drawing lines
+        mouseStartOnDrag = true;
+        mouseLines.push([mouse.position.x, mouse.position.y]);
+    }
 }
 
 function onMouseMoveEvent() {
     console.log('mouse move');
     if (mouseStartOnDrag) {
         mouseLines.push([mouse.position.x, mouse.position.y]);
+        return;
     }
 
     var mouseDiff = {
