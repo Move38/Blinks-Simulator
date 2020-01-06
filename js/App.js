@@ -93,6 +93,7 @@ function setup() {
 }
 
 function draw() {
+    smooth();
     background(0);
     drawTargetShadow();
     drawBlocks();
@@ -189,15 +190,46 @@ function drawConnections() {
 }
 
 function drawMouseLine() {
-    stroke(255);
-    strokeWeight(10);
-    noFill();
-    beginShape();
-    for (var i = 0; i < mouseLines.length; i++) {
-        var ver = mouseLines[i];
-        vertex(ver[0], ver[1]);
+    if(mouseLines.length < 2) {
+        return;
     }
-    endShape();
+
+    // draw stroke
+    stroke(255, 64, 64);
+    fill(255, 64, 64);
+    strokeWeight(4);
+    strokeCap(ROUND);
+    strokeJoin(ROUND);
+    var drawingPath = [];
+    var prevPoint = createVector(mouseLines[0][0], mouseLines[0][1]);
+    drawingPath.push(prevPoint);
+    for (var n = 1; n < mouseLines.length; n++) {
+        var currPoint = createVector(mouseLines[n][0], mouseLines[n][1]);
+        var delta = p5.Vector.sub(currPoint, prevPoint);
+        var midPoint = p5.Vector.add(currPoint, prevPoint).div(2);
+        var step = delta.div(10);
+        step.rotate(0.75);
+        var top = p5.Vector.add(midPoint, step);
+        var bottom = p5.Vector.sub(midPoint, step);
+        drawingPath.push(top);
+        drawingPath.unshift(bottom);
+        prevPoint = currPoint;
+    }
+    beginShape();
+    for (var p = 0; p < drawingPath.length; p++) {
+      curveVertex(drawingPath[p].x, drawingPath[p].y);
+    }
+    endShape(CLOSE);
+
+    // draw lines
+    // stroke(255);
+    // noFill();
+    // beginShape();
+    // for (var i = 0; i < mouseLines.length; i++) {
+    //     var ver = mouseLines[i];
+    //     vertex(ver[0], ver[1]);
+    // }
+    // endShape();
 }
 
 // todo: loop from beginning of the line segment instead of from group order
