@@ -174,15 +174,17 @@ function drawGroupAreas() {
 function drawConnections() {
     stroke(0, 255, 0, 64);
     strokeWeight(4);
-    for (var i = 0; i < connections.length; i++) {
-        var b1 = getBlockFromID(connections[i][0]);
-        var b2 = getBlockFromID(connections[i][1]);
-
-        line(b1.position.x,
-            b1.position.y,
-            b2.position.x,
-            b2.position.y
-        );
+    for (var i = 0; i < groups.length; i++) {
+        var connections = groups[i].connections;
+        for (var j = 0; j < connections.length; j++) {
+            var b1 = getBlockFromID(connections[j][0]);
+            var b2 = getBlockFromID(connections[j][1]);
+            line(b1.position.x,
+                b1.position.y,
+                b2.position.x,
+                b2.position.y
+            );
+        }
     }
 }
 
@@ -198,61 +200,110 @@ function drawMouseLine() {
     endShape();
 }
 
-function updateConnectionOnMouseDrag(p1, p2) {
-    connections = connections.filter(function (con) {
-        var b1 = getBlockFromID(con[0]);
-        var b2 = getBlockFromID(con[1]);
-        var lineIntersect = decomp.lineSegmentsIntersect([b1.position.x, b1.position.y], [b2.position.x, b2.position.y], p1, p2);
-        if (lineIntersect) {
-            return false;
-        }
-        return true;
-    });
-    // console.log('con:', connections);
-}
-
-function updateConnectionAfterMouseDrag() {
-    //reset groups & connections
-    groups = [];
-    // connections = [];
-    for (var r = 0; r < blocks.length; r++) {
-        blocks[r].group = undefined;
-        blocks[r].connected = [0, 0, 0, 0, 0, 0];
+function updateGroupAfterMouseDrag() {
+    if (mouseLines.length < 2) {
+        return;
     }
-    // loop
-    for (var i = 0; i < connections.length; i++ ) {
-        var con = connections[i];
-        var b1 = getBlockFromID(con[0]);
-        var b2 = getBlockFromID(con[1]);
-        if (b1.group === undefined && b2.group === undefined) {
-            b1.group = b2.group = groups.length;
-            groups.push({
-                blocks: [b1.id, b2.id]
-            });
-        }
-        else if (b1.group === undefined) {
-            b1.group = b2.group;
-            addToGroups(b1.id, b2.id);
-        }
-        else if (b2.group === undefined) {
-            b2.group = b1.group;
-            addToGroups(b2.id, b1.id);
-        }
-        else if (b1.group !== b2.group) {
-            // merge groups
-            if (b1.group < b2.group) {
-                mergeGroups(b2.group, b1.group);
+    for (var i = 0; i < groups.length; i++) {
+        var currGroup = groups[i];
+        var filteredConn = currGroup.connections.filter(function (con) {
+            var b1 = getBlockFromID(con[0]);
+            var b2 = getBlockFromID(con[1]);
+            var INTERSECTED = false;
+            for (var j = 1; j < mouseLines.length; j++) {
+                var lineIntersect = decomp.lineSegmentsIntersect([b1.position.x, b1.position.y], [b2.position.x, b2.position.y], mouseLines[j - 1], mouseLines[j]);
+                if (lineIntersect) {
+                    console.log('break the connection', b1.id, b2.id);
+                    INTERSECTED = true;
+                    break;
+                }
+            }
+            return !INTERSECTED;
+        });
+        if (filteredConn.length < currGroup.connections.length) {
+            // divide group
+            // console.log('con:', currGroup.connections);
+            var sets = [];
+            for (var j = 0; j < filteredConn.length; j++) {
+                var conn = filteredConn[j];
+                var FOUND_IN_SETS = false;
+                for (var s = 0; s < sets.length; s++) {
+                    if (sets[s].includes(conn[0]) && !sets[s].includes(conn[1])) {
+                        sets[s].push(conn[1]);
+                        FOUND_IN_SETS = true;
+                    }
+                    else if (!sets[s].includes(conn[0]) && sets[s].includes(conn[1])) {
+                        sets[s].push(conn[0]);
+                        FOUND_IN_SETS = true;
+                    }
+                    else if (sets[s].includes(conn[0]) && sets[s].includes(conn[1])) {
+                        FOUND_IN_SETS = true;
+                    }
+                }
+                if (!FOUND_IN_SETS) {
+                    sets.push([conn[0], conn[1]]);
+                }
+            }
+            // console.log('sets', sets); 
+            if (sets.length === 1) {
+                if (currGroup.blocks.length !== sets[0].length) {
+                    // reset group
+                    currGroup.connections = [];
+                    // separate missing block
+                    var filteredBlockId = currGroup.blocks.filter(function (id) {
+                        // reset block
+                        var b = getBlockFromID(id);
+                        b.connected = [0, 0, 0, 0, 0, 0];
+                        if (sets[0].includes(id)) {
+                            return false;
+                        }
+                        return true;
+                    })[0];
+                    var filteredBlock = getBlockFromID(filteredBlockId);
+                    filteredBlock.group = undefined;
+                    currGroup.blocks = sets[0];
+                }
+                else {
+                    // no change
+                    break;
+                }
+            }
+            else if (sets.length === 2) {
+                // reset curr grout to set 0
+                console.log('there', sets);
+                currGroup.blocks = sets[0];
+                currGroup.connections = [];
+                sets[0].map(function (id) {
+                    var b = getBlockFromID(id);
+                    b.connected = [0, 0, 0, 0, 0, 0];
+                });
+                // create a new group for the new set
+                var gId = groups.length;
+                sets[1].map(function (id) {
+                    var b = getBlockFromID(id);
+                    b.group = gId;
+                    b.connected = [0, 0, 0, 0, 0, 0];
+                });
+                groups.push({
+                    blocks: sets[1],
+                    connections: []
+                });
             }
             else {
-                mergeGroups(b1.group, b2.group);
+                console.warn('Invalid sets');
             }
+
+            filteredConn.map(function (c) {
+                // console.log('con', c);
+                createConnection(getBlockFromID(c[0]), getBlockFromID(c[1]));
+            });
+            break; // only break on group at a time
         }
-        createConnection(b1, b2);
     }
-    console.log('Groups:', groups);
+    console.log('Updated Groups:', groups);
     calculateGroupArea();
-    // separate groups 
     
+    // separate groups 
 }
 
 /* EVENTS */
@@ -260,7 +311,7 @@ function onMouseDownEvent() {
     console.log('mouse down');
     // start of drawing lines
     mouseStartOnDrag = true;
-    mouseLines.push(mouse.position);
+    mouseLines.push([mouse.position.x, mouse.position.y]);
 
     // record previous mouse position
     pMousePosition = {
@@ -283,7 +334,6 @@ function onMouseDownEvent() {
 function onMouseMoveEvent() {
     console.log('mouse move');
     if (mouseStartOnDrag) {
-        updateConnectionOnMouseDrag([mouse.position.x, mouse.position.y], [pMousePosition.x, pMousePosition.y]);
         mouseLines.push([mouse.position.x, mouse.position.y]);
     }
 
@@ -339,11 +389,11 @@ function onMouseMoveEvent() {
 
 function onMouseUpEvent() {
     console.log('mouse up');
-    if(mouseStartOnDrag){
+    if (mouseStartOnDrag) {
         mouseLines.push([mouse.position.x, mouse.position.y]);
         mouseStartOnDrag = false;
+        updateGroupAfterMouseDrag();
         mouseLines = [];
-        updateConnectionAfterMouseDrag();
     }
 
     // end individual block dragging
@@ -447,7 +497,7 @@ function updateTargetShadow(body, p) {
 function updateGroups() {
     //reset groups & connections
     groups = [];
-    connections = [];
+    // connections = [];
     for (var r = 0; r < blocks.length; r++) {
         blocks[r].group = undefined;
         blocks[r].connected = [0, 0, 0, 0, 0, 0];
@@ -465,7 +515,8 @@ function updateGroups() {
                 if (b1.group === undefined && b2.group === undefined) {
                     b1.group = b2.group = groups.length;
                     groups.push({
-                        blocks: [b1.id, b2.id]
+                        blocks: [b1.id, b2.id],
+                        connections: [[b1.id, b2.id]]
                     });
                 }
                 else if (b1.group === undefined) {
@@ -514,6 +565,7 @@ function mergeGroups(from, to) {
         one.group = to;
         groups[to].blocks.push(id);
     }
+    groups[to].connections = groups[to].connections.concat(groups[from].connections);
     groups.splice(from, 1);
 }
 
@@ -602,23 +654,24 @@ function offsetGroupPosition(id, offset) {
 }
 
 /* CONNECTIONS */
-function addConnection(b1, b2) {
+function addConnectionToGroup(b1, b2) {
+    var gId = b1.group;
     // sort from small to big
-    var id1 = b1 < b2 ? b1 : b2;
-    var id2 = b1 < b2 ? b2 : b1;
+    var id1 = b1.id < b2.id ? b1.id : b2.id;
+    var id2 = b1.id < b2.id ? b2.id : b1.id;
     // check whether it's existed
-    var filtered = connections.filter(function (p) {
+    var filtered = groups[gId].connections.filter(function (p) {
         return (p[0] === id1 && p[1] === id2);
     });
     if (filtered.length === 0) {
-        connections.push([id1, id2]);
+        groups[gId].connections.push([id1, id2]);
     }
-    // console.log('connection', connections);
+    // console.log('connection', groups[g].connections);
 }
 
 function createConnection(b1, b2) {
     // console.log('create connection with', b1.id, b2.id);
-    addConnection(b1.id, b2.id);
+    addConnectionToGroup(b1, b2);
     var p1 = [b1.position.x, b1.position.y];
     var p2 = [b2.position.x, b2.position.y];
     for (var i = 0; i < b1.vertices.length; i++) {
