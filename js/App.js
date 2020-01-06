@@ -25,6 +25,9 @@ var blocks = [];
 var groups = [];
 var connections = [];
 
+var mouseLines = [];
+var mouseStartOnDrag;
+
 function setup() {
     var canvas = createCanvas(windowWidth, windowHeight);
 
@@ -95,6 +98,7 @@ function draw() {
     drawBlocks();
     drawGroupAreas();
     drawConnections();
+    drawMouseLine();
 }
 
 /* RENDER */
@@ -173,7 +177,7 @@ function drawConnections() {
     for (var i = 0; i < connections.length; i++) {
         var b1 = getBlockFromID(connections[i][0]);
         var b2 = getBlockFromID(connections[i][1]);
-        
+
         line(b1.position.x,
             b1.position.y,
             b2.position.x,
@@ -182,9 +186,82 @@ function drawConnections() {
     }
 }
 
+function drawMouseLine() {
+    stroke(255);
+    strokeWeight(10);
+    noFill();
+    beginShape();
+    for (var i = 0; i < mouseLines.length; i++) {
+        var ver = mouseLines[i];
+        vertex(ver[0], ver[1]);
+    }
+    endShape();
+}
+
+function updateConnectionOnMouseDrag(p1, p2) {
+    connections = connections.filter(function (con) {
+        var b1 = getBlockFromID(con[0]);
+        var b2 = getBlockFromID(con[1]);
+        var lineIntersect = decomp.lineSegmentsIntersect([b1.position.x, b1.position.y], [b2.position.x, b2.position.y], p1, p2);
+        if (lineIntersect) {
+            return false;
+        }
+        return true;
+    });
+    // console.log('con:', connections);
+}
+
+function updateConnectionAfterMouseDrag() {
+    //reset groups & connections
+    groups = [];
+    // connections = [];
+    for (var r = 0; r < blocks.length; r++) {
+        blocks[r].group = undefined;
+        blocks[r].connected = [0, 0, 0, 0, 0, 0];
+    }
+    // loop
+    for (var i = 0; i < connections.length; i++ ) {
+        var con = connections[i];
+        var b1 = getBlockFromID(con[0]);
+        var b2 = getBlockFromID(con[1]);
+        if (b1.group === undefined && b2.group === undefined) {
+            b1.group = b2.group = groups.length;
+            groups.push({
+                blocks: [b1.id, b2.id]
+            });
+        }
+        else if (b1.group === undefined) {
+            b1.group = b2.group;
+            addToGroups(b1.id, b2.id);
+        }
+        else if (b2.group === undefined) {
+            b2.group = b1.group;
+            addToGroups(b2.id, b1.id);
+        }
+        else if (b1.group !== b2.group) {
+            // merge groups
+            if (b1.group < b2.group) {
+                mergeGroups(b2.group, b1.group);
+            }
+            else {
+                mergeGroups(b1.group, b2.group);
+            }
+        }
+        createConnection(b1, b2);
+    }
+    console.log('Groups:', groups);
+    calculateGroupArea();
+    // separate groups 
+    
+}
+
 /* EVENTS */
 function onMouseDownEvent() {
     console.log('mouse down');
+    // start of drawing lines
+    mouseStartOnDrag = true;
+    mouseLines.push(mouse.position);
+
     // record previous mouse position
     pMousePosition = {
         x: mouse.position.x,
@@ -205,6 +282,11 @@ function onMouseDownEvent() {
 
 function onMouseMoveEvent() {
     console.log('mouse move');
+    if (mouseStartOnDrag) {
+        updateConnectionOnMouseDrag([mouse.position.x, mouse.position.y], [pMousePosition.x, pMousePosition.y]);
+        mouseLines.push([mouse.position.x, mouse.position.y]);
+    }
+
     var mouseDiff = {
         x: mouse.position.x - pMousePosition.x,
         y: mouse.position.y - pMousePosition.y
@@ -257,6 +339,13 @@ function onMouseMoveEvent() {
 
 function onMouseUpEvent() {
     console.log('mouse up');
+    if(mouseStartOnDrag){
+        mouseLines.push([mouse.position.x, mouse.position.y]);
+        mouseStartOnDrag = false;
+        mouseLines = [];
+        updateConnectionAfterMouseDrag();
+    }
+
     // end individual block dragging
     if (currDragging) {
         console.log('end individual drag', currDragging);
@@ -382,7 +471,6 @@ function updateGroups() {
                 else if (b1.group === undefined) {
                     b1.group = b2.group;
                     addToGroups(b1.id, b2.id);
-                    createConnection(b1, b2);
                 }
                 else if (b2.group === undefined) {
                     b2.group = b1.group;
