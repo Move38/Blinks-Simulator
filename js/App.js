@@ -17,10 +17,10 @@ var engine;
 var mouse;
 var mouseConstraints;
 var pMousePosition;
-var currDragging;
-var currDraggingGroup;
-var currDraggingOffset;
-var targetShadow;
+// var currDragging;
+// var currDraggingGroup;
+// var currDraggingOffset;
+// var targetShadow;
 var blocks = [];
 var groups = [];
 var connections = [];
@@ -45,7 +45,7 @@ function setup() {
         blocks.push(block);
     }
     updateGroups();
-    console.log(blocks[0]);
+    // console.log(blocks[0]);
 
     // add walls
     World.add(engine.world, [
@@ -70,9 +70,9 @@ function setup() {
         x: mouse.position.x,
         y: mouse.position.y
     };
-    currDraggingOffset = {
-        x: 0, y: 0
-    }
+    // currDraggingOffset = {
+    //     x: 0, y: 0
+    // }
 
     // Events.on(mouseConstraints, 'startdrag', function () {
     // });
@@ -95,9 +95,9 @@ function setup() {
 function draw() {
     smooth();
     background(0);
-    drawTargetShadow();
+    // drawTargetShadow();
     drawBlocks();
-    drawGroupAreas();
+    // drawGroupAreas();
     drawConnections();
     drawMouseLine();
 }
@@ -140,37 +140,37 @@ function drawBlocks() {
 
 function drawTargetShadow() {
     if (!targetShadow) return;
-    // update round radius
-    var vertices = Vertices.chamfer(targetShadow.vertices, 10, -1, 2, 14); //default chamfer
-    noStroke();
-    fill(255, 64);
-    beginShape();
-    for (var i = 0; i < vertices.length; i++) {
-        var ver = vertices[i];
-        vertex(ver.x, ver.y);
-    }
-    endShape(CLOSE);
+
+    // var vertices = Vertices.chamfer(targetShadow.vertices, 10, -1, 2, 14); //default chamfer
+    // noStroke();
+    // fill(255, 64);
+    // beginShape();
+    // for (var i = 0; i < vertices.length; i++) {
+    //     var ver = vertices[i];
+    //     vertex(ver.x, ver.y);
+    // }
+    // endShape(CLOSE);
 }
 
-function drawGroupAreas() {
-    for (var i = 0; i < groups.length; i++) {
-        stroke(0, 0, 255, 64);
-        fill(255, 255, 0, 64);
-        beginShape();
-        for (var j = 0; j < groups[i].innerarea.length; j++) {
-            var ver = groups[i].innerarea[j];
-            vertex(ver.x, ver.y);
-        }
-        endShape(CLOSE);
-        for (var j = 0; j < groups[i].innerarea.length; j++) {
-            var ver = groups[i].innerarea[j];
-            fill(255, 0, 0);
-            noStroke();
-            ellipse(ver.x, ver.y, 4, 4);
-            vertex(ver.x, ver.y);
-        }
-    }
-}
+// function drawGroupAreas() {
+//     for (var i = 0; i < groups.length; i++) {
+//         stroke(0, 0, 255, 64);
+//         fill(255, 255, 0, 64);
+//         beginShape();
+//         for (var j = 0; j < groups[i].innerarea.length; j++) {
+//             var ver = groups[i].innerarea[j];
+//             vertex(ver.x, ver.y);
+//         }
+//         endShape(CLOSE);
+//         for (var j = 0; j < groups[i].innerarea.length; j++) {
+//             var ver = groups[i].innerarea[j];
+//             fill(255, 0, 0);
+//             noStroke();
+//             ellipse(ver.x, ver.y, 4, 4);
+//             vertex(ver.x, ver.y);
+//         }
+//     }
+// }
 
 function drawConnections() {
     stroke(0, 255, 0, 64);
@@ -701,6 +701,7 @@ function offsetGroupPosition(id, offset) {
 /* CONNECTIONS */
 function addConnectionToGroup(b1, b2) {
     var gId = b1.group;
+    console.log('gId', gId, groups);
     // sort from small to big
     var id1 = b1.id < b2.id ? b1.id : b2.id;
     var id2 = b1.id < b2.id ? b2.id : b1.id;
@@ -755,12 +756,13 @@ function getBlockFromID(id) {
 }
 
 function generateBlock(x, y, s) {
-    var block = Bodies.polygon(x, y, BLOCK_SIDES, s, {
-        friction: 0.8,
-        frictionAir: 0.8,
-        isStatic: true
-    });
-    World.addBody(engine.world, block);
+    // {
+    //     friction: 0.8,
+    //     frictionAir: 0.8,
+    //     isStatic: true
+    // }
+    var block = Bodies.polygon(x, y, BLOCK_SIDES, s);
+    // World.addBody(engine.world, block);
     return block;
 }
 
