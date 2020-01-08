@@ -23,6 +23,9 @@ var blocks = [];
 var groups = [];
 var connections = [];
 
+var currDragging;
+var pPosition;
+
 var mouseLines = [];
 var mouseStartOnDrag;
 
@@ -296,7 +299,13 @@ function updateAfterMouseDrag() {
 /* EVENTS */
 function onMouseDownEvent() {
     console.log('mouse down');
+
     if(mouseConstraints.body){
+        currDragging = mouseConstraints.body;
+        pPosition = {
+            x: currDragging.position.x,
+            y: currDragging.position.y
+        }
         return;
     }
     mouseStartOnDrag = true;
@@ -309,8 +318,21 @@ function onMouseMoveEvent() {
         mouseLines.push(createVector(mouse.position.x, mouse.position.y));
         return;
     }
-    if(mouseConstraints.body){
-        console.log('dragging');
+    if(currDragging){
+        var offset = {
+            x: currDragging.position.x - pPosition.x,
+            y: currDragging.position.y - pPosition.y
+        }
+        blocks.map(function(b){
+            if(b.group === currDragging.id){
+                Body.setPosition(b, {
+                    x: b.position.x + offset.x,
+                    y: b.position.y + offset.y
+                });
+            }
+        });
+        pPosition.x = currDragging.position.x;
+        pPosition.y = currDragging.position.y;
         return;
     }
     Composite.allBodies(engine.world).map(function(b){
@@ -331,6 +353,30 @@ function onMouseUpEvent() {
         mouseStartOnDrag = false;
         updateAfterMouseDrag();
         mouseLines = [];
+    }
+    
+    if(currDragging){
+        console.log("drag done");
+        var offset = {
+            x: currDragging.position.x - pPosition.x,
+            y: currDragging.position.y - pPosition.y
+        }
+        blocks.map(function(b){
+            if(b.group === currDragging.id){
+                Body.setPosition(b, {
+                    x: b.position.x + offset.x,
+                    y: b.position.y + offset.y
+                });
+            }
+        });
+        var gid;
+        groups.map(function(g, i){
+            if(g.id === currDragging.id){
+                gid = i;
+            }
+        });
+        generateGroupPts(gid);
+        currDragging = null;
     }
 }
 
@@ -497,20 +543,27 @@ function createGroup(bks, conns) {
         generateGroupPts(g);
         // console.log('create a new body', groups[g].pts);
         // add group to the world
-        generatePolygonFromVertices(groups[g].pts);
+        var comp = generatePolygonFromVertices(groups[g].pts);
+        groups[g].id = comp.id;
+        groups[g].blocks.map(function(bid){
+            var bk = getBlockFromID(bid);
+            bk.group = comp.id;
+        })
     });
 
     // create group points for singles
     bks.map(function (bid) {
         var bk = getBlockFromID(bid);
+        // add group to the world
+        var comp = generatePolygonFromVertices(bk.vertices);
+        bk.group = comp;
         groups.push({
+            id: comp.id,
             blocks: [bid],
             connections: [],
             pts: bk.vertices,
             innerpts: hmpoly.createPaddingPolygon(bk.vertices, BLOCK_RADIUS)
         })
-        // add group to the world
-        generatePolygonFromVertices(bk.vertices);
     });
     console.log('Groups:', groups);
     console.log('World', Composite.allBodies(engine.world));
@@ -587,7 +640,14 @@ function divideGroup(gid, bconns) {
         var b = getBlockFromID(groups[gid].blocks[j]);
         b.connected = [0, 0, 0, 0, 0, 0];
     }
+    // remove group
+    var currGroup = Composite.allBodies(engine.world).filter(function(b){
+        return b.id === groups[gid].id;
+    })[0];
+    World.remove(engine.world, currGroup);
     groups.splice(gid, 1);
+    
+    // create new groups;
     createGroup(bks, filteredConns);
 }
 
@@ -634,7 +694,7 @@ function generateGroupPts(gid) {
             x: currPt.x,
             y: currPt.y
         });
-        // console.log('here', currBlk.id, currPt.index, connBlkID);
+        // console.log('currPt', currBlk.id, currPt.index, connBlkID);
         if (connBlkID !== 0) {
             // it's connected, move to next block
             var preBlkID = currBlk.id;
@@ -728,6 +788,7 @@ function generatePolygonFromVertices(vts) {
     }, true);
     body.pts = vts;
     World.add(engine.world, body);
+    return body;
 }
 
 /* UTILITIES */
