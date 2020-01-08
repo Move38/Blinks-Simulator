@@ -1,5 +1,6 @@
 var Engine = Matter.Engine;
 var World = Matter.World;
+var Composite = Matter.Composite;
 var Body = Matter.Body;
 var Bodies = Matter.Bodies;
 var Bounds = Matter.Bounds;
@@ -16,7 +17,7 @@ var TOTAL_BLOCK = 6;
 var engine;
 var mouse;
 var mouseConstraints;
-var pMousePosition;
+
 // var targetShadow;
 var blocks = [];
 var groups = [];
@@ -42,7 +43,6 @@ function setup() {
         blocks.push(block);
     }
     initializeGroups();
-    console.log(blocks[0]);
 
     // add walls
     World.add(engine.world, [
@@ -62,11 +62,6 @@ function setup() {
         engine.world,
         mouseConstraints
     );
-    // initialize previous mouse structure
-    pMousePosition = {
-        x: mouse.position.x,
-        y: mouse.position.y
-    };
 
     Events.on(mouseConstraints, 'mousedown', function () {
         onMouseDownEvent();
@@ -89,9 +84,38 @@ function draw() {
     drawGroupAreas();
     drawConnections();
     drawMouseLine();
+
+    drawWorld();
 }
 
 /* RENDER */
+function drawWorld() {
+    Composite.allBodies(engine.world).map(function (b) {
+        // draw block https://github.com/liabru/matter-js/blob/master/src/render/Render.js
+        noStroke();
+        fill(240, 196, 196, 128);
+        beginShape();
+        for (k = b.parts.length > 1 ? 1 : 0; k < b.parts.length; k++) {
+            var part = b.parts[k];
+            vertex(part.vertices[0].x, part.vertices[0].y);
+
+            for (j = 1; j < part.vertices.length; j++) {
+                if (!part.vertices[j - 1].isInternal) {
+                    vertex(part.vertices[j].x, part.vertices[j].y);
+                } else {
+                    vertex(part.vertices[j].x, part.vertices[j].y);
+                }
+
+                if (part.vertices[j].isInternal) {
+                    vertex(part.vertices[(j + 1) % part.vertices.length].x, part.vertices[(j + 1) % part.vertices.length].y);
+                }
+            }
+            vertex(part.vertices[0].x, part.vertices[0].y);
+        }
+        endShape(CLOSE);
+    });
+}
+
 function drawBlocks() {
     for (var i = 0; i < blocks.length; i++) {
         var one = blocks[i];
@@ -452,7 +476,10 @@ function createGroup(bks, conns) {
 
     // generate group points for groups
     createdArr.map(function (g) {
-        generateGroupPts(g)
+        generateGroupPts(g);
+        console.log('create a new body', groups[g].pts);
+        // add group to the world
+        generatePolygonFromVertices(groups[g].pts);
     });
 
     // create group points for singles
@@ -464,8 +491,11 @@ function createGroup(bks, conns) {
             pts: bk.vertices,
             innerpts: hmpoly.createPaddingPolygon(bk.vertices, BLOCK_RADIUS)
         })
+        // add group to the world
+        generatePolygonFromVertices(bk.vertices);
     });
     console.log('Groups:', groups);
+    console.log('World', Composite.allBodies(engine.world));
 }
 
 function analyzingConnections(conns) {
@@ -570,7 +600,10 @@ function generateGroupPts(gid) {
     }
 
     // add bottom right vertice to group pts as the starting point
-    group.pts.push(brPt);
+    group.pts.push({
+        x: brPt.x,
+        y: brPt.y
+    });
     // find all vertices from the outer lines
     var currBlk = brBlk;
     var currPt = brBlk.vertices[(brPt.index + 1) % BLOCK_SIDES];
@@ -579,7 +612,10 @@ function generateGroupPts(gid) {
     while (currPt !== brPt || counter > group.blocks.length * BLOCK_SIDES) {
         // check whether currPt is a connection point
         var connBlkID = currBlk.connected[currPt.index];
-        group.pts.push(currPt);
+        group.pts.push({
+            x: currPt.x,
+            y: currPt.y
+        });
         // console.log('here', currBlk.id, currPt.index, connBlkID);
         if (connBlkID !== 0) {
             // it's connected, move to next block
@@ -652,14 +688,27 @@ function getBlockFromID(id) {
 }
 
 function generateBlock(x, y, s) {
-    // {
-    //     friction: 0.8,
-    //     frictionAir: 0.8,
-    //     isStatic: true
-    // }
-    var block = Bodies.polygon(x, y, BLOCK_SIDES, s);
-    // World.addBody(engine.world, block);
+    var block = Bodies.polygon(x, y, BLOCK_SIDES, s,
+    {
+        isStatic: true
+    });
     return block;
+}
+
+function generatePolygonFromVertices(vts) {
+    var cx = 0;
+    var cy = 0;
+    vts.map(function(vt){
+        cx += vt.x;
+        cy += vt.y
+    });
+    cx /= vts.length;
+    cy /= vts.length;
+    var gBody = Bodies.fromVertices(cx, cy, vts, {
+        friction: 0.8,
+        frictionAir: 0.8,
+    }, true);
+    World.add(engine.world, gBody);
 }
 
 /* UTILITIES */
