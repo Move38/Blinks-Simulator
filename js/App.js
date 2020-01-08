@@ -91,28 +91,30 @@ function draw() {
 /* RENDER */
 function drawWorld() {
     Composite.allBodies(engine.world).map(function (b) {
-        // draw block https://github.com/liabru/matter-js/blob/master/src/render/Render.js
-        noStroke();
-        fill(240, 196, 196, 128);
-        beginShape();
-        for (k = b.parts.length > 1 ? 1 : 0; k < b.parts.length; k++) {
-            var part = b.parts[k];
-            vertex(part.vertices[0].x, part.vertices[0].y);
+        if(b.isHighlighted){
+            // draw polygon 
+            // https://github.com/liabru/matter-js/blob/master/src/render/Render.js
+            noStroke();
+            fill(240, 196, 196, 128);
+            for (k = b.parts.length > 1 ? 1 : 0; k < b.parts.length; k++) {
+                beginShape();
+                var part = b.parts[k];
+                vertex(part.vertices[0].x, part.vertices[0].y);
+                for (j = 1; j < part.vertices.length; j++) {
+                    if (!part.vertices[j - 1].isInternal) {
+                        vertex(part.vertices[j].x, part.vertices[j].y);
+                    } else {
+                        vertex(part.vertices[j].x, part.vertices[j].y);
+                    }
 
-            for (j = 1; j < part.vertices.length; j++) {
-                if (!part.vertices[j - 1].isInternal) {
-                    vertex(part.vertices[j].x, part.vertices[j].y);
-                } else {
-                    vertex(part.vertices[j].x, part.vertices[j].y);
+                    if (part.vertices[j].isInternal) {
+                        vertex(part.vertices[(j + 1) % part.vertices.length].x, part.vertices[(j + 1) % part.vertices.length].y);
+                    }
                 }
-
-                if (part.vertices[j].isInternal) {
-                    vertex(part.vertices[(j + 1) % part.vertices.length].x, part.vertices[(j + 1) % part.vertices.length].y);
-                }
+                vertex(part.vertices[0].x, part.vertices[0].y);
+                endShape(CLOSE);
             }
-            vertex(part.vertices[0].x, part.vertices[0].y);
         }
-        endShape(CLOSE);
     });
 }
 
@@ -294,6 +296,9 @@ function updateAfterMouseDrag() {
 /* EVENTS */
 function onMouseDownEvent() {
     console.log('mouse down');
+    if(mouseConstraints.body){
+        return;
+    }
     mouseStartOnDrag = true;
     mouseLines.push(createVector(mouse.position.x, mouse.position.y));
 }
@@ -304,6 +309,19 @@ function onMouseMoveEvent() {
         mouseLines.push(createVector(mouse.position.x, mouse.position.y));
         return;
     }
+    if(mouseConstraints.body){
+        console.log('dragging');
+        return;
+    }
+    Composite.allBodies(engine.world).map(function(b){
+        b.isHighlighted = false;
+        // highlight group polygon if on hover
+        if (Bounds.contains(b.bounds, mouse.position)) {
+            if (Vertices.contains(b.vertices, mouse.position)) {
+                b.isHighlighted = true;
+            }
+        }
+    });
 }
 
 function onMouseUpEvent() {
@@ -477,7 +495,7 @@ function createGroup(bks, conns) {
     // generate group points for groups
     createdArr.map(function (g) {
         generateGroupPts(g);
-        console.log('create a new body', groups[g].pts);
+        // console.log('create a new body', groups[g].pts);
         // add group to the world
         generatePolygonFromVertices(groups[g].pts);
     });
@@ -704,11 +722,12 @@ function generatePolygonFromVertices(vts) {
     });
     cx /= vts.length;
     cy /= vts.length;
-    var gBody = Bodies.fromVertices(cx, cy, vts, {
+    var body = Bodies.fromVertices(cx, cy, vts, {
         friction: 0.8,
         frictionAir: 0.8,
     }, true);
-    World.add(engine.world, gBody);
+    body.pts = vts;
+    World.add(engine.world, body);
 }
 
 /* UTILITIES */
