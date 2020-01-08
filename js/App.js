@@ -17,9 +17,6 @@ var engine;
 var mouse;
 var mouseConstraints;
 var pMousePosition;
-// var currDragging;
-// var currDraggingGroup;
-// var currDraggingOffset;
 // var targetShadow;
 var blocks = [];
 var groups = [];
@@ -44,7 +41,7 @@ function setup() {
         var block = generateBlock(width / 2 + (i - TOTAL_BLOCK / 2) * BLOCK_RADIUS * 1.732, height / 2 + alt * BLOCK_RADIUS * 1.5, BLOCK_RADIUS * 2);
         blocks.push(block);
     }
-    createGroups();
+    initializeGroups();
     // console.log(blocks[0]);
 
     // add walls
@@ -70,14 +67,6 @@ function setup() {
         x: mouse.position.x,
         y: mouse.position.y
     };
-    // currDraggingOffset = {
-    //     x: 0, y: 0
-    // }
-
-    // Events.on(mouseConstraints, 'startdrag', function () {
-    // });
-    // Events.on(mouseConstraints, 'enddrag', function () {
-    // });
 
     Events.on(mouseConstraints, 'mousedown', function () {
         onMouseDownEvent();
@@ -97,7 +86,7 @@ function draw() {
     background(0);
     // drawTargetShadow();
     drawBlocks();
-    // drawGroupAreas();
+    drawGroupAreas();
     drawConnections();
     drawMouseLine();
 }
@@ -152,25 +141,28 @@ function drawTargetShadow() {
     // endShape(CLOSE);
 }
 
-// function drawGroupAreas() {
-//     for (var i = 0; i < groups.length; i++) {
-//         stroke(0, 0, 255, 64);
-//         fill(255, 255, 0, 64);
-//         beginShape();
-//         for (var j = 0; j < groups[i].innerarea.length; j++) {
-//             var ver = groups[i].innerarea[j];
-//             vertex(ver.x, ver.y);
-//         }
-//         endShape(CLOSE);
-//         for (var j = 0; j < groups[i].innerarea.length; j++) {
-//             var ver = groups[i].innerarea[j];
-//             fill(255, 0, 0);
-//             noStroke();
-//             ellipse(ver.x, ver.y, 4, 4);
-//             vertex(ver.x, ver.y);
-//         }
-//     }
-// }
+function drawGroupAreas() {
+    for (var i = 0; i < groups.length; i++) {
+        if(!groups[i].innerpts){
+            return;
+        }
+        stroke(0, 0, 255, 64);
+        fill(255, 255, 0, 64);
+        beginShape();
+        for (var j = 0; j < groups[i].innerpts.length; j++) {
+            var ver = groups[i].innerpts[j];
+            vertex(ver.x, ver.y);
+        }
+        endShape(CLOSE);
+        for (var j = 0; j < groups[i].innerpts.length; j++) {
+            var ver = groups[i].innerpts[j];
+            fill(255, 0, 0);
+            noStroke();
+            ellipse(ver.x, ver.y, 4, 4);
+            vertex(ver.x, ver.y);
+        }
+    }
+}
 
 function drawConnections() {
     stroke(0, 255, 0, 64);
@@ -178,12 +170,12 @@ function drawConnections() {
     for (var i = 0; i < groups.length; i++) {
         var connections = groups[i].connections;
         for (var j = 0; j < connections.length; j++) {
-            var b1 = getBlockFromID(connections[j][0]);
-            var b2 = getBlockFromID(connections[j][1]);
-            line(b1.position.x,
-                b1.position.y,
-                b2.position.x,
-                b2.position.y
+            var b0 = getBlockFromID(connections[j][0]);
+            var b1 = getBlockFromID(connections[j][1]);
+            line(b0.position.x,
+                b0.position.y,
+                b1.position.x,
+                b1.position.y
             );
         }
     }
@@ -201,10 +193,10 @@ function drawMouseLine() {
     strokeCap(ROUND);
     strokeJoin(ROUND);
     var drawingPath = [];
-    var prevPoint = createVector(mouseLines[0][0], mouseLines[0][1]);
+    var prevPoint = mouseLines[0];
     drawingPath.push(prevPoint);
     for (var n = 1; n < mouseLines.length; n++) {
-        var currPoint = createVector(mouseLines[n][0], mouseLines[n][1]);
+        var currPoint = mouseLines[n];
         var delta = p5.Vector.sub(currPoint, prevPoint);
         var midPoint = p5.Vector.add(currPoint, prevPoint).div(2);
         var step = delta.div(10);
@@ -220,257 +212,84 @@ function drawMouseLine() {
       curveVertex(drawingPath[p].x, drawingPath[p].y);
     }
     endShape(CLOSE);
-
-    // draw lines
-    // stroke(255);
-    // noFill();
-    // beginShape();
-    // for (var i = 0; i < mouseLines.length; i++) {
-    //     var ver = mouseLines[i];
-    //     vertex(ver[0], ver[1]);
-    // }
-    // endShape();
 }
 
-// todo: loop from beginning of the line segment instead of from group order
-function updateGroupAfterMouseDrag() {
+function updateAfterMouseDrag() {
     if (mouseLines.length < 2) {
         return;
     }
-    for (var i = 0; i < groups.length; i++) {
-        var currGroup = groups[i];
-        var filteredConn = currGroup.connections.filter(function (con) {
-            var b1 = getBlockFromID(con[0]);
-            var b2 = getBlockFromID(con[1]);
-            var INTERSECTED = false;
-            for (var j = 1; j < mouseLines.length; j++) {
-                var lineIntersect = decomp.lineSegmentsIntersect([b1.position.x, b1.position.y], [b2.position.x, b2.position.y], mouseLines[j - 1], mouseLines[j]);
+    // get first group that got connections broken
+    var gid = -1;
+    var brokenConns = [];
+    for( var i = 1; i < mouseLines.length; i++) {
+        if(gid < 0){
+            for( var j=0; j<groups.length; j++){
+                var INTERSECTED = false;
+                for(var m=0; m<groups[j].connections.length; m++){
+                    var b0 = getBlockFromID(groups[j].connections[m][0]);
+                    var b1 = getBlockFromID(groups[j].connections[m][1]);
+                    var lineIntersect = lineSegmentsIntersect(b0.position, b1.position, mouseLines[i - 1], mouseLines[i]);
+                    if (lineIntersect) {
+                        INTERSECTED = true;
+                        gid = j;
+                        brokenConns.push([b0.id, b1.id]);
+                        console.log('break the connection', b0.id, b1.id);
+                        break;
+                    }
+                }
+                if( INTERSECTED ) {
+                    break;
+                }
+            }
+        }
+        else {
+            for(var m=0; m<groups[gid].connections.length; m++){
+                var b0 = getBlockFromID(groups[gid].connections[m][0]);
+                var b1 = getBlockFromID(groups[gid].connections[m][1]);
+                var lineIntersect = lineSegmentsIntersect(b0.position, b1.position, mouseLines[i - 1], mouseLines[i]);
                 if (lineIntersect) {
-                    console.log('break the connection', b1.id, b2.id);
-                    INTERSECTED = true;
+                    var filteredBC = brokenConns.filter(function(p){
+                        return p[0] === b0.id && p[1] === b1.id;
+                    });
+                    if(filteredBC.length === 0){
+                        brokenConns.push([b0.id, b1.id]);
+                        console.log('break the connection', b0.id, b1.id);
+                    }
                     break;
                 }
             }
-            return !INTERSECTED;
-        });
-        console.log('filtered conn', filteredConn);
-        if (filteredConn.length < currGroup.connections.length) {
-            // divide group
-            // console.log('con:', currGroup.connections);
-            var sets = [];
-            for (var j = 0; j < filteredConn.length; j++) {
-                var conn = filteredConn[j];
-                var FOUND_IN_SETS = false;
-                for (var s = 0; s < sets.length; s++) {
-                    if (sets[s].includes(conn[0]) && !sets[s].includes(conn[1])) {
-                        sets[s].push(conn[1]);
-                        FOUND_IN_SETS = true;
-                    }
-                    else if (!sets[s].includes(conn[0]) && sets[s].includes(conn[1])) {
-                        sets[s].push(conn[0]);
-                        FOUND_IN_SETS = true;
-                    }
-                    else if (sets[s].includes(conn[0]) && sets[s].includes(conn[1])) {
-                        FOUND_IN_SETS = true;
-                    }
-                }
-                if (!FOUND_IN_SETS) {
-                    sets.push([conn[0], conn[1]]);
-                }
-            }
-            // console.log('sets', sets); 
-            if (sets.length === 1) {
-                if (currGroup.blocks.length !== sets[0].length) {
-                    // reset group
-                    currGroup.connections = [];
-                    // separate missing block
-                    var filteredBlockId = currGroup.blocks.filter(function (id) {
-                        // reset block
-                        var b = getBlockFromID(id);
-                        b.connected = [0, 0, 0, 0, 0, 0];
-                        if (sets[0].includes(id)) {
-                            return false;
-                        }
-                        return true;
-                    })[0];
-                    var filteredBlock = getBlockFromID(filteredBlockId);
-                    filteredBlock.group = undefined;
-                    currGroup.blocks = sets[0];
-                }
-                else {
-                    // no change
-                    break;
-                }
-            }
-            else if (sets.length === 2) {
-                // reset curr grout to set 0
-                currGroup.blocks = sets[0];
-                currGroup.connections = [];
-                sets[0].map(function (id) {
-                    var b = getBlockFromID(id);
-                    b.connected = [0, 0, 0, 0, 0, 0];
-                });
-                // create a new group for the new set
-                var gId = groups.length;
-                sets[1].map(function (id) {
-                    var b = getBlockFromID(id);
-                    b.group = gId;
-                    b.connected = [0, 0, 0, 0, 0, 0];
-                });
-                groups.push({
-                    blocks: sets[1],
-                    connections: []
-                });
-            }
-            else if (sets.length === 0) {
-                currGroup.blocks.map(function(id){
-                    var b = getBlockFromID(id);
-                    b.group = undefined;
-                    b.connected = [0, 0, 0, 0, 0, 0];
-                });
-                groups.splice(i, 1);
-                break;
-            }
-            else{
-                console.warn('Invalid sets', sets);
-            }
-
-            filteredConn.map(function (c) {
-                // console.log('con', c);
-                createConnection(getBlockFromID(c[0]), getBlockFromID(c[1]));
-            });
-            break; // only break on group at a time
         }
     }
-    console.log('Updated Groups:', groups);
-    // calculateGroupArea();
 
-    // separate groups 
+    if(gid >= 0 && brokenConns.length > 0){
+        divideGroup(gid, brokenConns);
+        // separate groups 
+    }
 }
 
 /* EVENTS */
 function onMouseDownEvent() {
     console.log('mouse down');
     mouseStartOnDrag = true;
-
-    // record previous mouse position
-    // pMousePosition = {
-    //     x: mouse.position.x,
-    //     y: mouse.position.y
-    // };
-    // var groupsToHighlight = getGroupsToHighlight();
-    // if (groupsToHighlight !== undefined) {
-    //     currDraggingGroup = groupsToHighlight;
-    //     console.log('start group dragging', currDraggingGroup);
-    // }
-    // else if (mouseConstraints.body) {
-    //     // set single block for free to drag around
-    //     Body.setStatic(mouseConstraints.body, false);
-    //     currDragging = mouseConstraints.body;
-    //     console.log('start block dragging', currDragging);
-    // }
-    // else {
-    //     // start of drawing lines
-    //     mouseStartOnDrag = true;
-    //     mouseLines.push([mouse.position.x, mouse.position.y]);
-    // }
+    mouseLines.push(createVector(mouse.position.x, mouse.position.y));
 }
 
 function onMouseMoveEvent() {
     console.log('mouse move');
     if (mouseStartOnDrag) {
-        mouseLines.push([mouse.position.x, mouse.position.y]);
+        mouseLines.push(createVector(mouse.position.x, mouse.position.y));
         return;
     }
-
-    // var mouseDiff = {
-    //     x: mouse.position.x - pMousePosition.x,
-    //     y: mouse.position.y - pMousePosition.y
-    // }
-    // if (currDragging === undefined && currDraggingGroup === undefined) {
-    //     // check groups to highlight on hover
-    //     var groupsToHighlight = getGroupsToHighlight();
-    //     if (groupsToHighlight === undefined) {
-    //         // reset all blocks to default
-    //         for (var i = 0; i < blocks.length; i++) {
-    //             var one = blocks[i];
-    //             one.isHighlighted = false;
-    //             // highlight individual blocks if on hover
-    //             if (Bounds.contains(one.bounds, mouse.position)) {
-    //                 if (Vertices.contains(one.vertices, mouse.position)) {
-    //                     one.isHighlighted = true;
-    //                     // console.log('on hover: ', one.id);
-    //                 }
-    //             }
-    //         }
-    //     }
-    //     else {
-    //         // highlight blocks inside that group
-    //         for (var i = 0; i < blocks.length; i++) {
-    //             var one = blocks[i];
-    //             one.isHighlighted = (one.group === groupsToHighlight);
-    //         }
-    //     }
-    // }
-    // // if group is on dragging
-    // else if (currDraggingGroup !== undefined) {
-    //     offsetGroupPosition(currDraggingGroup, mouseDiff);
-    // }
-    // // if indiviual block is on dragging
-    // else {
-    //     // update block angle on dragging
-    //     // angle = atan2(cross(a,b), dot(a,b))
-    //     currDraggingOffset.x = mouse.position.x - currDragging.position.x;
-    //     currDraggingOffset.y = mouse.position.y - currDragging.position.y;
-    //     var addedVec = Vector.add(currDraggingOffset, Vector.mult(mouseDiff, Vector.magnitude(currDraggingOffset) / BLOCK_RADIUS));
-    //     var rotationAngle = Math.atan2(Vector.cross(currDraggingOffset, addedVec), Vector.dot(currDraggingOffset, addedVec));
-    //     Body.setAngle(currDragging, currDragging.angle + rotationAngle);
-    //     console.log(currDraggingOffset, mouseDiff, currDragging.angle, rotationAngle);
-    //     checkLocations();
-    // }
-    // // update previous mouse position
-    // pMousePosition.x = mouse.position.x;
-    // pMousePosition.y = mouse.position.y;
 }
 
 function onMouseUpEvent() {
     console.log('mouse up');
     if (mouseStartOnDrag) {
-        mouseLines.push([mouse.position.x, mouse.position.y]);
+        mouseLines.push(createVector(mouse.position.x, mouse.position.y));
         mouseStartOnDrag = false;
-        updateGroupAfterMouseDrag();
+        updateAfterMouseDrag();
         mouseLines = [];
     }
-
-    // // end individual block dragging
-    // if (currDragging) {
-    //     console.log('end individual drag', currDragging);
-    //     if (targetShadow) {
-    //         Body.setPosition(currDragging, {
-    //             x: targetShadow.body.position.x + targetShadow.offset.x,
-    //             y: targetShadow.body.position.y + targetShadow.offset.y
-    //         })
-    //         // limit to 0 to 60
-    //         var angleDiff = degrees(targetShadow.body.angle - currDragging.angle + PI * 2) % 60
-    //         // update to -30 to 30 for minimal rotation
-    //         angleDiff = angleDiff > 30 ? angleDiff - 60 : angleDiff;
-    //         var angle = (currDragging.angle + radians(angleDiff))
-    //         Body.setAngle(currDragging, angle);
-    //         clearTargetShadow();
-    //     }
-    //     updateGroups();
-    //     // set block to static if it belongs to a new group
-    //     if (currDragging.group !== undefined) {
-    //         Body.setStatic(currDragging, true);
-    //     }
-    //     currDragging = undefined;
-    // }
-    // // end group dragging
-    // if (currDraggingGroup !== undefined) {
-    //     console.log('end group dragging', currDraggingGroup);
-    //     currDraggingGroup = undefined;
-    //     updateGroups();
-    // }
 }
 
 /* TARGET SHADOW */
@@ -540,6 +359,7 @@ function checkLocations() {
 
 
 /* GROUPS */
+
 function getGroupIndex(bid) {
     for (var i = 0; i < groups.length; i++) {
         if (groups[i].blocks.includes(bid)) {
@@ -548,9 +368,10 @@ function getGroupIndex(bid) {
     }
     return -1;
 }
-function createGroups() {
-    // initial groups
+
+function initializeGroups() {
     groups = [];
+    var conns = [];
     // create connection array for each block
     for (var r = 0; r < blocks.length; r++) {
         blocks[r].connected = [0, 0, 0, 0, 0, 0];
@@ -563,127 +384,201 @@ function createGroups() {
             // check block distance
             var d = dist(b0.position.x, b0.position.y, b1.position.x, b1.position.y);
             if (d < BLOCK_RADIUS * 3.47) {
-                var bi0 = getGroupIndex(b0);
-                var bi1 = getGroupIndex(b1);
-                if (b1.group === undefined && b2.group === undefined) {
-                    b1.group = b2.group = groups.length;
-                    groups.push({
-                        blocks: [i, j],
-                        connections: [[i, j]]
-                    });
-                }
-                else if (b1.group === undefined) {
-                    b1.group = b2.group;
-                    addToGroups(b1.id, b2.id);
-                }
-                else if (b2.group === undefined) {
-                    b2.group = b1.group;
-                    addToGroups(b2.id, b1.id);
-                }
-                else if (b1.group !== b2.group) {
-                    // merge groups
-                    if (b1.group < b2.group) {
-                        mergeGroups(b2.group, b1.group);
-                    }
-                    else {
-                        mergeGroups(b1.group, b2.group);
-                    }
-                }
-                createConnection(b1, b2);
+                conns.push([b0.id, b1.id]);
             }
         }
     }
+    createGroup(conns);
+}
+
+function createGroup(conns){
+    var createdArr = [];
+    var gid;
+    conns.map(function(conn){
+        var b0 = getBlockFromID(conn[0]);
+        var b1 = getBlockFromID(conn[1]);
+        var bi0 = getGroupIndex(b0.id);
+        var bi1 = getGroupIndex(b1.id);
+        if(bi0 === -1 && bi1 === -1){ // neither is defined
+            gid = groups.length;
+            createdArr.push(gid);
+            groups.push({
+                blocks: [b0.id, b1.id],
+                connections: []
+            });
+        }
+        else if(bi0 === -1 || bi1 === -1){ // one is undefined
+            if(bi0 < 0 ){
+                gid = bi1;
+                groups[gid].blocks.push(b0.id);
+            }
+            else {
+                gid = bi0;
+                groups[gid].blocks.push(b1.id);
+            }
+        }
+        else if(bi0 !== bi1) { // merge group
+            var gidFrom;
+            if(bi0 < bi1){
+                gidFrom = bi1;
+                gid = bi0;
+            }
+            else {
+                gid = bi1;
+                gidFrom = bi0;
+            }
+            groups[gid].blocks = groups[gid].blocks.concat(groups[gidFrom].blocks);
+            groups[gid].connections = groups[gid].connections.concat(groups[gidFrom].connections);
+            groups.splice(gidFrom, 1);
+        }
+        // add connections
+        groups[gid].connections.push([b0.id, b1.id]);
+        createConnection(b0, b1);
+    });
+    
+    // generate group points
+    createdArr.map(function(g){
+        generateGroupPts(g)
+    });
     console.log('Groups:', groups);
-    // calculateGroupArea();
 }
 
-function addToGroups(from, to) {
-    // console.log('add: ', from, to);
-    for (var i = 0; i < groups.length; i++) {
-        if (groups[i].blocks.includes(to)) {
-            groups[i].blocks.push(from);
-            break;
+function analyzingConnections(conns){
+    var sets = [];
+    for(var i=0; i<conns.length; i++){
+        var conn = conns[i];
+        var cs0 = -1;
+        var cs1 = -1;
+        sets.map(function(s,i){
+            if(s.includes(conn[0]) && cs0 < 0){
+                cs0 = i;
+            }
+            if(s.includes(conn[1]) && cs1 < 0) {
+                cs1 = i
+            }
+        });
+        if(cs0 < 0 && cs1 < 0){
+            sets.push([conn[0], conn[1]]);
+        }
+        if(cs0 < 0 && cs1 >= 0 && !sets[cs1].includes(conn[0])){
+            sets[cs1].push(conn[0]);
+        }
+        if(cs1 < 0 && cs0 >= 0 && !sets[cs0].includes(conn[1])){
+            sets[cs0].push(conn[1]);
+        }
+        if(cs0 >= 0 && cs1 >= 0 && cs0 !== cs1){
+            sets[cs0] = sets[cs0].concat(sets[cs1]);
+            sets.splice(cs1, 1);
+        }
+    }   
+    return sets;
+}
+
+function divideGroup(gid, bconns){
+    console.log('divide group ', gid, bconns);
+
+    var filteredConns = groups[gid].connections.filter(function(c){
+        var FOUND = false;
+        bconns.map(function(bc){
+            if(bc[0] === c[0] && bc[1] === c[1]){
+                FOUND = true;
+            }
+        });
+        return !FOUND;
+    });
+
+    // valid break connections
+    var sets = analyzingConnections(filteredConns);
+    console.log('sets', sets);
+
+    bconns.map(function(bc){
+        var FOUND = false;
+        sets.map(function(s){
+            if(s.includes(bc[0]) && s.includes(bc[1])){
+                FOUND = true;
+            }
+        });
+        if(FOUND) {
+            // push back invalid break connection
+            filteredConns.push(bc);
+        }
+    });
+    if(filteredConns.length === groups[gid].connections.length) {
+        return;
+    }
+    console.log('filtered connections', filteredConns);
+
+    // clear block connections 
+    for (var j = 0; j < groups[gid].blocks.length; j++) {
+        var b = getBlockFromID(groups[gid].blocks[j]);
+        b.connected = [0, 0, 0, 0, 0, 0];
+    }
+    groups.splice(gid, 1);
+    createGroup(filteredConns);
+}
+
+function generateGroupPts(gid){
+    var group = groups[gid];
+
+    // find the bottom right vector as starting point
+    // then run CW to get all the points
+    var bks = group.blocks;
+    // clear pts
+    group.pts = [];
+
+    // find bottom right block
+    var brBlk = getBlockFromID(bks[0]);
+    for (var j = 1; j < bks.length; j++) {
+        var one = getBlockFromID(bks[j]);
+        if (one.bounds.max.x + one.bounds.max.y > brBlk.bounds.max.x + brBlk.bounds.max.y) {
+            brBlk = one;
         }
     }
-}
-
-function mergeGroups(from, to) {
-    // console.log('merge groups: ', groups, from, to);
-    for (var i = 0; i < groups[from].blocks.length; i++) {
-        var id = groups[from].blocks[i];
-        var one = getBlockFromID(id);
-        if (!one) {
-            console.warn('unable to locate block based on ID');
+    // find bottom right vertice
+    var brPt = brBlk.vertices[0];
+    for (var p = 1; p < brBlk.vertices.length; p++) {
+        var pt = brBlk.vertices[p];
+        if (pt.x + pt.y > brPt.x + brPt.y) {
+            brPt = pt;
         }
-        one.group = to;
-        groups[to].blocks.push(id);
     }
-    groups[to].connections = groups[to].connections.concat(groups[from].connections);
-    groups.splice(from, 1);
+
+    // add bottom right vertice to group pts as the starting point
+    group.pts.push(brPt);
+    // find all vertices from the outer lines
+    var currBlk = brBlk;
+    var currPt = brBlk.vertices[(brPt.index + 1) % BLOCK_SIDES];
+    // used to not crash the app
+    var counter = 0;
+    while (currPt !== brPt || counter > group.blocks.length * BLOCK_SIDES) {
+        // check whether currPt is a connection point
+        var connBlkID = currBlk.connected[currPt.index];
+        group.pts.push(currPt);
+        // console.log('here', currBlk.id, currPt.index, connBlkID);
+        if (connBlkID !== 0) {
+            // it's connected, move to next block
+            var preBlkID = currBlk.id;
+            currBlk = getBlockFromID(connBlkID);
+            for (var c = 0; c < BLOCK_SIDES; c++) {
+                if (currBlk.connected[c] === preBlkID) {
+                    currPt = currBlk.vertices[(c + 2) % BLOCK_SIDES];
+                    break;
+                }
+            }
+        }
+        else {
+            // not connected, move to next vertice
+            currPt = currBlk.vertices[(currPt.index + 1) % BLOCK_SIDES];
+        }
+        counter++;
+    }
+    if (counter > group.blocks.length * BLOCK_SIDES) {
+        console.warn('Could not find group pts');
+        group.pts = [];
+    }
+    // console.log(group);
+    group.innerpts = hmpoly.createPaddingPolygon(group.pts, BLOCK_RADIUS);
 }
-
-// function calculateGroupArea() {
-//     // find the bottom right vector as starting point
-//     // then run CW to get all the points
-//     for (var i = 0; i < groups.length; i++) {
-//         var bks = groups[i].blocks;
-//         // clear area
-//         groups[i].area = [];
-
-//         // find bottom right block
-//         var brBlk = getBlockFromID(bks[0]);
-//         for (var j = 1; j < bks.length; j++) {
-//             var one = getBlockFromID(bks[j]);
-//             if (one.bounds.max.x + one.bounds.max.y > brBlk.bounds.max.x + brBlk.bounds.max.y) {
-//                 brBlk = one;
-//             }
-//         }
-//         // find bottom right vertice
-//         var brPt = brBlk.vertices[0];
-//         for (var p = 1; p < brBlk.vertices.length; p++) {
-//             var pt = brBlk.vertices[p];
-//             if (pt.x + pt.y > brPt.x + brPt.y) {
-//                 brPt = pt;
-//             }
-//         }
-
-//         // add bottom right vertices to group area polygon as the starting point
-//         groups[i].area.push(brPt);
-//         // find all vertices from the outer lines
-//         var currBlk = brBlk;
-//         var currPt = brBlk.vertices[(brPt.index + 1) % BLOCK_SIDES];
-//         // used to not crash the app
-//         var counter = 0;
-//         while (currPt !== brPt || counter > groups[i].blocks.length * BLOCK_SIDES) {
-//             // check whether currPt is a connection point
-//             var connBlkID = currBlk.connected[currPt.index];
-//             groups[i].area.push(currPt);
-//             // console.log('here', currBlk.id, currPt.index, connBlkID);
-//             if (connBlkID !== 0) {
-//                 // it's connected, move to next block
-//                 var preBlkID = currBlk.id;
-//                 currBlk = getBlockFromID(connBlkID);
-//                 for (var c = 0; c < BLOCK_SIDES; c++) {
-//                     if (currBlk.connected[c] === preBlkID) {
-//                         currPt = currBlk.vertices[(c + 2) % BLOCK_SIDES];
-//                         break;
-//                     }
-//                 }
-//             }
-//             else {
-//                 // not connected, move to next vertice
-//                 currPt = currBlk.vertices[(currPt.index + 1) % BLOCK_SIDES];
-//             }
-//             counter++;
-//         }
-//         if (counter > groups[i].blocks.length * BLOCK_SIDES) {
-//             console.warn('Could not find group area');
-//             groups[i].area = [];
-//         }
-//         groups[i].innerarea = hmpoly.createPaddingPolygon(groups[i].area, BLOCK_RADIUS);
-//         // console.log(groups[i].area);
-//     }
-// }
 
 function getGroupsToHighlight() {
     for (var i = 0; i < groups.length; i++) {
@@ -694,59 +589,26 @@ function getGroupsToHighlight() {
     return undefined;
 }
 
-// function offsetGroupPosition(id, offset) {
-//     console.log(id, offset);
-//     var bks = groups[id].blocks;
-//     for (var i = 0; i < bks.length; i++) {
-//         var one = getBlockFromID(bks[i]);
-//         Body.setPosition(one, {
-//             x: one.position.x + offset.x,
-//             y: one.position.y + offset.y
-//         });
-//     }
-// }
 
 /* CONNECTIONS */
-function addConnectionToGroup(b1, b2) {
-    var gId = b1.group;
-    console.log('gId', gId, groups);
-    // sort from small to big
-    var id1 = b1.id < b2.id ? b1.id : b2.id;
-    var id2 = b1.id < b2.id ? b2.id : b1.id;
-    // check whether it's existed
-    var filtered = groups[gId].connections.filter(function (p) {
-        return (p[0] === id1 && p[1] === id2);
-    });
-    if (filtered.length === 0) {
-        groups[gId].connections.push([id1, id2]);
-    }
-    // console.log('connection', groups[g].connections);
-}
 
-function createConnection(b1, b2) {
-    // console.log('create connection with', b1.id, b2.id);
-    addConnectionToGroup(b1, b2);
-    var p1 = [b1.position.x, b1.position.y];
-    var p2 = [b2.position.x, b2.position.y];
-    for (var i = 0; i < b1.vertices.length; i++) {
-        var vert1 = b1.vertices[i];
-        var vert2 = b1.vertices[(i + 1) % b1.vertices.length];
-        var q1 = [vert1.x, vert1.y];
-        var q2 = [vert2.x, vert2.y];
-        var lineIntersect = decomp.lineSegmentsIntersect(p1, p2, q1, q2);
+function createConnection(b0, b1) {
+    // console.log('create connection with', b0.id, b1.id);
+    for (var i = 0; i < b0.vertices.length; i++) {
+        var v0 = b0.vertices[i];
+        var v1 = b0.vertices[(i + 1) % b0.vertices.length];
+        var lineIntersect = lineSegmentsIntersect(b0.position, b1.position, v0, v1);
         if (lineIntersect) {
-            b1.connected[i] = b2.id;
+            b0.connected[i] = b1.id;
             break;
         }
     }
-    for (var j = 0; j < b2.vertices.length; j++) {
-        var vert1 = b2.vertices[j];
-        var vert2 = b2.vertices[(j + 1) % b2.vertices.length];
-        var q1 = [vert1.x, vert1.y];
-        var q2 = [vert2.x, vert2.y];
-        var lineIntersect = decomp.lineSegmentsIntersect(p1, p2, q1, q2);
+    for (var j = 0; j < b1.vertices.length; j++) {
+        var v0 = b1.vertices[j];
+        var v1 = b1.vertices[(j + 1) % b1.vertices.length];
+        var lineIntersect = lineSegmentsIntersect(b0.position, b1.position, v0, v1);
         if (lineIntersect) {
-            b2.connected[j] = b1.id;
+            b1.connected[j] = b0.id;
             break;
         }
     }
@@ -787,4 +649,22 @@ function pointInsidePolygon(vs, pt) {
         if (intersect) inside = !inside;
     }
     return inside;
+}
+
+// Checks if two line segments intersects
+function lineSegmentsIntersect(p1, p2, q1, q2){
+	var dx = p2.x - p1.x;
+	var dy = p2.y - p1.y;
+	var da = q2.x - q1.x;
+	var db = q2.y - q1.y;
+
+	// segments are parallel
+	if((da*dy - db*dx) === 0){
+		return false;
+	}
+
+	var s = (dx * (q1.y - p1.y) + dy * (p1.x - q1.x)) / (da * dy - db * dx);
+	var t = (da * (p1.y - q1.y) + db * (q1.x - p1.x)) / (db * dx - da * dy);
+
+	return (s>=0 && s<=1 && t>=0 && t<=1);
 }
