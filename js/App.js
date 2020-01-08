@@ -42,7 +42,7 @@ function setup() {
         blocks.push(block);
     }
     initializeGroups();
-    // console.log(blocks[0]);
+    console.log(blocks[0]);
 
     // add walls
     World.add(engine.world, [
@@ -143,7 +143,7 @@ function drawTargetShadow() {
 
 function drawGroupAreas() {
     for (var i = 0; i < groups.length; i++) {
-        if(!groups[i].innerpts){
+        if (!groups[i].innerpts) {
             return;
         }
         stroke(0, 0, 255, 64);
@@ -182,7 +182,7 @@ function drawConnections() {
 }
 
 function drawMouseLine() {
-    if(mouseLines.length < 2) {
+    if (mouseLines.length < 2) {
         return;
     }
 
@@ -209,7 +209,7 @@ function drawMouseLine() {
     }
     beginShape();
     for (var p = 0; p < drawingPath.length; p++) {
-      curveVertex(drawingPath[p].x, drawingPath[p].y);
+        curveVertex(drawingPath[p].x, drawingPath[p].y);
     }
     endShape(CLOSE);
 }
@@ -221,11 +221,11 @@ function updateAfterMouseDrag() {
     // get first group that got connections broken
     var gid = -1;
     var brokenConns = [];
-    for( var i = 1; i < mouseLines.length; i++) {
-        if(gid < 0){
-            for( var j=0; j<groups.length; j++){
+    for (var i = 1; i < mouseLines.length; i++) {
+        if (gid < 0) {
+            for (var j = 0; j < groups.length; j++) {
                 var INTERSECTED = false;
-                for(var m=0; m<groups[j].connections.length; m++){
+                for (var m = 0; m < groups[j].connections.length; m++) {
                     var b0 = getBlockFromID(groups[j].connections[m][0]);
                     var b1 = getBlockFromID(groups[j].connections[m][1]);
                     var lineIntersect = lineSegmentsIntersect(b0.position, b1.position, mouseLines[i - 1], mouseLines[i]);
@@ -237,21 +237,21 @@ function updateAfterMouseDrag() {
                         break;
                     }
                 }
-                if( INTERSECTED ) {
+                if (INTERSECTED) {
                     break;
                 }
             }
         }
         else {
-            for(var m=0; m<groups[gid].connections.length; m++){
+            for (var m = 0; m < groups[gid].connections.length; m++) {
                 var b0 = getBlockFromID(groups[gid].connections[m][0]);
                 var b1 = getBlockFromID(groups[gid].connections[m][1]);
                 var lineIntersect = lineSegmentsIntersect(b0.position, b1.position, mouseLines[i - 1], mouseLines[i]);
                 if (lineIntersect) {
-                    var filteredBC = brokenConns.filter(function(p){
+                    var filteredBC = brokenConns.filter(function (p) {
                         return p[0] === b0.id && p[1] === b1.id;
                     });
-                    if(filteredBC.length === 0){
+                    if (filteredBC.length === 0) {
                         brokenConns.push([b0.id, b1.id]);
                         console.log('break the connection', b0.id, b1.id);
                     }
@@ -261,7 +261,7 @@ function updateAfterMouseDrag() {
         }
     }
 
-    if(gid >= 0 && brokenConns.length > 0){
+    if (gid >= 0 && brokenConns.length > 0) {
         divideGroup(gid, brokenConns);
         // separate groups 
     }
@@ -371,14 +371,16 @@ function getGroupIndex(bid) {
 
 function initializeGroups() {
     groups = [];
+    var bks = [];
     var conns = [];
     // create connection array for each block
     for (var r = 0; r < blocks.length; r++) {
+        bks.push(blocks[r].id);
         blocks[r].connected = [0, 0, 0, 0, 0, 0];
     }
     // loop combination of two
-    for (var i = 0; i < blocks.length-1; i++) {
-        for (var j = i+1; j < blocks.length; j++) {
+    for (var i = 0; i < blocks.length - 1; i++) {
+        for (var j = i + 1; j < blocks.length; j++) {
             var b0 = blocks[i];
             var b1 = blocks[j];
             // check block distance
@@ -388,38 +390,47 @@ function initializeGroups() {
             }
         }
     }
-    createGroup(conns);
+    createGroup(bks, conns);
 }
 
-function createGroup(conns){
+function createGroup(bks, conns) {
     var createdArr = [];
     var gid;
-    conns.map(function(conn){
+    conns.map(function (conn) {
         var b0 = getBlockFromID(conn[0]);
         var b1 = getBlockFromID(conn[1]);
         var bi0 = getGroupIndex(b0.id);
         var bi1 = getGroupIndex(b1.id);
-        if(bi0 === -1 && bi1 === -1){ // neither is defined
+        if (bi0 === -1 && bi1 === -1) { // neither is defined
             gid = groups.length;
             createdArr.push(gid);
             groups.push({
                 blocks: [b0.id, b1.id],
                 connections: []
             });
+            bks = bks.filter(function (bid) {
+                return bid !== b0.id && bid !== b1.id;
+            });
         }
-        else if(bi0 === -1 || bi1 === -1){ // one is undefined
-            if(bi0 < 0 ){
+        else if (bi0 === -1 || bi1 === -1) { // one is undefined
+            if (bi0 < 0) {
                 gid = bi1;
                 groups[gid].blocks.push(b0.id);
+                bks = bks.filter(function (bid) {
+                    return bid !== b0.id;
+                });
             }
             else {
                 gid = bi0;
                 groups[gid].blocks.push(b1.id);
+                bks = bks.filter(function (bid) {
+                    return bid !== b1.id;
+                });
             }
         }
-        else if(bi0 !== bi1) { // merge group
+        else if (bi0 !== bi1) { // merge group
             var gidFrom;
-            if(bi0 < bi1){
+            if (bi0 < bi1) {
                 gidFrom = bi1;
                 gid = bi0;
             }
@@ -435,52 +446,66 @@ function createGroup(conns){
         groups[gid].connections.push([b0.id, b1.id]);
         createConnection(b0, b1);
     });
-    
-    // generate group points
-    createdArr.map(function(g){
+
+    console.log('single blocks', bks);
+
+
+    // generate group points for groups
+    createdArr.map(function (g) {
         generateGroupPts(g)
+    });
+
+    // create group points for singles
+    bks.map(function (bid) {
+        var bk = getBlockFromID(bid);
+        groups.push({
+            blocks: [bid],
+            connections: [],
+            pts: bk.vertices,
+            innerpts: hmpoly.createPaddingPolygon(bk.vertices, BLOCK_RADIUS)
+        })
     });
     console.log('Groups:', groups);
 }
 
-function analyzingConnections(conns){
+function analyzingConnections(conns) {
     var sets = [];
-    for(var i=0; i<conns.length; i++){
+    for (var i = 0; i < conns.length; i++) {
         var conn = conns[i];
         var cs0 = -1;
         var cs1 = -1;
-        sets.map(function(s,i){
-            if(s.includes(conn[0]) && cs0 < 0){
+        sets.map(function (s, i) {
+            if (s.includes(conn[0]) && cs0 < 0) {
                 cs0 = i;
             }
-            if(s.includes(conn[1]) && cs1 < 0) {
+            if (s.includes(conn[1]) && cs1 < 0) {
                 cs1 = i
             }
         });
-        if(cs0 < 0 && cs1 < 0){
+        if (cs0 < 0 && cs1 < 0) {
             sets.push([conn[0], conn[1]]);
         }
-        if(cs0 < 0 && cs1 >= 0 && !sets[cs1].includes(conn[0])){
+        if (cs0 < 0 && cs1 >= 0 && !sets[cs1].includes(conn[0])) {
             sets[cs1].push(conn[0]);
         }
-        if(cs1 < 0 && cs0 >= 0 && !sets[cs0].includes(conn[1])){
+        if (cs1 < 0 && cs0 >= 0 && !sets[cs0].includes(conn[1])) {
             sets[cs0].push(conn[1]);
         }
-        if(cs0 >= 0 && cs1 >= 0 && cs0 !== cs1){
+        if (cs0 >= 0 && cs1 >= 0 && cs0 !== cs1) {
             sets[cs0] = sets[cs0].concat(sets[cs1]);
             sets.splice(cs1, 1);
         }
-    }   
+    }
     return sets;
 }
 
-function divideGroup(gid, bconns){
+function divideGroup(gid, bconns) {
     console.log('divide group ', gid, bconns);
 
-    var filteredConns = groups[gid].connections.filter(function(c){
+    var filteredConns = groups[gid].connections.filter(function (c) {
         var FOUND = false;
-        bconns.map(function(bc){
-            if(bc[0] === c[0] && bc[1] === c[1]){
+        bconns.map(function (bc) {
+            if (bc[0] === c[0] && bc[1] === c[1]) {
                 FOUND = true;
             }
         });
@@ -491,33 +516,34 @@ function divideGroup(gid, bconns){
     var sets = analyzingConnections(filteredConns);
     console.log('sets', sets);
 
-    bconns.map(function(bc){
+    bconns.map(function (bc) {
         var FOUND = false;
-        sets.map(function(s){
-            if(s.includes(bc[0]) && s.includes(bc[1])){
+        sets.map(function (s) {
+            if (s.includes(bc[0]) && s.includes(bc[1])) {
                 FOUND = true;
             }
         });
-        if(FOUND) {
+        if (FOUND) {
             // push back invalid break connection
             filteredConns.push(bc);
         }
     });
-    if(filteredConns.length === groups[gid].connections.length) {
+    if (filteredConns.length === groups[gid].connections.length) {
         return;
     }
     console.log('filtered connections', filteredConns);
 
     // clear block connections 
-    for (var j = 0; j < groups[gid].blocks.length; j++) {
+    var bks = groups[gid].blocks;
+    for (var j = 0; j < bks.length; j++) {
         var b = getBlockFromID(groups[gid].blocks[j]);
         b.connected = [0, 0, 0, 0, 0, 0];
     }
     groups.splice(gid, 1);
-    createGroup(filteredConns);
+    createGroup(bks, filteredConns);
 }
 
-function generateGroupPts(gid){
+function generateGroupPts(gid) {
     var group = groups[gid];
 
     // find the bottom right vector as starting point
@@ -652,19 +678,19 @@ function pointInsidePolygon(vs, pt) {
 }
 
 // Checks if two line segments intersects
-function lineSegmentsIntersect(p1, p2, q1, q2){
-	var dx = p2.x - p1.x;
-	var dy = p2.y - p1.y;
-	var da = q2.x - q1.x;
-	var db = q2.y - q1.y;
+function lineSegmentsIntersect(p1, p2, q1, q2) {
+    var dx = p2.x - p1.x;
+    var dy = p2.y - p1.y;
+    var da = q2.x - q1.x;
+    var db = q2.y - q1.y;
 
-	// segments are parallel
-	if((da*dy - db*dx) === 0){
-		return false;
-	}
+    // segments are parallel
+    if ((da * dy - db * dx) === 0) {
+        return false;
+    }
 
-	var s = (dx * (q1.y - p1.y) + dy * (p1.x - q1.x)) / (da * dy - db * dx);
-	var t = (da * (p1.y - q1.y) + db * (q1.x - p1.x)) / (db * dx - da * dy);
+    var s = (dx * (q1.y - p1.y) + dy * (p1.x - q1.x)) / (da * dy - db * dx);
+    var t = (da * (p1.y - q1.y) + db * (q1.x - p1.x)) / (db * dx - da * dy);
 
-	return (s>=0 && s<=1 && t>=0 && t<=1);
+    return (s >= 0 && s <= 1 && t >= 0 && t <= 1);
 }
