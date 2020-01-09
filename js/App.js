@@ -25,7 +25,7 @@ var groups = [];
 var connections = [];
 
 var currDragging;
-var pPosition;
+var pMousePosition;
 
 var mouseLines = [];
 var mouseStartOnDrag;
@@ -85,9 +85,9 @@ function draw() {
     background(0);
     // drawTargetShadow();
     drawBlocks();
-    if (!currDragging) {
-        drawGroupAreas();
-    }
+    // if (!currDragging) {
+    //     drawGroupAreas();
+    // }
     drawConnections();
     drawMouseLine();
 
@@ -302,6 +302,7 @@ function updateAfterMouseDrag() {
 /* EVENTS */
 function onMouseDownEvent() {
     console.log('mouse down');
+    pMousePosition = Vector.clone(mouse.position);
 
     if (mouseConstraints.body) {
         currDragging = mouseConstraints.body;
@@ -319,6 +320,17 @@ function onMouseMoveEvent() {
     console.log('mouse move');
     if (mouseStartOnDrag) {
         mouseLines.push(createVector(mouse.position.x, mouse.position.y));
+        return;
+    }
+    if (currDragging) {
+        // update block angle on dragging
+        // angle = atan2(cross(a,b), dot(a,b))
+        var currDraggingOffset = Vector.sub(mouse.position, currDragging.position);
+        var mouseDelta = Vector.sub(mouse.position, pMousePosition);
+        var addedVec = Vector.add(currDraggingOffset, Vector.mult(mouseDelta, Vector.magnitude(currDraggingOffset) / BLOCK_RADIUS / currDragging.parts.length));
+        var rotationAngle = Math.atan2(Vector.cross(currDraggingOffset, addedVec), Vector.dot(currDraggingOffset, addedVec));
+        Body.setAngle(currDragging, currDragging.angle + rotationAngle);
+        pMousePosition = Vector.clone(mouse.position);
         return;
     }
     bodies.map(function (b) {
