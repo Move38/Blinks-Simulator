@@ -17,6 +17,7 @@ var TOTAL_BLOCK = 6;
 var engine;
 var mouse;
 var mouseConstraints;
+var bodies = [];
 
 // var targetShadow;
 var blocks = [];
@@ -95,7 +96,7 @@ function draw() {
 
 /* RENDER */
 function drawWorld() {
-    Composite.allBodies(engine.world).map(function (b) {
+    bodies.map(function (b) {
         if (b.isHighlighted) {
             // draw polygon 
             // https://github.com/liabru/matter-js/blob/master/src/render/Render.js
@@ -309,7 +310,7 @@ function onMouseDownEvent() {
     mouseStartOnDrag = true;
     mouseLines.push(createVector(mouse.position.x, mouse.position.y));
 
-    Composite.allBodies(engine.world).map(function (b) {
+    bodies.map(function (b) {
         Body.setStatic(b, true);
     });
 }
@@ -320,12 +321,17 @@ function onMouseMoveEvent() {
         mouseLines.push(createVector(mouse.position.x, mouse.position.y));
         return;
     }
-    Composite.allBodies(engine.world).map(function (b) {
+    bodies.map(function (b) {
         b.isHighlighted = false;
         // highlight group polygon if on hover
         if (Bounds.contains(b.bounds, mouse.position)) {
-            if (pointInsidePolygon(b.pts, mouse.position)) {
-                b.isHighlighted = true;
+            for (var i = 1; i < b.parts.length; i++) {
+                var part = b.parts[i];
+                console.log(part);
+                if (pointInsidePolygon(part.vertices, mouse.position)) {
+                    b.isHighlighted = true;
+                    break;
+                }
             }
         }
     });
@@ -340,7 +346,7 @@ function onMouseUpEvent() {
         mouseLines = [];
 
         // set group non static
-        Composite.allBodies(engine.world).map(function (b) {
+        bodies.map(function (b) {
             Body.setStatic(b, false);
         });
     }
@@ -456,6 +462,8 @@ function initializeGroups() {
 }
 
 function createGroup(bks, conns) {
+    var result = [];
+
     var createdArr = [];
     var gid;
     conns.map(function (conn) {
@@ -511,7 +519,6 @@ function createGroup(bks, conns) {
 
     console.log('single blocks', bks);
 
-
     // generate group points for groups
     createdArr.map(function (g) {
         generateGroupPts(g);
@@ -527,6 +534,8 @@ function createGroup(bks, conns) {
             parts.push(bk);
         })
         Body.setParts(comp, parts, false);
+
+        result.push(comp);
     });
 
     // create group points for singles
@@ -539,13 +548,17 @@ function createGroup(bks, conns) {
             blocks: [bid],
             connections: []
         })
-        generateGroupPts(groups.length - 1);
+        var gid = groups.length - 1;
+        generateGroupPts(gid);
         bk.group = comp;
         Body.setStatic(bk, false);
         Body.setParts(comp, [bk], false);
+
+        result.push(comp);
     });
     console.log('Groups:', groups);
-    console.log('World', Composite.allBodies(engine.world));
+    console.log('World', bodies);
+    return result;
 }
 
 function analyzingConnections(conns) {
@@ -620,14 +633,31 @@ function divideGroup(gid, bconns) {
         b.connected = [0, 0, 0, 0, 0, 0];
     }
     // remove group
-    var currGroup = Composite.allBodies(engine.world).filter(function (b) {
-        return b.id === groups[gid].id;
-    })[0];
-    World.remove(engine.world, currGroup);
+    bodies = bodies.filter(function (b) {
+        if (b.id === groups[gid].id) {
+            World.remove(engine.world, b);
+            return false;
+        }
+        return true;
+    });
     groups.splice(gid, 1);
 
     // create new groups;
-    createGroup(bks, filteredConns);
+    var createdGroups = createGroup(bks, filteredConns);
+    var centerPt = Vector.create(0, 0);
+    createdGroups.map(function (g) {
+        centerPt.x += g.position.x / createdGroups.length;
+        centerPt.y += g.position.y / createdGroups.length;
+    });
+    createdGroups.map(function (g) {
+        var force = Vector.sub(g.position, centerPt);
+        Body.applyForce(g, centerPt, Vector.mult(Vector.normalise(force), 0.5));
+    })
+    setTimeout(function () {
+        groups.map(function (g, i) {
+            generateGroupPts(i);
+        });
+    }, 100);
 }
 
 function generateGroupPts(gid) {
@@ -761,6 +791,7 @@ function generatePolygonFromVertices(vts) {
     }, false);
     body.pts = vts;
     World.add(engine.world, body);
+    bodies.push(body);
     return body;
 }
 
