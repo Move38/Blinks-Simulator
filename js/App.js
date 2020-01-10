@@ -378,7 +378,7 @@ function onMouseMoveEvent() {
         // var addedVec = Vector.add(currDraggingOffset, Vector.mult(mouseDelta, Vector.magnitude(currDraggingOffset) / BLOCK_RADIUS / currDragging.parts.length));
         // var rotationAngle = Math.atan2(Vector.cross(currDraggingOffset, addedVec), Vector.dot(currDraggingOffset, addedVec));
         // Body.setAngle(currDragging, currDragging.angle + rotationAngle);
-        Body.applyForce(currDragging, pMousePosition, Vector.mult(Vector.normalise(mouseDelta), Vector.magnitude(currDraggingOffset) / currDragging.parts.length / 150));
+        Body.applyForce(currDragging, pMousePosition, Vector.mult(Vector.normalise(mouseDelta), Vector.magnitude(currDraggingOffset) / currDragging.parts.length / 256));
         pMousePosition = Vector.clone(mouse.position);
 
         // update spikes
