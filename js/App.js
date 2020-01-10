@@ -127,50 +127,81 @@ function drawWorld() {
 }
 
 function updateSpikes() {
-    groups.map(function (g) {
-        g.spikes = [];
-        // generate spikes
-        for (var i = 0; i < g.pts.length; i++) {
-            var ii = (i + 1) % g.pts.length;
-            var centerPt = Vector.mult(Vector.add(g.pts[i], g.pts[ii]), 0.5);
-            var farPt = Vector.add(centerPt, Vector.sub(centerPt, g.pts[ii].body.position));
-            g.spikes.push([centerPt, farPt, false]);
-        }
-    })
+    var currGroup;
+    var targetGroup;
+    if (currDragging) {
+        groups.map(function (g) {
+            if (currDragging === g.poly) {
+                currGroup = g;
+            }
+            g.spikes = [];
+            // generate spikes
+            for (var i = 0; i < g.pts.length; i++) {
+                var ii = (i + 1) % g.pts.length;
+                var centerPt = Vector.mult(Vector.add(g.pts[i], g.pts[ii]), 0.5);
+                var farPt = Vector.add(centerPt, Vector.mult( Vector.sub(centerPt, g.pts[ii].body.position), 1.2));
+                g.spikes.push([centerPt, farPt, false, g.pts[i], g.pts[ii]]);
+            }
+        })
 
-    for (var i = 0; i < groups.length - 1; i++) {
-        for (var j = i + 1; j < groups.length; j++) {
-            var g0 = groups[i];
-            var g1 = groups[j];
-            g0.spikes.map(function(sp){
-                if(pointInsidePolygon(g1.pts, sp[1])){
+        for (var i = 0; i < groups.length; i++) {
+            var g = groups[i];
+            if (g === currGroup) {
+                continue;
+            }
+            var FOUND = false;
+            currGroup.spikes.map(function (sp) {
+                if (pointInsidePolygon(g.pts, sp[1])) {
                     sp[2] = true;
+                    FOUND = true;
                 }
             })
-            g1.spikes.map(function(sp){
-                if(pointInsidePolygon(g0.pts, sp[1])){
-                    sp[2] = true;
-                }
-            })
+            if (FOUND) {
+                targetGroup = g;
+                g.spikes.map(function (sp) {
+                    if (pointInsidePolygon(currGroup.pts, sp[1])) {
+                        sp[2] = true;
+                    }
+                });
+            }
         }
     }
+    return targetGroup;
 }
 
 function drawSpikes() {
-    updateSpikes();
-
-    noFill();
-    groups.map(function (g) {
-        g.spikes.map(function (sp) {
-            if(sp[2]){
-                stroke(255, 0, 0, 128);
+    if (currDragging) {
+        var targetGroup = updateSpikes();
+        noFill();
+        groups.map(function (g) {
+            if (g.poly === currDragging) {
+                g.spikes.map(function (sp) {
+                    if (sp[2]) {
+                        strokeWeight(1);
+                        stroke(255, 0, 0, 128);
+                        line(sp[0].x, sp[0].y, sp[1].x, sp[1].y);
+                        strokeWeight(4);
+                        stroke(0, 255, 255, 128);
+                        line(sp[3].x, sp[3].y, sp[4].x, sp[4].y);
+                    }
+                    else {
+                        strokeWeight(1);
+                        stroke(0, 255, 0, 64);
+                        line(sp[0].x, sp[0].y, sp[1].x, sp[1].y);
+                    }
+                });
             }
-            else {
-                stroke(0, 255, 0, 64);
+            else if (g === targetGroup) {
+                g.spikes.map(function (sp) {
+                    if (sp[2]) {
+                        strokeWeight(4);
+                        stroke(0, 255, 255, 128);
+                        line(sp[3].x, sp[3].y, sp[4].x, sp[4].y);
+                    }
+                });
             }
-            line(sp[0].x, sp[0].y, sp[1].x, sp[1].y);
-        });
-    })
+        })
+    }
 }
 
 function drawBlocks() {
