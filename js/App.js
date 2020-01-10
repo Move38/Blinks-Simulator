@@ -88,6 +88,8 @@ function draw() {
     // if (!currDragging) {
     //     drawGroupAreas();
     // }
+
+    drawSpikes();
     drawConnections();
     drawMouseLine();
 
@@ -124,6 +126,53 @@ function drawWorld() {
     });
 }
 
+function updateSpikes() {
+    groups.map(function (g) {
+        g.spikes = [];
+        // generate spikes
+        for (var i = 0; i < g.pts.length; i++) {
+            var ii = (i + 1) % g.pts.length;
+            var centerPt = Vector.mult(Vector.add(g.pts[i], g.pts[ii]), 0.5);
+            var farPt = Vector.add(centerPt, Vector.sub(centerPt, g.pts[ii].body.position));
+            g.spikes.push([centerPt, farPt, false]);
+        }
+    })
+
+    for (var i = 0; i < groups.length - 1; i++) {
+        for (var j = i + 1; j < groups.length; j++) {
+            var g0 = groups[i];
+            var g1 = groups[j];
+            g0.spikes.map(function(sp){
+                if(pointInsidePolygon(g1.pts, sp[1])){
+                    sp[2] = true;
+                }
+            })
+            g1.spikes.map(function(sp){
+                if(pointInsidePolygon(g0.pts, sp[1])){
+                    sp[2] = true;
+                }
+            })
+        }
+    }
+}
+
+function drawSpikes() {
+    updateSpikes();
+
+    noFill();
+    groups.map(function (g) {
+        g.spikes.map(function (sp) {
+            if(sp[2]){
+                stroke(255, 0, 0, 128);
+            }
+            else {
+                stroke(0, 255, 0, 64);
+            }
+            line(sp[0].x, sp[0].y, sp[1].x, sp[1].y);
+        });
+    })
+}
+
 function drawBlocks() {
     for (var i = 0; i < blocks.length; i++) {
         var one = blocks[i];
@@ -149,7 +198,7 @@ function drawBlocks() {
             x: one.vertices[0].x / 2 + one.vertices[one.vertices.length - 1].x / 2,
             y: one.vertices[0].y / 2 + one.vertices[one.vertices.length - 1].y / 2
         }
-        stroke(255, 0, 0, 64);
+        stroke(0, 0, 255, 64);
         strokeWeight(1);
         line(one.position.x,
             one.position.y,
@@ -295,7 +344,6 @@ function updateAfterMouseDrag() {
 
     if (gid >= 0 && brokenConns.length > 0) {
         divideGroup(gid, brokenConns);
-        // apply forces to groups 
     }
 }
 
@@ -332,6 +380,9 @@ function onMouseMoveEvent() {
         // Body.setAngle(currDragging, currDragging.angle + rotationAngle);
         Body.applyForce(currDragging, pMousePosition, Vector.mult(Vector.normalise(mouseDelta), Vector.magnitude(currDraggingOffset) / currDragging.parts.length / 150));
         pMousePosition = Vector.clone(mouse.position);
+
+        // update spikes
+        updateSpikes();
         return;
     }
     bodies.map(function (b) {
@@ -340,7 +391,6 @@ function onMouseMoveEvent() {
         if (Bounds.contains(b.bounds, mouse.position)) {
             for (var i = 1; i < b.parts.length; i++) {
                 var part = b.parts[i];
-                console.log(part);
                 if (pointInsidePolygon(part.vertices, mouse.position)) {
                     b.isHighlighted = true;
                     break;
@@ -370,6 +420,9 @@ function onMouseUpEvent() {
             generateGroupPts(i);
         });
         currDragging = null;
+
+        // update spikes
+        updateSpikes();
     }
 }
 
@@ -538,12 +591,11 @@ function createGroup(bks, conns) {
         // console.log('create a new body', groups[g].pts);
         // add group to the world
         var comp = generatePolygonFromVertices(groups[g].pts);
-        groups[g].id = comp.id;
+        groups[g].poly = comp;
         var parts = [];
         groups[g].blocks.map(function (bid) {
             var bk = getBlockFromID(bid);
             Body.setStatic(bk, false);
-            bk.group = comp.id;
             parts.push(bk);
         })
         Body.setParts(comp, parts, false);
@@ -557,13 +609,12 @@ function createGroup(bks, conns) {
         // add group to the world
         var comp = generatePolygonFromVertices(bk.vertices);
         groups.push({
-            id: comp.id,
+            poly: comp,
             blocks: [bid],
             connections: []
         })
         var gid = groups.length - 1;
         generateGroupPts(gid);
-        bk.group = comp;
         Body.setStatic(bk, false);
         Body.setParts(comp, [bk], false);
 
@@ -647,7 +698,7 @@ function divideGroup(gid, bconns) {
     }
     // remove group
     bodies = bodies.filter(function (b) {
-        if (b.id === groups[gid].id) {
+        if (b === groups[gid].poly) {
             World.remove(engine.world, b);
             return false;
         }
@@ -706,10 +757,7 @@ function generateGroupPts(gid) {
         }
 
         // add bottom right vertice to group pts as the starting point
-        group.pts.push({
-            x: brPt.x,
-            y: brPt.y
-        });
+        group.pts.push(brPt);
         // find all vertices from the outer lines
         var currBlk = brBlk;
         var currPt = brBlk.vertices[(brPt.index + 1) % BLOCK_SIDES];
@@ -718,10 +766,7 @@ function generateGroupPts(gid) {
         while (currPt !== brPt || counter > group.blocks.length * BLOCK_SIDES) {
             // check whether currPt is a connection point
             var connBlkID = currBlk.connected[currPt.index];
-            group.pts.push({
-                x: currPt.x,
-                y: currPt.y
-            });
+            group.pts.push(currPt);
             // console.log('currPt', currBlk.id, currPt.index, connBlkID);
             if (connBlkID !== 0) {
                 // it's connected, move to next block
