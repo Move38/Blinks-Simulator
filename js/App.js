@@ -1,5 +1,6 @@
 var Engine = Matter.Engine;
 var World = Matter.World;
+var Common = Matter.Common;
 var Composite = Matter.Composite;
 var Body = Matter.Body;
 var Bodies = Matter.Bodies;
@@ -19,12 +20,13 @@ var mouse;
 var mouseConstraints;
 var bodies = [];
 
-// var targetShadow;
 var blocks = [];
 var groups = [];
 var connections = [];
 
 var currDragging;
+var currShadow;
+var target = {};
 var pMousePosition;
 
 var mouseLines = [];
@@ -83,17 +85,30 @@ function setup() {
 function draw() {
     smooth();
     background(0);
-    // drawTargetShadow();
-    drawBlocks();
-    // if (!currDragging) {
-    //     drawGroupAreas();
-    // }
+    if (currDragging) {
+        target.group = detectSnappingGroup();
+        if (target.group) {
+            var currGroup = getGroupByMatterBody(currDragging);
+            // drawSpikes(currGroup.spikes);
+            // drawMatchingEdge(currGroup, target.group);
+            currShadow.opacity += (64 - currShadow.opacity) * 0.2;
+            drawTargetShadow(currGroup, target.group);
+        }
+        else {
+            currShadow.opacity += (0 - currShadow.opacity) * 0.2;
+        }
+    }
 
-    drawSpikes();
-    drawConnections();
+    drawBlocks();
+
+    // drawConnections();
     drawMouseLine();
 
     drawWorld();
+
+    // if (!currDragging) {
+    //     drawGroupAreas();
+    // }
 }
 
 /* RENDER */
@@ -126,82 +141,130 @@ function drawWorld() {
     });
 }
 
-function updateSpikes() {
+/* Target Shadow */
+
+function detectSnappingGroup() {
     var currGroup;
-    var targetGroup;
+    var result;
     if (currDragging) {
+        // generate spikes for curreng dragging group
         groups.map(function (g) {
             if (currDragging === g.poly) {
                 currGroup = g;
-            }
-            g.spikes = [];
-            // generate spikes
-            for (var i = 0; i < g.pts.length; i++) {
-                var ii = (i + 1) % g.pts.length;
-                var centerPt = Vector.mult(Vector.add(g.pts[i], g.pts[ii]), 0.5);
-                var farPt = Vector.add(centerPt, Vector.mult( Vector.sub(centerPt, g.pts[ii].body.position), 1.2));
-                g.spikes.push([centerPt, farPt, false, g.pts[i], g.pts[ii]]);
+                g.spikes = [];
+                for (var i = 0; i < g.pts.length; i++) {
+                    var ii = (i + 1) % g.pts.length;
+                    var centerPt = Vector.mult(Vector.add(g.pts[i], g.pts[ii]), 0.5);
+                    var farPt = Vector.add(centerPt, Vector.mult(Vector.sub(centerPt, g.pts[ii].body.position), 0.88));
+                    g.spikes.push([centerPt, farPt, false, g.pts[i], g.pts[ii]]);
+                }
             }
         })
 
+        // finding intersacting group
         for (var i = 0; i < groups.length; i++) {
             var g = groups[i];
             if (g === currGroup) {
                 continue;
             }
             var FOUND = false;
-            currGroup.spikes.map(function (sp) {
+            var minDistance = 1000;
+            currGroup.spikes.map(function (sp, spi) {
+                var spii = (spi + 1) % currGroup.spikes.length;
                 if (pointInsidePolygon(g.pts, sp[1])) {
                     sp[2] = true;
                     FOUND = true;
+
+                    // find the matching line
+                    var p0 = sp[3];
+                    var p1 = sp[4];
+                    var m0 = Vector.div(Vector.add(p0, p1), 2);
+                    for (var j = 0; j < g.pts.length; j++) {
+                        var jj = (j + 1) % g.pts.length;
+                        var p2 = g.pts[j];
+                        var p3 = g.pts[jj];
+                        var m1 = Vector.div(Vector.add(p2, p3), 2);
+                        var d = Vector.magnitude(Vector.sub(m0, m1));
+                        if (d < minDistance) {
+                            minDistance = d;
+                            currGroup.intersectings = [spi, spii];
+                            g.intersectings = [j, jj];
+                        }
+                    }
                 }
             })
             if (FOUND) {
-                targetGroup = g;
-                g.spikes.map(function (sp) {
-                    if (pointInsidePolygon(currGroup.pts, sp[1])) {
-                        sp[2] = true;
-                    }
-                });
+                result = g;
+                break;
             }
         }
     }
-    return targetGroup;
+    return result;
 }
 
-function drawSpikes() {
-    if (currDragging) {
-        var targetGroup = updateSpikes();
-        noFill();
-        groups.map(function (g) {
-            if (g.poly === currDragging) {
-                g.spikes.map(function (sp) {
-                    if (sp[2]) {
-                        strokeWeight(1);
-                        stroke(255, 0, 0, 128);
-                        line(sp[0].x, sp[0].y, sp[1].x, sp[1].y);
-                        strokeWeight(4);
-                        stroke(0, 255, 255, 128);
-                        line(sp[3].x, sp[3].y, sp[4].x, sp[4].y);
-                    }
-                    else {
-                        strokeWeight(1);
-                        stroke(0, 255, 0, 64);
-                        line(sp[0].x, sp[0].y, sp[1].x, sp[1].y);
-                    }
-                });
+function drawSpikes(spikes) {
+    noFill();
+    spikes.map(function (sp) {
+        if (sp[2]) {
+            strokeWeight(1);
+            stroke(255, 0, 0, 128);
+            line(sp[0].x, sp[0].y, sp[1].x, sp[1].y);
+        }
+        else {
+            strokeWeight(1);
+            stroke(0, 255, 0, 64);
+            line(sp[0].x, sp[0].y, sp[1].x, sp[1].y);
+        }
+    });
+}
+
+function drawMatchingEdge(cg, tg) {
+    var p0 = cg.pts[cg.intersectings[0]];
+    var p1 = cg.pts[cg.intersectings[1]];
+    var p2 = tg.pts[tg.intersectings[0]];
+    var p3 = tg.pts[tg.intersectings[1]];
+    strokeWeight(4);
+    stroke(0, 0, 255, 128);
+    line(p0.x, p0.y, p1.x, p1.y);
+    line(p2.x, p2.y, p3.x, p3.y);
+}
+
+function drawTargetShadow(cg, tg) {
+    // use p5 vector to calculate angle to get desired result
+    var p0 = createVector(cg.pts[cg.intersectings[0]].x, cg.pts[cg.intersectings[0]].y, 0);
+    var p1 = createVector(cg.pts[cg.intersectings[1]].x, cg.pts[cg.intersectings[1]].y, 0);
+    var p2 = createVector(tg.pts[tg.intersectings[0]].x, tg.pts[tg.intersectings[0]].y, 0);
+    var p3 = createVector(tg.pts[tg.intersectings[1]].x, tg.pts[tg.intersectings[1]].y, 0);
+    target.angle = p5.Vector.sub(p0, p1).angleBetween(p5.Vector.sub(p3, p2));
+    Vertices.rotate([p0, p1], target.angle, cg.poly.position);
+    var mp0 = p5.Vector.add(p0, p1).div(2);
+    var mp1 = p5.Vector.add(p2, p3).div(2);
+    target.offset = p5.Vector.sub(mp1, mp0);
+    // console.log('angle & offset', target.angle, target.offset);
+
+    // draw shadow out
+    noStroke();
+    fill(255, currShadow.opacity);
+    cg.poly.parts.filter(function (part, i) {
+        return i !== 0;
+    }).map(function (p) {
+        var vCopy = p.vertices.map(function (v) {
+            return {
+                x: v.x,
+                y: v.y
             }
-            else if (g === targetGroup) {
-                g.spikes.map(function (sp) {
-                    if (sp[2]) {
-                        strokeWeight(4);
-                        stroke(0, 255, 255, 128);
-                        line(sp[3].x, sp[3].y, sp[4].x, sp[4].y);
-                    }
-                });
-            }
-        })
-    }
+        });
+        if(target.angle !== 0) {
+            Vertices.rotate(vCopy, target.angle, cg.poly.position)
+        }
+        Vertices.translate(vCopy, target.offset);
+        var vertices = Vertices.chamfer(vCopy, 10, -1, 2, 14);
+        beginShape();
+        vertices.map(function (ver) {
+            vertex(ver.x, ver.y);
+        });
+        endShape(CLOSE);
+    });
 }
 
 function drawBlocks() {
@@ -239,26 +302,13 @@ function drawBlocks() {
     }
 }
 
-function drawTargetShadow() {
-    if (!targetShadow) return;
-
-    // var vertices = Vertices.chamfer(targetShadow.vertices, 10, -1, 2, 14); //default chamfer
-    // noStroke();
-    // fill(255, 64);
-    // beginShape();
-    // for (var i = 0; i < vertices.length; i++) {
-    //     var ver = vertices[i];
-    //     vertex(ver.x, ver.y);
-    // }
-    // endShape(CLOSE);
-}
-
 function drawGroupAreas() {
     for (var i = 0; i < groups.length; i++) {
         if (!groups[i].innerpts) {
             return;
         }
         stroke(0, 0, 255, 64);
+        strokeWeight(1);
         fill(255, 255, 0, 64);
         beginShape();
         for (var j = 0; j < groups[i].innerpts.length; j++) {
@@ -309,12 +359,11 @@ function drawMouseLine() {
     drawingPath.push(prevPoint);
     for (var n = 1; n < mouseLines.length; n++) {
         var currPoint = mouseLines[n];
-        var delta = p5.Vector.sub(currPoint, prevPoint);
-        var midPoint = p5.Vector.add(currPoint, prevPoint).div(2);
-        var step = delta.div(10);
-        step.rotate(0.75);
-        var top = p5.Vector.add(midPoint, step);
-        var bottom = p5.Vector.sub(midPoint, step);
+        var delta = Vector.sub(currPoint, prevPoint);
+        var midPoint = Vector.div(Vector.add(currPoint, prevPoint), 2);
+        var step = Vector.rotate(Vector.div(delta, 10), 0.75);
+        var top = Vector.add(midPoint, step);
+        var bottom = Vector.sub(midPoint, step);
         drawingPath.push(top);
         drawingPath.unshift(bottom);
         prevPoint = currPoint;
@@ -380,11 +429,14 @@ function updateAfterMouseDrag() {
 
 /* EVENTS */
 function onMouseDownEvent() {
-    console.log('mouse down');
+    // console.log('mouse down', engine.world.bodies);
     pMousePosition = Vector.clone(mouse.position);
 
     if (mouseConstraints.body) {
         currDragging = mouseConstraints.body;
+        // clone pts and part vertices
+        currShadow = { opacity: 0 };
+        // console.log('current shadow', currShadow);
         return;
     }
     mouseStartOnDrag = true;
@@ -412,8 +464,6 @@ function onMouseMoveEvent() {
         Body.applyForce(currDragging, pMousePosition, Vector.mult(Vector.normalise(mouseDelta), Vector.magnitude(currDraggingOffset) / currDragging.parts.length / 256));
         pMousePosition = Vector.clone(mouse.position);
 
-        // update spikes
-        updateSpikes();
         return;
     }
     bodies.map(function (b) {
@@ -446,86 +496,39 @@ function onMouseUpEvent() {
     }
 
     if (currDragging) {
-        console.log("drag done");
-        groups.map(function (g, i) {
-            generateGroupPts(i);
-        });
+        if (target.group) {
+            var currGroup = getGroupByMatterBody(currDragging);
+            // console.log(currGroup, target.group);
+            Body.rotate(currDragging, target.angle);
+            Body.translate(currDragging, target.offset);
+            // update group
+            var bks = currGroup.blocks.concat(target.group.blocks);
+            bodies = bodies.filter(function (b) {
+                if (b === target.group.poly || b === currGroup.poly) {
+                    World.remove(engine.world, b);
+                    return false;
+                }
+                return true;
+            });
+            groups.splice(getGroupIndex(currGroup), 1);
+            groups.splice(getGroupIndex(target.group), 1);
+            formGroupByLocation(bks);
+            target.group = null;
+        }
+        else {
+            console.log("drag done");
+            groups.map(function (g, i) {
+                generateGroupPts(i);
+            });
+        }
         currDragging = null;
-
-        // update spikes
-        updateSpikes();
+        currShadow.opacity = 0;
     }
 }
 
-/* TARGET SHADOW */
-function checkLocations() {
-    // get the closest block
-    // var minDist = windowWidth;
-    // var targetOne;
-    // for (var i = 0; i < blocks.length; i++) {
-    //     var one = blocks[i];
-    //     if (one.id !== currDragging.id) {
-    //         var d = dist(currDragging.position.x, currDragging.position.y, one.position.x, one.position.y);
-    //         if (d < minDist) {
-    //             minDist = d;
-    //             targetOne = one;
-    //         }
-    //     }
-    // }
-    // if (minDist < BLOCK_RADIUS * 4.5) {
-    //     var p1 = [targetOne.position.x, targetOne.position.y];
-    //     var p2 = [currDragging.position.x, currDragging.position.y];
-    //     var pInter;
-    //     for (var j = 0; j < targetOne.vertices.length; j++) {
-    //         var vert1 = targetOne.vertices[j];
-    //         var vert2 = targetOne.vertices[(j + 1) % targetOne.vertices.length];
-    //         var q1 = [vert1.x, vert1.y];
-    //         var q2 = [vert2.x, vert2.y];
-    //         var lineIntersect = decomp.lineSegmentsIntersect(p1, p2, q1, q2);
-    //         if (lineIntersect) {
-    //             pInter = {
-    //                 x: (vert1.x + vert2.x) / 2,
-    //                 y: (vert1.y + vert2.y) / 2
-    //             }
-    //             break;
-    //         }
-    //     }
-    //     updateTargetShadow(targetOne, pInter);
-    // }
-    // else {
-    //     clearTargetShadow();
-    // }
-}
-
-// function clearTargetShadow() {
-//     targetShadow = null;
-// }
-
-// function updateTargetShadow(body, p) {
-//     var offsetX = (p.x - body.position.x) * 2;
-//     var offsetY = (p.y - body.position.y) * 2;
-//     // console.log('draw target location', body, p, offsetX, offsetY);
-//     targetShadow = {
-//         body: body,
-//         offset: {
-//             x: offsetX,
-//             y: offsetY
-//         },
-//         vertices: []
-//     }
-//     for (var i = 0; i < body.vertices.length; i++) {
-//         var ver = body.vertices[i];
-//         targetShadow.vertices.push({
-//             x: ver.x + offsetX,
-//             y: ver.y + offsetY
-//         })
-//     }
-// }
-
-
 /* GROUPS */
 
-function getGroupIndex(bid) {
+function getGroupByBlockIndex(bid) {
     for (var i = 0; i < groups.length; i++) {
         if (groups[i].blocks.includes(bid)) {
             return i;
@@ -534,20 +537,50 @@ function getGroupIndex(bid) {
     return -1;
 }
 
+function getGroupIndex(group) {
+    var result;
+    for(var i=0; i<groups.length; i++){
+        if(groups[i] === group){
+            result = i;
+            break;
+        }
+    }
+    return result;
+}
+
+function getGroupByMatterBody(bd) {
+    var result;
+    result = groups.filter(function (g) {
+        return g.poly === bd;
+    });
+    if (result.length === 1) {
+        return result[0];
+    }
+    return null;
+}
+
 function initializeGroups() {
     groups = [];
     var bks = [];
-    var conns = [];
     // create connection array for each block
     for (var r = 0; r < blocks.length; r++) {
         bks.push(blocks[r].id);
-        blocks[r].connected = [0, 0, 0, 0, 0, 0];
     }
+    formGroupByLocation(bks);
+}
+
+function formGroupByLocation(bks) {
+    var conns = [];
+    // clear block connected array
+    for (var i = 0; i < bks.length; i++) {
+        getBlockFromID(bks[i]).connected = [0, 0, 0, 0, 0, 0];
+    }
+
     // loop combination of two
-    for (var i = 0; i < blocks.length - 1; i++) {
-        for (var j = i + 1; j < blocks.length; j++) {
-            var b0 = blocks[i];
-            var b1 = blocks[j];
+    for (var i = 0; i < bks.length - 1; i++) {
+        for (var j = i + 1; j < bks.length; j++) {
+            var b0 = getBlockFromID(bks[i]);
+            var b1 = getBlockFromID(bks[j]);
             // check block distance
             var d = dist(b0.position.x, b0.position.y, b1.position.x, b1.position.y);
             if (d < BLOCK_RADIUS * 3.47) {
@@ -559,6 +592,8 @@ function initializeGroups() {
 }
 
 function createGroup(bks, conns) {
+    // console.log('create group', bks, conns);
+
     var result = [];
 
     var createdArr = [];
@@ -566,8 +601,9 @@ function createGroup(bks, conns) {
     conns.map(function (conn) {
         var b0 = getBlockFromID(conn[0]);
         var b1 = getBlockFromID(conn[1]);
-        var bi0 = getGroupIndex(b0.id);
-        var bi1 = getGroupIndex(b1.id);
+        var bi0 = getGroupByBlockIndex(b0.id);
+        var bi1 = getGroupByBlockIndex(b1.id);
+        // console.log(b0, b1, bi0, bi1);
         if (bi0 === -1 && bi1 === -1) { // neither is defined
             gid = groups.length;
             createdArr.push(gid);
@@ -608,13 +644,12 @@ function createGroup(bks, conns) {
             groups[gid].blocks = groups[gid].blocks.concat(groups[gidFrom].blocks);
             groups[gid].connections = groups[gid].connections.concat(groups[gidFrom].connections);
             groups.splice(gidFrom, 1);
+            createdArr.splice(createdArr.indexOf(gidFrom), 1);
         }
         // add connections
         groups[gid].connections.push([b0.id, b1.id]);
         createConnection(b0, b1);
     });
-
-    console.log('single blocks', bks);
 
     // generate group points for groups
     createdArr.map(function (g) {
@@ -630,15 +665,18 @@ function createGroup(bks, conns) {
             parts.push(bk);
         })
         Body.setParts(comp, parts, false);
-
+        
         result.push(comp);
     });
 
     // create group points for singles
+    console.log('single blocks', bks);
     bks.map(function (bid) {
         var bk = getBlockFromID(bid);
+        console.log('bk', bk);
         // add group to the world
         var comp = generatePolygonFromVertices(bk.vertices);
+        // console.log('comp', comp);
         groups.push({
             poly: comp,
             blocks: [bid],
@@ -648,7 +686,6 @@ function createGroup(bks, conns) {
         generateGroupPts(gid);
         Body.setStatic(bk, false);
         Body.setParts(comp, [bk], false);
-
         result.push(comp);
     });
     console.log('Groups:', groups);
@@ -737,7 +774,7 @@ function divideGroup(gid, bconns) {
     });
     groups.splice(gid, 1);
 
-    // create new groups;
+    // create new groups
     var createdGroups = createGroup(bks, filteredConns);
     var centerPt = Vector.create(0, 0);
     createdGroups.map(function (g) {
@@ -786,6 +823,7 @@ function generateGroupPts(gid) {
                 brPt = pt;
             }
         }
+        // console.log('bottom right point', brPt, brBlk);
 
         // add bottom right vertice to group pts as the starting point
         group.pts.push(brPt);
@@ -868,17 +906,21 @@ function generateBlock(x, y, s) {
 function generatePolygonFromVertices(vts) {
     var cx = 0;
     var cy = 0;
-    vts.map(function (vt) {
+    var pts = vts.map(function (vt) {
         cx += vt.x;
         cy += vt.y
+        return {
+            x: vt.x,
+            y: vt.y
+        }
     });
     cx /= vts.length;
     cy /= vts.length;
-    var body = Bodies.fromVertices(cx, cy, vts, {
+    var body = Bodies.fromVertices(cx, cy, pts, {
         friction: 0.8,
         frictionAir: 0.8,
     }, false);
-    body.pts = vts;
+    body.pts = pts;
     World.add(engine.world, body);
     bodies.push(body);
     return body;
