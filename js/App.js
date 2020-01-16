@@ -395,7 +395,6 @@ function updateAfterMouseDrag() {
                         gid = j;
                         brokenConns.push([b0.id, b1.id]);
                         console.log('break the connection', b0.id, b1.id);
-                        break;
                     }
                 }
                 if (INTERSECTED) {
@@ -416,7 +415,6 @@ function updateAfterMouseDrag() {
                         brokenConns.push([b0.id, b1.id]);
                         console.log('break the connection', b0.id, b1.id);
                     }
-                    break;
                 }
             }
         }
