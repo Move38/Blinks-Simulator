@@ -526,6 +526,12 @@ function onMouseUpEvent() {
     }
 }
 
+function doubleClicked() {
+    var block = generateBlock(mouseX, mouseY, BLOCK_RADIUS * 2);
+    blocks.push(block);
+    formGroupByLocation([block.id]);
+}
+
 /* GROUPS */
 
 function getGroupByBlockIndex(bid) {
