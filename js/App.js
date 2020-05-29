@@ -18,10 +18,10 @@ var TOTAL_BLOCK = 6;
 var engine;
 var mouse;
 var mouseConstraints;
-var bodies = [];
+var bodies = []; // MatterJS World Bodies()
 
-var blocks = [];
-var groups = [];
+var blocks = []; // hexgon blocks
+var groups = []; // data structure for block groups
 var connections = [];
 
 var currDragging;
@@ -31,6 +31,17 @@ var pMousePosition;
 
 var mouseLines = [];
 var mouseStartOnDrag;
+
+var SETTINGS = {
+    global: {
+        debugMode: false
+    },
+    blocks: {
+        friction: 0.8,
+        frictionAir: 0.8,
+        // frictionStatic: 0.5
+    }
+};
 
 function setup() {
     var canvas = createCanvas(windowWidth, windowHeight);
@@ -80,6 +91,36 @@ function setup() {
     Events.on(mouseConstraints, 'mouseup', function () {
         onMouseUpEvent();
     });
+
+    // add Dat GUI
+    var gui = new dat.GUI();
+    gui.add(SETTINGS.global, 'debugMode')
+    var gui_blocks = gui.addFolder('Blocks');
+    gui_blocks.open();
+    gui_blocks
+        .add(SETTINGS.blocks, 'friction', 0, 1)
+        .onFinishChange(function (value) {
+            bodies.map( b => {
+                b.friction = value
+            });
+            console.log(bodies)
+        });
+    gui_blocks
+        .add(SETTINGS.blocks, 'frictionAir', 0, 1)
+        .onFinishChange(function (value) {
+            bodies.map( b => {
+                b.frictionAir = value
+            });
+            console.log(bodies)
+        });
+    // gui_blocks
+    //     .add(SETTINGS.blocks, 'frictionStatic', 0, 100)
+    //     .onFinishChange(function (value) {
+    //         bodies.map( b => {
+    //             b.frictionStatic = value
+    //         });
+    //         console.log(bodies)
+    //     });
 }
 
 function draw() {
@@ -89,8 +130,10 @@ function draw() {
         target.group = detectSnappingGroup();
         if (target.group) {
             var currGroup = getGroupByMatterBody(currDragging);
-            // drawSpikes(currGroup.spikes);
-            // drawMatchingEdge(currGroup, target.group);
+            if (SETTINGS.global.debugMode) {
+                drawSpikes(currGroup.spikes);
+                drawMatchingEdge(currGroup, target.group);
+            }
             currShadow.opacity += (64 - currShadow.opacity) * 0.2;
             drawTargetShadow(currGroup, target.group);
         }
@@ -101,18 +144,20 @@ function draw() {
 
     drawBlocks();
 
-    // drawConnections();
+    if (SETTINGS.global.debugMode) {
+        drawConnections();
+    }
+
     drawMouseLine();
+    drawHighlightOnHover();
 
-    drawWorld();
-
-    // if (!currDragging) {
-    //     drawGroupAreas();
-    // }
+    if (!currDragging && SETTINGS.global.debugMode) {
+        drawGroupAreas();
+    }
 }
 
 /* RENDER */
-function drawWorld() {
+function drawHighlightOnHover() {
     bodies.map(function (b) {
         if (b.isHighlighted) {
             // draw polygon 
@@ -147,7 +192,7 @@ function detectSnappingGroup() {
     var currGroup;
     var result;
     if (currDragging) {
-        // generate spikes for curreng dragging group
+        // generate spikes for current dragging group
         groups.map(function (g) {
             if (currDragging === g.poly) {
                 currGroup = g;
@@ -254,7 +299,7 @@ function drawTargetShadow(cg, tg) {
                 y: v.y
             }
         });
-        if(target.angle !== 0) {
+        if (target.angle !== 0) {
             Vertices.rotate(vCopy, target.angle, cg.poly.position)
         }
         Vertices.translate(vCopy, target.offset);
@@ -275,7 +320,8 @@ function drawBlocks() {
         // draw block
         noStroke();
         if (one.isHighlighted) {
-            fill(240, 196, 196);
+            console.log('here')
+            fill(240, 0, 0);
         }
         else {
             fill(240);
@@ -287,18 +333,20 @@ function drawBlocks() {
         }
         endShape(CLOSE);
 
-        // draw angle indicator
-        var midPoint = {
-            x: one.vertices[0].x / 2 + one.vertices[one.vertices.length - 1].x / 2,
-            y: one.vertices[0].y / 2 + one.vertices[one.vertices.length - 1].y / 2
+        if (SETTINGS.global.debugMode) {
+            // draw angle indicator
+            var midPoint = {
+                x: one.vertices[0].x / 2 + one.vertices[one.vertices.length - 1].x / 2,
+                y: one.vertices[0].y / 2 + one.vertices[one.vertices.length - 1].y / 2
+            }
+            stroke(0, 0, 255, 64);
+            strokeWeight(1);
+            line(one.position.x,
+                one.position.y,
+                one.position.x + (midPoint.x - one.position.x) * 0.88,
+                one.position.y + (midPoint.y - one.position.y) * 0.88
+            );
         }
-        stroke(0, 0, 255, 64);
-        strokeWeight(1);
-        line(one.position.x,
-            one.position.y,
-            one.position.x + (midPoint.x - one.position.x) * 0.88,
-            one.position.y + (midPoint.y - one.position.y) * 0.88
-        );
     }
 }
 
@@ -394,7 +442,8 @@ function updateAfterMouseDrag() {
                         INTERSECTED = true;
                         gid = j;
                         brokenConns.push([b0.id, b1.id]);
-                        console.log('break the connection', b0.id, b1.id);
+                        if (SETTINGS.global.debugMode)
+                            console.log('break the connection', b0.id, b1.id);
                     }
                 }
                 if (INTERSECTED) {
@@ -413,7 +462,8 @@ function updateAfterMouseDrag() {
                     });
                     if (filteredBC.length === 0) {
                         brokenConns.push([b0.id, b1.id]);
-                        console.log('break the connection', b0.id, b1.id);
+                        if (SETTINGS.global.debugMode)
+                            console.log('break the connection', b0.id, b1.id);
                     }
                 }
             }
@@ -446,7 +496,8 @@ function onMouseDownEvent() {
 }
 
 function onMouseMoveEvent() {
-    console.log('mouse move');
+    if (SETTINGS.global.debugMode)
+        console.log('mouse move');
     if (mouseStartOnDrag) {
         mouseLines.push(createVector(mouse.position.x, mouse.position.y));
         return;
@@ -465,13 +516,15 @@ function onMouseMoveEvent() {
         return;
     }
     bodies.map(function (b) {
-        b.isHighlighted = false;
+        b.isHighlighted = false
+        // b.parts.map(p => p.isHighlighted = false);
         // highlight group polygon if on hover
         if (Bounds.contains(b.bounds, mouse.position)) {
             for (var i = 1; i < b.parts.length; i++) {
                 var part = b.parts[i];
                 if (pointInsidePolygon(part.vertices, mouse.position)) {
-                    b.isHighlighted = true;
+                    b.isHighlighted = true
+                    // b.parts.map(p => p.isHighlighted = true);
                     break;
                 }
             }
@@ -480,7 +533,8 @@ function onMouseMoveEvent() {
 }
 
 function onMouseUpEvent() {
-    console.log('mouse up');
+    if (SETTINGS.global.debugMode)
+        console.log('mouse up');
     if (mouseStartOnDrag) {
         mouseLines.push(createVector(mouse.position.x, mouse.position.y));
         mouseStartOnDrag = false;
@@ -514,7 +568,8 @@ function onMouseUpEvent() {
             target.group = null;
         }
         else {
-            console.log("drag done");
+            if (SETTINGS.global.debugMode)
+                console.log("drag done");
             groups.map(function (g, i) {
                 generateGroupPts(i);
             });
@@ -543,8 +598,8 @@ function getGroupByBlockIndex(bid) {
 
 function getGroupIndex(group) {
     var result;
-    for(var i=0; i<groups.length; i++){
-        if(groups[i] === group){
+    for (var i = 0; i < groups.length; i++) {
+        if (groups[i] === group) {
             result = i;
             break;
         }
@@ -669,15 +724,15 @@ function createGroup(bks, conns) {
             parts.push(bk);
         })
         Body.setParts(comp, parts, false);
-        
+
         result.push(comp);
     });
 
     // create group points for singles
-    console.log('single blocks', bks);
+    // console.log('single blocks', bks);
     bks.map(function (bid) {
         var bk = getBlockFromID(bid);
-        console.log('bk', bk);
+        // console.log('bk', bk);
         // add group to the world
         var comp = generatePolygonFromVertices(bk.vertices);
         // console.log('comp', comp);
@@ -692,8 +747,10 @@ function createGroup(bks, conns) {
         Body.setParts(comp, [bk], false);
         result.push(comp);
     });
-    console.log('Groups:', groups);
-    console.log('World', bodies);
+    if (SETTINGS.global.debugMode) {
+        console.log('Groups:', groups);
+        console.log('World', bodies);
+    }
     return result;
 }
 
@@ -729,7 +786,8 @@ function analyzingConnections(conns) {
 }
 
 function divideGroup(gid, bconns) {
-    console.log('divide group ', gid, bconns);
+    if (SETTINGS.global.debugMode)
+        console.log('divide group ', gid, bconns);
 
     var filteredConns = groups[gid].connections.filter(function (c) {
         var FOUND = false;
@@ -743,7 +801,8 @@ function divideGroup(gid, bconns) {
 
     // valid break connections
     var sets = analyzingConnections(filteredConns);
-    console.log('sets', sets);
+    if (SETTINGS.global.debugMode)
+        console.log('sets', sets);
 
     bconns.map(function (bc) {
         var FOUND = false;
@@ -760,7 +819,8 @@ function divideGroup(gid, bconns) {
     if (filteredConns.length === groups[gid].connections.length) {
         return;
     }
-    console.log('filtered connections', filteredConns);
+    if (SETTINGS.global.debugMode)
+        console.log('filtered connections', filteredConns);
 
     // clear block connections 
     var bks = groups[gid].blocks;
@@ -859,7 +919,8 @@ function generateGroupPts(gid) {
             counter++;
         }
         if (counter > group.blocks.length * BLOCK_SIDES) {
-            console.warn('Could not find group pts');
+            if (SETTINGS.global.debugMode)
+                console.warn('Could not find group pts');
             group.pts = [];
         }
     }
@@ -921,8 +982,9 @@ function generatePolygonFromVertices(vts) {
     cx /= vts.length;
     cy /= vts.length;
     var body = Bodies.fromVertices(cx, cy, pts, {
-        friction: 0.8,
-        frictionAir: 0.8,
+        friction: SETTINGS.blocks.friction,
+        frictionAir: SETTINGS.blocks.frictionAir,
+        // frictionStatic: SETTINGS.blocks.frictionStatic,
     }, false);
     body.pts = pts;
     World.add(engine.world, body);
