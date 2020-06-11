@@ -161,10 +161,6 @@ function draw() {
     }
 
     drawMouseLine()
-
-    if (!currDragging && SETTINGS.global.debugMode) {
-        drawGroupAreas()
-    }
 }
 
 function clearCanvas() {
@@ -578,9 +574,17 @@ function onMouseUpEvent() {
 }
 
 function doubleClicked() {
-    var block = generateBlock(mouseX, mouseY, BLOCK_RADIUS * 2)
-    blocks.push(block)
-    formGroupByLocation([block.id])
+    var mouseInsideGroups = false
+    bodies.map(function (b) {
+        if (Bounds.contains(b.bounds, mouse.position)) {
+            mouseInsideGroups = true
+        }
+    })
+    if(!mouseInsideGroups){
+        var block = generateBlock(mouseX, mouseY, BLOCK_RADIUS * 2)
+        blocks.push(block)
+        formGroupByLocation([block.id])
+    }
 }
 
 /* GROUPS */
@@ -923,7 +927,7 @@ function generateGroupPts(gid) {
         }
     }
     // console.log(group)
-    group.innerpts = hmpoly.createPaddingPolygon(group.pts, BLOCK_RADIUS)
+    // group.innerpts = hmpoly.createPaddingPolygon(group.pts, BLOCK_RADIUS)
 }
 
 /* CONNECTIONS */
