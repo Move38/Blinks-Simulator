@@ -16,3 +16,7 @@ canvas {
     display: block;
     margin: 0 auto;
 }
+
+.dg.ac {
+    user-select: none;
+}

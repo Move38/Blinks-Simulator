@@ -65,8 +65,7 @@ let groups = [] // data structure for block groups
 let connections = []
 let mouseLines = []
 let currDragging
-let currShadow = { opacity: 0 } //todo, rename
-let target = {} //todo, rename
+let targetShadow = {}
 
 // STATS 
 const stats = new Stats()
@@ -131,20 +130,10 @@ app.ticker.add((delta) => {
     stats.begin()
 
     graphics.clear()
-    if (currDragging) {
-        let currGroup = getGroupByMatterBody(currDragging)
-        target.group = detectSnappingGroup()
-        if (target.group) {
-            if (SETTINGS.global.debugMode) {
-                drawSpikes(currGroup.spikes)
-                drawMatchingEdge(currGroup, target.group)
-            }
-            currShadow.opacity += (0.25 - currShadow.opacity) * 0.2
-            updateTargetShadow(currGroup, target.group)
-        }
-        else {
-            currShadow.opacity += (0 - currShadow.opacity) * 0.2
-        }
+    updateTargetShadow()
+    if (SETTINGS.global.debugMode && targetShadow.targetGroup) {
+        drawSpikes()
+        drawMatchingEdge()
     }
     drawTargetShadow()
     drawBlocks()
@@ -180,66 +169,59 @@ function initializeBlocks() {
 
 
 function detectSnappingGroup() {
-    let currGroup
     let result
-    if (currDragging) {
-        // generate spikes for current dragging group
-        groups.map(function (g) {
-            if (currDragging === g.poly) {
-                currGroup = g
-                g.spikes = []
-                for (let i = 0; i < g.pts.length; i++) {
-                    let ii = (i + 1) % g.pts.length
-                    let centerPt = Matter.Vector.mult(Matter.Vector.add(g.pts[i], g.pts[ii]), 0.5)
-                    let farPt = Matter.Vector.add(centerPt, Matter.Vector.mult(Matter.Vector.sub(centerPt, g.pts[ii].body.position), 0.88))
-                    g.spikes.push([centerPt, farPt, false, g.pts[i], g.pts[ii]])
+    
+    // generate spikes for current dragging group
+    targetShadow.dragGroup.spikes = []
+    for (let i = 0; i < targetShadow.dragGroup.pts.length; i++) {
+        let ii = (i + 1) % targetShadow.dragGroup.pts.length
+        let centerPt = Matter.Vector.mult(Matter.Vector.add(targetShadow.dragGroup.pts[i], targetShadow.dragGroup.pts[ii]), 0.5)
+        let farPt = Matter.Vector.add(centerPt, Matter.Vector.mult(Matter.Vector.sub(centerPt, targetShadow.dragGroup.pts[ii].body.position), 0.88))
+        targetShadow.dragGroup.spikes.push([centerPt, farPt, false, targetShadow.dragGroup.pts[i], targetShadow.dragGroup.pts[ii]])
+    }
+
+    // finding intersacting group
+    for (let i = 0; i < groups.length; i++) {
+        let g = groups[i]
+        if (g === targetShadow.dragGroup) {
+            continue
+        }
+        let FOUND = false
+        let minDistance = 1000
+        targetShadow.dragGroup.spikes.map(function (sp, spi) {
+            let spii = (spi + 1) % targetShadow.dragGroup.spikes.length
+            if (pointInsidePolygon(g.pts, sp[1])) {
+                sp[2] = true
+                FOUND = true
+
+                // find the matching line
+                let p0 = sp[3]
+                let p1 = sp[4]
+                let m0 = Matter.Vector.div(Matter.Vector.add(p0, p1), 2)
+                for (let j = 0; j < g.pts.length; j++) {
+                    let jj = (j + 1) % g.pts.length
+                    let p2 = g.pts[j]
+                    let p3 = g.pts[jj]
+                    let m1 = Matter.Vector.div(Matter.Vector.add(p2, p3), 2)
+                    let d = Matter.Vector.magnitude(Matter.Vector.sub(m0, m1))
+                    if (d < minDistance) {
+                        minDistance = d
+                        targetShadow.dragGroup.intersectings = [spi, spii]
+                        g.intersectings = [j, jj]
+                    }
                 }
             }
         })
-
-        // finding intersacting group
-        for (let i = 0; i < groups.length; i++) {
-            let g = groups[i]
-            if (g === currGroup) {
-                continue
-            }
-            let FOUND = false
-            let minDistance = 1000
-            currGroup.spikes.map(function (sp, spi) {
-                let spii = (spi + 1) % currGroup.spikes.length
-                if (pointInsidePolygon(g.pts, sp[1])) {
-                    sp[2] = true
-                    FOUND = true
-
-                    // find the matching line
-                    let p0 = sp[3]
-                    let p1 = sp[4]
-                    let m0 = Matter.Vector.div(Matter.Vector.add(p0, p1), 2)
-                    for (let j = 0; j < g.pts.length; j++) {
-                        let jj = (j + 1) % g.pts.length
-                        let p2 = g.pts[j]
-                        let p3 = g.pts[jj]
-                        let m1 = Matter.Vector.div(Matter.Vector.add(p2, p3), 2)
-                        let d = Matter.Vector.magnitude(Matter.Vector.sub(m0, m1))
-                        if (d < minDistance) {
-                            minDistance = d
-                            currGroup.intersectings = [spi, spii]
-                            g.intersectings = [j, jj]
-                        }
-                    }
-                }
-            })
-            if (FOUND) {
-                result = g
-                break
-            }
+        if (FOUND) {
+            result = g
+            break
         }
     }
     return result
 }
 
-function drawSpikes(spikes) {
-    spikes.map(function (sp) {
+function drawSpikes() {
+    targetShadow.dragGroup.spikes.map(function (sp) {
         if (sp[2]) {
             graphics.lineStyle(1, 0xFF0000, 0.5)
         }
@@ -251,11 +233,11 @@ function drawSpikes(spikes) {
     })
 }
 
-function drawMatchingEdge(cg, tg) {
-    let p0 = cg.pts[cg.intersectings[0]]
-    let p1 = cg.pts[cg.intersectings[1]]
-    let p2 = tg.pts[tg.intersectings[0]]
-    let p3 = tg.pts[tg.intersectings[1]]
+function drawMatchingEdge() {
+    let p0 = targetShadow.dragGroup.pts[targetShadow.dragGroup.intersectings[0]]
+    let p1 = targetShadow.dragGroup.pts[targetShadow.dragGroup.intersectings[1]]
+    let p2 = targetShadow.targetGroup.pts[targetShadow.targetGroup.intersectings[0]]
+    let p3 = targetShadow.targetGroup.pts[targetShadow.targetGroup.intersectings[1]]
     graphics.lineStyle(4, 0x0000FF, 0.5)
     graphics.moveTo(p0.x, p0.y)
     graphics.lineTo(p1.x, p1.y)
@@ -263,26 +245,28 @@ function drawMatchingEdge(cg, tg) {
     graphics.lineTo(p3.x, p3.y)
 }
 
-function updateTargetShadow(cg, tg) {
-    let p0 = Matter.Vector.create(cg.pts[cg.intersectings[0]].x, cg.pts[cg.intersectings[0]].y)
-    let p1 = Matter.Vector.create(cg.pts[cg.intersectings[1]].x, cg.pts[cg.intersectings[1]].y)
-    let p2 = Matter.Vector.create(tg.pts[tg.intersectings[0]].x, tg.pts[tg.intersectings[0]].y)
-    let p3 = Matter.Vector.create(tg.pts[tg.intersectings[1]].x, tg.pts[tg.intersectings[1]].y)
-    let l0 = Matter.Vector.normalise(Matter.Vector.sub(p0, p1))
-    let l1 = Matter.Vector.normalise(Matter.Vector.sub(p3, p2))
-    target.angle = Math.atan2(Matter.Vector.cross(l0, l1), Matter.Vector.dot(l0, l1))
-    Matter.Vertices.rotate([p0, p1], target.angle, cg.poly.position)
-    let mp0 = Matter.Vector.div(Matter.Vector.add(p0, p1), 2)
-    let mp1 = Matter.Vector.div(Matter.Vector.add(p2, p3), 2)
-    target.offset = Matter.Vector.sub(mp1, mp0)
-    target.cg = cg //todo, merge with group
-}
+function updateTargetShadow() {
+    if(!currDragging) {
+        return
+    }
+    let dragGroup = getGroupByMatterBody(currDragging)
+    targetShadow.dragGroup = dragGroup
 
-function drawTargetShadow() {
-    if (currShadow.opacity > 0) {
-        graphics.lineStyle(0)
-        graphics.beginFill(0xFFFFFF, currShadow.opacity)
-        target.cg.poly.parts.filter(function (part, i) {
+    let targetGroup = detectSnappingGroup()
+    targetShadow.targetGroup = targetGroup
+    if(targetGroup) {
+        let p0 = Matter.Vector.create(dragGroup.pts[dragGroup.intersectings[0]].x, dragGroup.pts[dragGroup.intersectings[0]].y)
+        let p1 = Matter.Vector.create(dragGroup.pts[dragGroup.intersectings[1]].x, dragGroup.pts[dragGroup.intersectings[1]].y)
+        let p2 = Matter.Vector.create(targetGroup.pts[targetGroup.intersectings[0]].x, targetGroup.pts[targetGroup.intersectings[0]].y)
+        let p3 = Matter.Vector.create(targetGroup.pts[targetGroup.intersectings[1]].x, targetGroup.pts[targetGroup.intersectings[1]].y)
+        let l0 = Matter.Vector.normalise(Matter.Vector.sub(p0, p1))
+        let l1 = Matter.Vector.normalise(Matter.Vector.sub(p3, p2))
+        targetShadow.angle = Math.atan2(Matter.Vector.cross(l0, l1), Matter.Vector.dot(l0, l1))
+        Matter.Vertices.rotate([p0, p1], targetShadow.angle, dragGroup.poly.position)
+        let mp0 = Matter.Vector.div(Matter.Vector.add(p0, p1), 2)
+        let mp1 = Matter.Vector.div(Matter.Vector.add(p2, p3), 2)
+        targetShadow.offset = Matter.Vector.sub(mp1, mp0)
+        targetShadow.paths = dragGroup.poly.parts.filter(function (part, i) {
             return i !== 0
         }).map(function (p) {
             let vCopy = p.vertices.map(function (v) {
@@ -291,13 +275,29 @@ function drawTargetShadow() {
                     y: v.y
                 }
             })
-            if (target.angle !== 0) {
-                Matter.Vertices.rotate(vCopy, target.angle, target.cg.poly.position)
+            if (targetShadow.angle !== 0) {
+                Matter.Vertices.rotate(vCopy, targetShadow.angle, dragGroup.poly.position)
             }
-            Matter.Vertices.translate(vCopy, target.offset)
+            Matter.Vertices.translate(vCopy, targetShadow.offset)
             let vertices = Matter.Vertices.chamfer(vCopy, SETTINGS.blocks.cornerRadius, -1, 2, 14)
             const path = vertices.reduce((a, c) => a.concat([c.x, c.y]), [])
-            graphics.drawPolygon(path)
+            return path
+        })
+    }
+    if (targetGroup) {
+        targetShadow.opacity += (0.25 - targetShadow.opacity) * 0.2
+    }
+    else {
+        targetShadow.opacity += (0 - targetShadow.opacity) * 0.2
+    }
+}
+
+function drawTargetShadow() {
+    if (targetShadow.opacity > 0) {
+        graphics.lineStyle(0)
+        graphics.beginFill(0xFFFFFF, targetShadow.opacity)
+        targetShadow.paths.map(function (p) {
+            graphics.drawPolygon(p)
         })
         graphics.endFill()
     }
@@ -457,7 +457,7 @@ function onMouseDownEvent() {
 
     if (mouseConstraints.body) {
         currDragging = mouseConstraints.body
-        currShadow.opacity = 0
+        targetShadow.opacity = 0
         return
     }
     mouseStartOnDrag = true
@@ -517,24 +517,23 @@ function onMouseUpEvent() {
     }
 
     if (currDragging) {
-        if (target.group) {
-            let currGroup = getGroupByMatterBody(currDragging)
-            // console.log(currGroup, target.group)
-            Matter.Body.rotate(currDragging, target.angle)
-            Matter.Body.translate(currDragging, target.offset)
+        if (targetShadow.targetGroup) {
+            // console.log(targetShadow.dragGroup, targetShadow.targetGroup)
+            Matter.Body.rotate(currDragging, targetShadow.angle)
+            Matter.Body.translate(currDragging, targetShadow.offset)
             // update group
-            let bks = currGroup.blocks.concat(target.group.blocks)
+            let bks = targetShadow.dragGroup.blocks.concat(targetShadow.targetGroup.blocks)
             bodies = bodies.filter(function (b) {
-                if (b === target.group.poly || b === currGroup.poly) {
+                if (b === targetShadow.targetGroup.poly || b === targetShadow.dragGroup.poly) {
                     Matter.World.remove(engine.world, b)
                     return false
                 }
                 return true
             })
-            groups.splice(getGroupIndex(currGroup), 1)
-            groups.splice(getGroupIndex(target.group), 1)
+            groups.splice(getGroupIndex(targetShadow.dragGroup), 1)
+            groups.splice(getGroupIndex(targetShadow.targetGroup), 1)
             formGroupByLocation(bks)
-            // target.group = null
+            targetShadow.targetGroup = null
         }
         else {
             if (SETTINGS.global.debugMode)
@@ -544,7 +543,7 @@ function onMouseUpEvent() {
             })
         }
         currDragging = null
-        currShadow.opacity = 0
+        targetShadow.opacity = 0
     }
 }
 
@@ -1006,16 +1005,3 @@ function lineSegmentsIntersect(p1, p2, q1, q2) {
 
     return (s >= 0 && s <= 1 && t >= 0 && t <= 1)
 }
-
-// function setup() {
-//     let canvas = createCanvas(app.screen.width, app.screen.height)
-// }
-
-// function draw() {
-//     smooth()
-//     background(0)
-// }
-
-/* RENDER */
-
-/* Target Shadow */
