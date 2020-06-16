@@ -4,6 +4,117 @@
 const BLOCK_RADIUS = 24
 const BLOCK_SIDES = 6
 const TOTAL_BLOCK = 6
+let frameCount = 0
+
+// Shaders
+const vertexSrc = `
+    precision mediump float;
+    attribute vec2 aVertexPosition;
+
+    uniform mat3 translationMatrix;
+    uniform mat3 projectionMatrix;
+
+    void main() {
+        gl_Position = vec4((projectionMatrix * translationMatrix * vec3(aVertexPosition, 1.0)).xy, 0.0, 1.0);
+    }
+`
+
+const fragmentSrc = `
+    precision mediump float;
+    const float PI_6 = 0.5235987755982988;
+    const float PI_3 = 1.0471975511965976;
+    const vec3 BG_COLOR = vec3(0.88);
+    const float PIXEL_RATIO = 2.0;
+
+    uniform float u_radius;
+    uniform float u_angle; //angle
+    uniform vec2 u_pos; //position
+    uniform vec4 u_leds[6]; // leds 
+
+    float map(float value, float inMin, float inMax, float outMin, float outMax) {
+        float newValue = outMin + (outMax - outMin) * (value - inMin) / (inMax - inMin);
+        if (outMin < outMax) {
+            return clamp(newValue, outMin, outMax);
+        } else {
+            return clamp(newValue, outMax, outMin);
+        }
+    }
+
+    float getAbsoluteAngle(vec2 v1, vec2 v2) {
+        vec2 diff = v2 - v1;
+        return atan(diff.y / diff.x);
+    }
+
+    float getRelativeAngle(vec2 v1, vec2 v2) {
+        return acos(dot(v1, v2) / length(v1) / length(v2));
+    }
+
+    float blendOverlay(float base, float blend) {
+        return base<0.5?(2.0*base*blend):(1.0-2.0*(1.0-base)*(1.0-blend));
+    }
+    vec3 blendOverlay(vec3 base, vec3 blend) {
+        return vec3(blendOverlay(base.r,blend.r),blendOverlay(base.g,blend.g),blendOverlay(base.b,blend.b));
+    }
+    vec3 blendColors(vec3 base, vec3 blend, float opacity, int mode) {
+        // https://github.com/jamieowen/glsl-blend/
+        if(mode == 0) {
+            return blend * opacity + base * (1.0 - opacity); // blend nomral
+        }
+        if(mode == 1) {
+            return blendOverlay(base, blend) * opacity + base * (1.0 - opacity); // blend overlay
+        }
+        if(mode == 2) {
+            return min(base+blend,vec3(1.0)) * opacity + base * (1.0 - opacity); // blend add
+        }
+        if(mode == 3) {
+            return vec3(max(base.r,blend.r),max(base.g,blend.g),max(base.b,blend.b)) * opacity + base * (1.0 - opacity); // blend lighten
+        }
+        if(mode == 4) {
+            return vec3(min(base.r,blend.r),min(base.g,blend.g),min(base.b,blend.b)) * opacity + base * (1.0 - opacity); // blend darken
+        }
+        if(mode == 5) {
+            return base*blend * opacity + base * (1.0 - opacity); // blend multiply
+        }
+    }
+
+    void main() {
+        // set to default color
+        gl_FragColor = vec4(BG_COLOR, 1.0);
+        vec2 fragCoord = gl_FragCoord.xy / PIXEL_RATIO;
+
+        vec3 color = vec3(-1);
+        for(int i = 0; i < 6; i ++)  {
+            float angle = u_angle + PI_3 * float(i);
+            float px = u_pos.x + cos(angle) * u_radius * 2.0;
+            float py = u_pos.y - sin(angle) * u_radius * 2.0;
+            float dc = distance(fragCoord.xy, u_pos.xy); // distance to center
+            float ac = degrees(getAbsoluteAngle(u_pos, fragCoord.xy) + u_angle); // angle to center
+            float d = distance(fragCoord.xy, vec2(px, py)); 
+            float block_border_pram = abs(30.0 - mod(ac, 60.0)) / 150.0 * u_radius;
+            // float a = degrees(getRelativeAngle((fragCoord.xy - u_pos), (vec2(px, py) - u_pos))); // angle to center
+            if(dc < u_radius * 3.2 - block_border_pram) { //color spread distance, generate the border
+                // if(d < u_radius * 3.0 && abs(a) < 30.0 ){ // covers the triangluar inner area
+                if(d < u_radius * 3.0){
+                    float upper_value = u_radius * 3.0 * u_leds[i].a;
+                    // if(abs(a) >= 30.0) {
+                    //     upper_value = u_radius * 3.0 * u_leds[i].a * 0.9;
+                    // }
+                    float o = map(d, 0.0, upper_value, 1.0, 0.0);
+                    if(color.r < 0.0) {
+                        color = blendColors(vec3(1.0), u_leds[i].rgb, o, 5); 
+                    }
+                    else {
+                        color = blendColors(color, u_leds[i].rgb, o, 5);
+                    }
+                }
+            }
+        }
+        if(color.r >= 0.0) {
+            color = blendColors(color, vec3(1.0), 0.2, 3); // simulate translucent cover overlay
+            gl_FragColor = vec4(color, 1.0);
+        }
+    }
+`
 
 // PIXI
 const app = new PIXI.Application({
@@ -14,6 +125,8 @@ const app = new PIXI.Application({
     resolution: window.devicePixelRatio
 })
 document.body.appendChild(app.view)
+const shaderGraphics = new PIXI.Graphics()
+// app.stage.addChild(shaderGraphics)
 const graphics = new PIXI.Graphics()
 app.stage.addChild(graphics)
 
@@ -76,6 +189,7 @@ document.body.appendChild(stats.dom)
 const SETTINGS = {
     global: {
         debugMode: false,
+        shaderDraw: false,
         resetGame: function () {
             clearCanvas()
             initializeBlocks()
@@ -94,6 +208,15 @@ const gui = new dat.GUI()
 gui.add(SETTINGS.global, 'resetGame')
 gui.add(SETTINGS.global, 'clearCanvas')
 gui.add(SETTINGS.global, 'debugMode')
+const shaderDrawController = gui.add(SETTINGS.global, 'shaderDraw')
+shaderDrawController.onFinishChange( yesno => {
+    if(yesno) {
+        app.stage.addChildAt(shaderGraphics, 0)
+    }
+    else{
+        app.stage.removeChild(shaderGraphics)
+    }
+})
 const gui_blocks = gui.addFolder('Blocks')
 gui_blocks.open()
 gui_blocks
@@ -114,7 +237,7 @@ gui_blocks
         })
         console.log(bodies)
     })
-
+// gui.close()
 
 // add walls
 Matter.World.add(engine.world, [
@@ -136,12 +259,18 @@ app.ticker.add((delta) => {
         drawMatchingEdge()
     }
     drawTargetShadow()
-    drawBlocks()
+    if(SETTINGS.global.shaderDraw) {
+        drawBlocksShader()
+    }
+    else {
+        drawBlocks()
+    }
     if (SETTINGS.global.debugMode) {
         drawConnections()
     }
     drawMouseLine()
 
+    frameCount++
     stats.end()
 })
 
@@ -154,6 +283,7 @@ function clearCanvas() {
     bodies = []
     blocks = []
     groups = []
+    shaderGraphics.removeChildren()
 }
 
 function initializeBlocks() {
@@ -330,6 +460,31 @@ function drawBlocks() {
             graphics.moveTo(one.position.x, one.position.y)
             graphics.lineTo(one.position.x + (midPoint.x - one.position.x) * 0.88, one.position.y + (midPoint.y - one.position.y) * 0.88)
         }
+    }
+}
+
+function drawBlocksShader() {
+    for (let i = 0; i < blocks.length; i++) {
+        const block = blocks[i]
+        if( frameCount % 30 === 0) {
+            if(i % 2 === 0) {
+                block.colors.unshift(block.colors.pop())
+            }
+            else {
+                block.colors.push(block.colors.shift())
+            }
+        }
+        // get block angle
+        let midPoint = {
+            x: block.vertices[0].x / 2 + block.vertices[block.vertices.length - 1].x / 2,
+            y: block.vertices[0].y / 2 + block.vertices[block.vertices.length - 1].y / 2
+        }
+        let angle = Matter.Vector.angle(block.position, midPoint)
+        block.mesh.position.set(block.position.x, block.position.y)
+        block.mesh.rotation = angle
+        block.mesh.shader.uniforms.u_pos = [block.position.x, app.screen.height - block.position.y]
+        block.mesh.shader.uniforms.u_angle = angle
+        block.mesh.shader.uniforms.u_leds = block.colors.reduce((a, c) => a.concat(c), [])
     }
 }
 
@@ -569,7 +724,7 @@ function doubleClicked() {
 
 /* GROUPS */
 
-function getGroupByBlockIndex(bid) {
+function getGroupIndexByBlockID(bid) {
     for (let i = 0; i < groups.length; i++) {
         if (groups[i].blocks.includes(bid)) {
             return i
@@ -642,8 +797,8 @@ function createGroup(bks, conns) {
     conns.map(function (conn) {
         let b0 = getBlockFromID(conn[0])
         let b1 = getBlockFromID(conn[1])
-        let bi0 = getGroupByBlockIndex(b0.id)
-        let bi1 = getGroupByBlockIndex(b1.id)
+        let bi0 = getGroupIndexByBlockID(b0.id)
+        let bi1 = getGroupIndexByBlockID(b1.id)
         // console.log(b0, b1, bi0, bi1)
         if (bi0 === -1 && bi1 === -1) { // neither is defined
             gid = groups.length
@@ -946,7 +1101,50 @@ function getBlockFromID(id) {
 }
 
 function generateBlock(x, y, s) {
-    let block = Matter.Bodies.polygon(x, y, BLOCK_SIDES, s)
+    let block = Matter.Bodies.polygon(0, 0, BLOCK_SIDES, s)
+    if(Math.random() > 0.5) {
+        block.colors = [
+            [1.0, 0.0, 0.0, 1.0],
+            [0.0, 0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0, 0.75],
+            [0.0, 0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0, 0.25],
+            [0.0, 0.0, 0.0, 0.0],
+        ]
+    }
+    else {
+        block.colors = [
+            [1.0, 0.0, 0.0, 1.0],
+            [0.0, 1.0, 0.0, 1.0],
+            [0.0, 0.0, 1.0, 1.0],
+            [1.0, 0.0, 1.0, 1.0],
+            [1.0, 1.0, 0.0, 1.0],
+            [0.0, 1.0, 1.0, 1.0],
+        ]
+    }
+
+    let vertices = Matter.Vertices.chamfer(block.vertices, 10, -1, 2, 14) //default chamfer
+    const geometry = new PIXI.Geometry()
+        .addAttribute(
+            'aVertexPosition',
+            vertices.reduce((a, c) => a.concat([c.x, c.y]), []),
+            2
+        )
+        .addIndex([...Array(vertices.length - 2).keys()].reduce((a, c) => a.concat([0, c+1, c+2]), []))
+    let shader = PIXI.Shader.from(vertexSrc, fragmentSrc, {
+        u_radius: BLOCK_RADIUS / 2,
+        u_angle: 0.0,
+        u_pos: [x, y],
+        u_leds: block.colors
+    })
+    block.mesh = mesh = new PIXI.Mesh(geometry, shader)
+    shaderGraphics.addChild(block.mesh)
+    
+
+    Matter.Body.setPosition(block, {
+        x: x,
+        y: y
+    })
     return block
 }
 
