@@ -23,13 +23,13 @@ const fragmentSrc = `
     precision mediump float;
     const float PI_6 = 0.5235987755982988;
     const float PI_3 = 1.0471975511965976;
-    const vec3 BG_COLOR = vec3(0.88);
+    const vec3 BG_COLOR = vec3(0.667);
     const float PIXEL_RATIO = 2.0;
 
     uniform float u_radius;
     uniform float u_angle; //angle
     uniform vec2 u_pos; //position
-    uniform vec4 u_leds[6]; // leds 
+    uniform vec3 u_leds[6]; // leds 
 
     float map(float value, float inMin, float inMax, float outMin, float outMax) {
         float newValue = outMin + (outMax - outMin) * (value - inMin) / (inMax - inMin);
@@ -64,25 +64,26 @@ const fragmentSrc = `
             return blendOverlay(base, blend) * opacity + base * (1.0 - opacity); // blend overlay
         }
         if(mode == 2) {
-            return min(base+blend,vec3(1.0)) * opacity + base * (1.0 - opacity); // blend add
-        }
-        if(mode == 3) {
             return vec3(max(base.r,blend.r),max(base.g,blend.g),max(base.b,blend.b)) * opacity + base * (1.0 - opacity); // blend lighten
         }
-        if(mode == 4) {
+        if(mode == 3) {
             return vec3(min(base.r,blend.r),min(base.g,blend.g),min(base.b,blend.b)) * opacity + base * (1.0 - opacity); // blend darken
         }
-        if(mode == 5) {
+        if(mode == 4) {
             return base*blend * opacity + base * (1.0 - opacity); // blend multiply
         }
     }
 
     void main() {
+        float BORDER_DIST = u_radius * 3.2;
+
         // set to default color
         gl_FragColor = vec4(BG_COLOR, 1.0);
         vec2 fragCoord = gl_FragCoord.xy / PIXEL_RATIO;
 
-        vec3 color = vec3(-1);
+        // set color based on LED lights
+        vec3 color = vec3(0);
+        bool within_border = false;
         for(int i = 0; i < 6; i ++)  {
             float angle = u_angle + PI_3 * float(i);
             float px = u_pos.x + cos(angle) * u_radius * 2.0;
@@ -91,26 +92,19 @@ const fragmentSrc = `
             float ac = degrees(getAbsoluteAngle(u_pos, fragCoord.xy) + u_angle); // angle to center
             float d = distance(fragCoord.xy, vec2(px, py)); 
             float block_border_pram = abs(30.0 - mod(ac, 60.0)) / 150.0 * u_radius;
-            // float a = degrees(getRelativeAngle((fragCoord.xy - u_pos), (vec2(px, py) - u_pos))); // angle to center
-            if(dc < u_radius * 3.2 - block_border_pram) { //color spread distance, generate the border
-                // if(d < u_radius * 3.0 && abs(a) < 30.0 ){ // covers the triangluar inner area
-                if(d < u_radius * 3.0){
-                    float upper_value = u_radius * 3.0 * u_leds[i].a;
-                    // if(abs(a) >= 30.0) {
-                    //     upper_value = u_radius * 3.0 * u_leds[i].a * 0.9;
-                    // }
-                    float o = map(d, 0.0, upper_value, 1.0, 0.0);
-                    if(color.r < 0.0) {
-                        color = blendColors(vec3(1.0), u_leds[i].rgb, o, 5); 
-                    }
-                    else {
-                        color = blendColors(color, u_leds[i].rgb, o, 5);
-                    }
+            float a = degrees(getRelativeAngle((fragCoord.xy - u_pos), (vec2(px, py) - u_pos))); // angle to center
+            if(dc < BORDER_DIST - block_border_pram) { //color spread distance, generate the border
+                within_border = true;
+                float o = map(d, 0.0, BORDER_DIST, 1.0, 0.1);
+                // display led light divider
+                if(abs(a) > 30.0){
+                    o *= 0.98;
                 }
+                color = blendColors(color, u_leds[i].rgb, o * o, 2); // blend lights using lighten; use exp instead of linear for opacity
             }
         }
-        if(color.r >= 0.0) {
-            color = blendColors(color, vec3(1.0), 0.2, 3); // simulate translucent cover overlay
+        if(within_border) {
+            color = blendColors(BG_COLOR, color, 1.0, 1);  // blend color with background using overlay
             gl_FragColor = vec4(color, 1.0);
         }
     }
@@ -122,11 +116,12 @@ const app = new PIXI.Application({
     height: window.innerHeight,
     antialias: true,
     autoResize: true,
-    resolution: window.devicePixelRatio
+    resolution: window.devicePixelRatio,
+    backgroundColor: 0x444444
 })
 document.body.appendChild(app.view)
 const shaderGraphics = new PIXI.Graphics()
-// app.stage.addChild(shaderGraphics)
+app.stage.addChild(shaderGraphics)
 const graphics = new PIXI.Graphics()
 app.stage.addChild(graphics)
 
@@ -189,7 +184,7 @@ document.body.appendChild(stats.dom)
 const SETTINGS = {
     global: {
         debugMode: false,
-        shaderDraw: false,
+        shaderDraw: true,
         resetGame: function () {
             clearCanvas()
             initializeBlocks()
@@ -1104,22 +1099,22 @@ function generateBlock(x, y, s) {
     let block = Matter.Bodies.polygon(0, 0, BLOCK_SIDES, s)
     if(Math.random() > 0.5) {
         block.colors = [
-            [1.0, 0.0, 0.0, 1.0],
-            [0.0, 0.0, 0.0, 0.0],
-            [1.0, 0.0, 0.0, 0.75],
-            [0.0, 0.0, 0.0, 0.0],
-            [1.0, 0.0, 0.0, 0.25],
-            [0.0, 0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0],
+            [0.75, 0.0, 0.0],
+            [0.0, 0.0, 0.0],
+            [0.25, 0.0, 0.0],
+            [0.0, 0.0, 0.0],
         ]
     }
     else {
         block.colors = [
-            [1.0, 0.0, 0.0, 1.0],
-            [0.0, 1.0, 0.0, 1.0],
-            [0.0, 0.0, 1.0, 1.0],
-            [1.0, 0.0, 1.0, 1.0],
-            [1.0, 1.0, 0.0, 1.0],
-            [0.0, 1.0, 1.0, 1.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 1.0],
+            [1.0, 1.0, 0.0],
+            [0.0, 1.0, 1.0],
         ]
     }
 
@@ -1137,10 +1132,9 @@ function generateBlock(x, y, s) {
         u_pos: [x, y],
         u_leds: block.colors
     })
-    block.mesh = mesh = new PIXI.Mesh(geometry, shader)
+    block.mesh = new PIXI.Mesh(geometry, shader)
     shaderGraphics.addChild(block.mesh)
     
-
     Matter.Body.setPosition(block, {
         x: x,
         y: y
