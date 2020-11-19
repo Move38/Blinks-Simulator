@@ -23,7 +23,7 @@ const fragmentSrc = `
     precision mediump float;
     const float PI_6 = 0.5235987755982988;
     const float PI_3 = 1.0471975511965976;
-    const vec3 BG_COLOR = vec3(0.667);
+    const vec3 BG_COLOR = vec3(0.72);
     const float PIXEL_RATIO = 2.0;
 
     uniform float u_radius;
@@ -213,7 +213,7 @@ shaderDrawController.onFinishChange( yesno => {
     }
 })
 const gui_blocks = gui.addFolder('Blocks')
-gui_blocks.open()
+gui_blocks.close()
 gui_blocks
     .add(SETTINGS.blocks, 'cornerRadius', 0, 20)
 gui_blocks
@@ -1097,28 +1097,11 @@ function getBlockFromID(id) {
 
 function generateBlock(x, y, s) {
     let block = Matter.Bodies.polygon(0, 0, BLOCK_SIDES, s)
-    if(Math.random() > 0.5) {
-        block.colors = [
-            [1.0, 0.0, 0.0],
-            [0.0, 0.0, 0.0],
-            [0.75, 0.0, 0.0],
-            [0.0, 0.0, 0.0],
-            [0.25, 0.0, 0.0],
-            [0.0, 0.0, 0.0],
-        ]
-    }
-    else {
-        block.colors = [
-            [1.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0],
-            [0.0, 0.0, 1.0],
-            [1.0, 0.0, 1.0],
-            [1.0, 1.0, 0.0],
-            [0.0, 1.0, 1.0],
-        ]
-    }
 
-    let vertices = Matter.Vertices.chamfer(block.vertices, 10, -1, 2, 14) //default chamfer
+    // generate random color leds
+    block.colors = Array.from({length: 6}, () => Array.from({length: 3}, () => Math.random() > 0.2 ? 0.0 : 1.0))
+
+    let vertices = Matter.Vertices.chamfer(block.vertices, SETTINGS.blocks.cornerRadius, -1, 2, 14) //default chamfer
     const geometry = new PIXI.Geometry()
         .addAttribute(
             'aVertexPosition',
