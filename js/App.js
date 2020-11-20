@@ -1,5 +1,7 @@
 /* SETUP */
 const blk = new BLINKS();
+const BLOCKS_NUM = 6;
+blk.debugMode = true;
 // blk.resizeCanvas(800, 640);
 
 // STATS
@@ -10,11 +12,15 @@ document.body.appendChild(stats.dom);
 // Dat GUI
 const SETTINGS = {
     global: {
-        debug: false,
+        debug: true,
         clear: () => blk.clearCanvas(),
         reset: () => {
             blk.clearCanvas();
-            blk.createBlocks(6);
+            blk.createBlocks(BLOCKS_NUM);
+            //generate random colors for blocks
+            for (let i = 0; i < BLOCKS_NUM; i++) {
+                blk.setColors(i, Array.from({ length: 6 }, () => Array.from({ length: 3 }, () => Math.random() > 0.2 ? 0.0 : 1.0)))
+            }
         },
     },
 };
@@ -24,7 +30,12 @@ gui.add(SETTINGS.global, "clear");
 gui.add(SETTINGS.global, "reset");
 
 let frameCount = 0;
-blk.createBlocks(6);
+blk.createBlocks(BLOCKS_NUM);
+//generate random colors for blocks
+for (let i = 0; i < BLOCKS_NUM; i++) {
+    blk.setColors(i, Array.from({ length: 6 }, () => Array.from({ length: 3 }, () => Math.random() > 0.2 ? 0.0 : 1.0)))
+}
+
 
 /* UPDATE */
 
@@ -32,12 +43,18 @@ blk.beforeFrameUpdated = function () {
     stats.begin();
 
     if (frameCount % 30 === 0) {
-        // if (i % 2 === 0) {
-        //     block.colors.unshift(block.colors.pop())
-        // }
-        // else {
-        //     block.colors.push(block.colors.shift())
-        // }
+        for (let i = 0; i < BLOCKS_NUM; i++) {
+            let colors = blk.getColors(i);
+            if (colors) {
+                if (i % 2 === 0) {
+                    colors.unshift(colors.pop())
+                }
+                else {
+                    colors.push(colors.shift())
+                }
+                blk.setColors(i, colors)
+            }
+        }
     }
 }
 
