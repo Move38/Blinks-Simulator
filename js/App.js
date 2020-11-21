@@ -33,7 +33,8 @@ let frameCount = 0;
 blk.createBlocks(BLOCKS_NUM);
 //generate random colors for blocks
 for (let i = 0; i < BLOCKS_NUM; i++) {
-    blk.setColors(i, Array.from({ length: 6 }, () => Array.from({ length: 3 }, () => Math.random() > 0.2 ? 0.0 : 1.0)))
+    blk.setColor(i, blk.YELLOW)
+    blk.setColorOnFace(i, Math.floor(Math.random() * 6), blk.CYAN)
 }
 
 
@@ -43,7 +44,7 @@ blk.beforeFrameUpdated = function () {
     stats.begin();
 
     if (frameCount % 30 === 0) {
-        for (let i = 0; i < BLOCKS_NUM; i++) {
+        for (let i = 0; i < blk.blockNum; i++) {
             let colors = blk.getColors(i);
             if (colors) {
                 if (i % 2 === 0) {
@@ -65,14 +66,40 @@ blk.afterFrameUpdated = function () {
 
 /* EVENTS */
 
-function blockIsClicked(id) {
-    console.log("Block #", id, " is clicked");
+blk.doubleClicked = function () {
+    console.log('double clicked on canvas');
+    blk.createBlockAt(blk.mouseX, blk.mouseY);
+    blk.setColors(blk.blockNum - 1, Array.from({ length: 6 }, () => Array.from({ length: 3 }, () => Math.random() > 0.2 ? 0.0 : 1.0)))
 }
 
-function blockIsDoubleClicked(id) {
-    console.log("Block #", id, " is double clicked");
+blk.buttonPressed = function (id) {
+    console.log("#", id, "button is pressed");
 }
 
-function blockIsLongPressed(id) {
-    console.log("Block #", id, " is long pressed");
+blk.buttonReleased = function (id) {
+    console.log("#", id, "button is released");
+}
+
+blk.buttonSingleClicked = function (id) {
+    console.log("#", id, "button is single clicked");
+}
+
+blk.buttonDoubleClicked = function (id) {
+    console.log("#", id, "button is double clicked");
+}
+
+blk.buttonMultiClicked = function (id) {
+    console.log("#", id, "button is multi clicked");
+}
+
+blk.buttonClickCount = function (id, c) {
+    console.log("#", id, "button click count is", c);
+}
+
+blk.buttonLongPressed = function (id) {
+    console.log("#", id, "button is long pressed");
+}
+
+blk.buttonDown = function (id) {
+    console.log("#", id, "button is down");
 }
