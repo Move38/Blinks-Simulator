@@ -1,7 +1,7 @@
 /* SETUP */
 const blk = new BLINKS();
 const BLOCKS_NUM = 6;
-blk.debugMode = true;
+// blk.debugMode = true;
 // blk.resizeCanvas(800, 640);
 
 // STATS
@@ -12,7 +12,7 @@ document.body.appendChild(stats.dom);
 // Dat GUI
 const SETTINGS = {
     global: {
-        debug: true,
+        debug: false,
         clear: () => blk.clearCanvas(),
         reset: () => {
             blk.clearCanvas();
