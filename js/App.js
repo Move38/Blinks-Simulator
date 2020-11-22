@@ -88,12 +88,8 @@ blk.buttonDoubleClicked = function (id) {
     console.log("#", id, "button is double clicked");
 }
 
-blk.buttonMultiClicked = function (id) {
-    console.log("#", id, "button is multi clicked");
-}
-
-blk.buttonClickCount = function (id, c) {
-    console.log("#", id, "button click count is", c);
+blk.buttonMultiClicked = function (id, count) {
+    console.log("#", id, "button is multi clicked, count: ", count);
 }
 
 blk.buttonLongPressed = function (id) {
