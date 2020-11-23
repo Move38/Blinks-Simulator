@@ -35,6 +35,7 @@ blk.createBlocks(BLOCKS_NUM);
 for (let i = 0; i < BLOCKS_NUM; i++) {
     blk.setColor(i, blk.YELLOW)
     blk.setColorOnFace(i, Math.floor(Math.random() * 6), blk.CYAN)
+    blk.setValue(i, 'shift', Math.random() > 0.5)
 }
 
 
@@ -43,17 +44,41 @@ for (let i = 0; i < BLOCKS_NUM; i++) {
 blk.beforeFrameUpdated = function () {
     stats.begin();
 
-    if (frameCount % 30 === 0) {
-        for (let i = 0; i < blk.blockNum; i++) {
-            let colors = blk.getColors(i);
-            if (colors) {
-                if (i % 2 === 0) {
-                    colors.unshift(colors.pop())
+    for (let i = 0; i < blk.blockNum; i++) {
+        let blockStatus = blk.getObject(i);
+        if ('dim' in blockStatus) {
+            if (blockStatus.dim >= 1) {
+                blockStatus.speed = -0.01;
+            }
+            if (blockStatus.dim <= 0) {
+                blockStatus.speed = 0.01;
+            }
+            blockStatus.dim += blockStatus.speed;
+            let newColors = []
+            for (let m = 0; m < blockStatus.colors.length; m++) {
+                let c = blockStatus.colors[m];
+                newColors.push([
+                    c[0] * blockStatus.dim,
+                    c[1] * blockStatus.dim,
+                    c[2] * blockStatus.dim,
+                ])
+            }
+            blk.setColors(i, newColors)
+            blk.setObject(i, blockStatus)
+        }
+        else if (frameCount % 30 === 0) {
+            // console.log(blk.getValue(i, 'shift'))
+            if (blk.getValue(i, 'shift')) {
+                let colors = blk.getColors(i);
+                if (colors) {
+                    if (i % 2 === 0) {
+                        colors.unshift(colors.pop())
+                    }
+                    else {
+                        colors.push(colors.shift())
+                    }
+                    blk.setColors(i, colors)
                 }
-                else {
-                    colors.push(colors.shift())
-                }
-                blk.setColors(i, colors)
             }
         }
     }
@@ -82,10 +107,21 @@ blk.buttonReleased = function (id) {
 
 blk.buttonSingleClicked = function (id) {
     console.log("#", id, "button is single clicked");
+    blk.setValue(id, 'shift', !blk.getValue(id, 'shift'))
 }
 
 blk.buttonDoubleClicked = function (id) {
     console.log("#", id, "button is double clicked");
+    if (blk.getValue(id, 'dim')) {
+        blk.setColors(id, blk.getValue(id, 'colors'));
+        blk.setObject(id, {});
+    }
+    else {
+        blk.setObject(id, {
+            colors: blk.getColors(id),
+            dim: 1
+        })
+    }
 }
 
 blk.buttonMultiClicked = function (id, count) {
@@ -94,6 +130,8 @@ blk.buttonMultiClicked = function (id, count) {
 
 blk.buttonLongPressed = function (id) {
     console.log("#", id, "button is long pressed");
+    blk.setColor(id, blk.YELLOW)
+    blk.setColorOnFace(id, Math.floor(Math.random() * 6), blk.CYAN)
 }
 
 blk.buttonDown = function (id) {
