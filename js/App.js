@@ -28,6 +28,7 @@ const gui = new dat.GUI();
 gui.add(SETTINGS.global, "debug").onFinishChange((d) => (blk.debugMode = d));
 gui.add(SETTINGS.global, "clear");
 gui.add(SETTINGS.global, "reset");
+gui.close();
 
 let frameCount = 0;
 blk.createBlocks(BLOCKS_NUM);
