@@ -17,10 +17,6 @@ const SETTINGS = {
         reset: () => {
             blk.clearCanvas();
             blk.createBlocks(BLOCKS_NUM);
-            //generate random colors for blocks
-            for (let i = 0; i < BLOCKS_NUM; i++) {
-                blk.setColors(i, Array.from({ length: 6 }, () => Array.from({ length: 3 }, () => Math.random() > 0.2 ? 0.0 : 1.0)))
-            }
         },
     },
 };
@@ -46,42 +42,8 @@ blk.beforeFrameUpdated = function () {
     stats.begin();
 
     for (let i = 0; i < blk.blockNum; i++) {
-        let blockStatus = blk.getObject(i);
-        if ('dim' in blockStatus) {
-            if (blockStatus.dim >= 1) {
-                blockStatus.speed = -0.01;
-            }
-            if (blockStatus.dim <= 0) {
-                blockStatus.speed = 0.01;
-            }
-            blockStatus.dim += blockStatus.speed;
-            let newColors = []
-            for (let m = 0; m < blockStatus.colors.length; m++) {
-                let c = blockStatus.colors[m];
-                newColors.push([
-                    c[0] * blockStatus.dim,
-                    c[1] * blockStatus.dim,
-                    c[2] * blockStatus.dim,
-                ])
-            }
-            blk.setColors(i, newColors)
-            blk.setObject(i, blockStatus)
-        }
-        else if (frameCount % 30 === 0) {
-            // console.log(blk.getValue(i, 'shift'))
-            if (blk.getValue(i, 'shift')) {
-                let colors = blk.getColors(i);
-                if (colors) {
-                    if (i % 2 === 0) {
-                        colors.unshift(colors.pop())
-                    }
-                    else {
-                        colors.push(colors.shift())
-                    }
-                    blk.setColors(i, colors)
-                }
-            }
-        }
+        blk.setColor(i, blk.RED)
+        blk.setColorOnFace(i, parseInt((blk.millis() / 1000)) % 6, blk.BLUE)
     }
 }
 
@@ -95,7 +57,6 @@ blk.afterFrameUpdated = function () {
 blk.doubleClicked = function () {
     console.log('double clicked on canvas');
     blk.createBlockAt(blk.mouseX, blk.mouseY);
-    blk.setColors(blk.blockNum - 1, Array.from({ length: 6 }, () => Array.from({ length: 3 }, () => Math.random() > 0.2 ? 0.0 : 1.0)))
 }
 
 blk.buttonPressed = function (id) {
@@ -108,21 +69,10 @@ blk.buttonReleased = function (id) {
 
 blk.buttonSingleClicked = function (id) {
     console.log("#", id, "button is single clicked");
-    blk.setValue(id, 'shift', !blk.getValue(id, 'shift'))
 }
 
 blk.buttonDoubleClicked = function (id) {
     console.log("#", id, "button is double clicked");
-    if (blk.getValue(id, 'dim')) {
-        blk.setColors(id, blk.getValue(id, 'colors'));
-        blk.setObject(id, {});
-    }
-    else {
-        blk.setObject(id, {
-            colors: blk.getColors(id),
-            dim: 1
-        })
-    }
 }
 
 blk.buttonMultiClicked = function (id, count) {
@@ -131,8 +81,6 @@ blk.buttonMultiClicked = function (id, count) {
 
 blk.buttonLongPressed = function (id) {
     console.log("#", id, "button is long pressed");
-    blk.setColor(id, blk.YELLOW)
-    blk.setColorOnFace(id, Math.floor(Math.random() * 6), blk.CYAN)
 }
 
 blk.buttonDown = function (id) {
