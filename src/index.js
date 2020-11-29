@@ -1,4 +1,19 @@
-function BLINKS(scope) {
+import { Application as pApplication } from '@pixi/app'
+import { 
+    Geometry as pGeometry, 
+    Shader as pShader, 
+    Renderer as pRenderer, 
+    BatchRenderer as pBatchRenderer
+} from '@pixi/core'
+import { Graphics as pGraphics } from '@pixi/graphics'
+import { Mesh as pMesh } from '@pixi/mesh'
+import { TickerPlugin as pTickerPlugin } from '@pixi/ticker'
+
+import * as Matter from "matter-js"
+import decomp from 'poly-decomp'
+window.decomp = decomp
+
+function init(scope) {
     "use strict";
     return new simulation(scope);
 
@@ -80,7 +95,9 @@ function BLINKS(scope) {
         $._createMatterWalls($.width, $.height)
 
         // PIXI
-        $._PIXI = new PIXI.Application({
+        pApplication.registerPlugin(pTickerPlugin)
+        pRenderer.registerPlugin('batch', pBatchRenderer)
+        $._PIXI = new pApplication({
             width: $.width,
             height: $.height,
             antialias: true,
@@ -89,11 +106,11 @@ function BLINKS(scope) {
             backgroundColor: 0x444444
         })
         document.body.appendChild($._PIXI.view)
-        $._PIXIShadowView = new PIXI.Graphics()
+        $._PIXIShadowView = new pGraphics()
         $._PIXI.stage.addChild($._PIXIShadowView)
-        $._PIXIBlockView = new PIXI.Graphics()
+        $._PIXIBlockView = new pGraphics()
         $._PIXI.stage.addChild($._PIXIBlockView)
-        $._PIXIOverlayView = new PIXI.Graphics()
+        $._PIXIOverlayView = new pGraphics()
         $._PIXI.stage.addChild($._PIXIOverlayView)
 
         // Others
@@ -121,8 +138,6 @@ function BLINKS(scope) {
                     $._drawMatchingEdge()
                 }
                 $._drawConnections()
-                // draw group area
-                // $._drawGroupAreas()
             }
 
             // draw break stripes on dragging
@@ -181,21 +196,21 @@ function BLINKS(scope) {
             block.colors = Array.from({ length: $.BLOCKSIDES * 3 }, () => 0.0)
 
             let vertices = Matter.Vertices.chamfer(block.vertices, $.BLOCKCORNERRADIUS, -1, 2, 14) //default chamfer
-            const geometry = new PIXI.Geometry()
+            const geometry = new pGeometry()
                 .addAttribute(
                     'aVertexPosition',
                     vertices.reduce((a, c) => a.concat([c.x, c.y]), []),
                     2
                 )
                 .addIndex([...Array(vertices.length - 2).keys()].reduce((a, c) => a.concat([0, c + 1, c + 2]), []))
-            let shader = PIXI.Shader.from(vertexSrc, fragmentSrc, {
+            let shader = pShader.from(vertexSrc, fragmentSrc, {
                 u_pixel_ratio: $.pixelRatio,
                 u_radius: $.BLOCKRADIUS / 2,
                 u_angle: 0.0,
                 u_pos: [x, y],
                 u_leds: block.colors
             })
-            block.mesh = new PIXI.Mesh(geometry, shader)
+            block.mesh = new pMesh(geometry, shader)
             $._PIXIBlockView.addChild(block.mesh)
 
             Matter.Body.setPosition(block, {
@@ -695,30 +710,6 @@ function BLINKS(scope) {
             }
         }
 
-        $._drawGroupAreas = function () {
-            for (let i = 0; i < $._groups.length; i++) {
-                if (!$._groups[i].innerpts) {
-                    return
-                }
-                let drawingPath = []
-                for (let j = 0; j < $._groups[i].innerpts.length; j++) {
-                    let ver = $._groups[i].innerpts[j]
-                    drawingPath.push(ver.x, ver.y)
-                }
-                $._PIXIOverlayView.lineStyle(1, 0x0000FF, 0.25)
-                $._PIXIOverlayView.beginFill(0xFFFF00, 0.25)
-                $._PIXIOverlayView.drawPolygon(drawingPath)
-                $._PIXIOverlayView.endFill()
-                $._PIXIOverlayView.lineStyle(0)
-                for (let j = 0; j < $._groups[i].innerpts.length; j++) {
-                    let ver = $._groups[i].innerpts[j]
-                    $._PIXIOverlayView.beginFill(0xFF0000, 1)
-                    $._PIXIOverlayView.drawCircle(ver.x, ver.y, 3)
-                    $._PIXIOverlayView.endFill()
-                }
-            }
-        }
-
         // Groups
         $._formGroupByLocation = function (bks) {
             let conns = []
@@ -1019,10 +1010,6 @@ function BLINKS(scope) {
                         console.warn('Could not find group pts')
                     group.pts = []
                 }
-            }
-
-            if ($.debugMode) {
-                // group.innerpts = hmpoly.createPaddingPolygon(group.pts, $.BLOCKRADIUS)
             }
         }
 
@@ -1392,3 +1379,5 @@ function BLINKS(scope) {
     }
 
 }
+
+export { init }

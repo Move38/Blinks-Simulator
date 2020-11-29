@@ -1,5 +1,5 @@
 /* SETUP */
-const blk = new BLINKS();
+const blk = new blinks.init();
 const BLOCKS_NUM = 6;
 // blk.debugMode = true;
 // blk.resizeCanvas(800, 640);
