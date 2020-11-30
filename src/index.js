@@ -1,8 +1,8 @@
 import { Application as pApplication } from '@pixi/app'
-import { 
-    Geometry as pGeometry, 
-    Shader as pShader, 
-    Renderer as pRenderer, 
+import {
+    Geometry as pGeometry,
+    Shader as pShader,
+    Renderer as pRenderer,
     BatchRenderer as pBatchRenderer
 } from '@pixi/core'
 import { Graphics as pGraphics } from '@pixi/graphics'
@@ -118,7 +118,7 @@ function init(scope) {
 
 
         /* UPDATES */
-
+        $._PIXI.ticker.maxFPS = 30
         $._PIXI.ticker.add((delta) => {
             $._beforeFrameUpdatedFn()
 
@@ -236,32 +236,10 @@ function init(scope) {
                 $._blocks[i].colors = Array.from({ length: $.BLOCKSIDES }, () => c)
         }
 
-        $.setColorOnFace = function (i, j, c) {
-            if (i < $._blocks.length)
-                $._blocks[i].colors[j] = c
-        }
-
-        $.getObject = function (i) {
-            if (i < $._blocks.length)
-                return $._blocks[i].status || {};
-        }
-
-        $.setObject = function (i, obj) {
-            if (i < $._blocks.length)
-                $._blocks[i].status = obj;
-        }
-
-        $.getValue = function (i, v) {
+        $.setColorOnFace = function (i, c, j) {
             if (i < $._blocks.length) {
-                // console.log(($._blocks[i].status || {}), ($._blocks[i].status || {})[v])
-                return ($._blocks[i].status || {})[v] || null;
+                $._blocks[i].colors[j] = c
             }
-        }
-
-        $.setValue = function (i, k, v) {
-            if (i < $._blocks.length)
-                $._blocks[i].status = $._blocks[i].status || {};
-            $._blocks[i].status[k] = v;
         }
 
         // Time
