@@ -1,5 +1,7 @@
 # Blinks-Simulator
 This simulator is using PIXIJS as rendering engine and MatterJS as physics engine. The core library file is `build/blinks.min.js`
+[Demo](https://move38.github.io/Blinks-Simulator/)
+
 
 ## Build
 run `npm run install` to install packages
