@@ -151,7 +151,9 @@ function init() {
             // console.log('message received => ', event.data);
             let eventName = event.data.name;
             let eventValues = event.data.values;
-            blk[eventName].apply(this, eventValues);
+            if(blk[eventName]){
+                blk[eventName].apply(this, eventValues);
+            }
         });
         // listen to error event of worker
         worker.addEventListener('error', function (event) {

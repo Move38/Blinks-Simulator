@@ -194,6 +194,7 @@ function init(scope) {
             let block = Matter.Bodies.polygon(0, 0, $.BLOCKSIDES, $.BLOCKRADIUS * 2)
 
             block.colors = Array.from({ length: $.BLOCKSIDES * 3 }, () => 0.0)
+            block.values = Array.from({ length: $.BLOCKSIDES}, () => -1)
 
             let vertices = Matter.Vertices.chamfer(block.vertices, $.BLOCKCORNERRADIUS, -1, 2, 14) //default chamfer
             const geometry = new pGeometry()
@@ -240,6 +241,24 @@ function init(scope) {
             if (i < $._blocks.length && j < $.BLOCKSIDES) {
                 $._blocks[i].colors[j] = c
             }
+        }
+
+        $.setValueSentOnAllFaces = function (i, v) {
+            if (i < $._blocks.length)
+                $._blocks[i].values = Array.from({ length: $.BLOCKSIDES }, () => v);
+        }
+
+        $.setValueSentOnFace = function (i, v, f) {
+            if (i < $._blocks.length){
+                if($._blocks[i].values[f] !== v){
+                    $._blocks[i].values[f] = v;
+                    // update connected neighbor
+                    if($._blocks[i].connected[f].index >= 0){
+                        // let connBlock = $
+                    }
+                }
+            }
+            
         }
 
         // Time
@@ -926,7 +945,20 @@ function init(scope) {
         $._sendGroupUpdates = function () {
             let result = $._blocks.map(b => {
                 return b.connected.map(c => {
-                    return $._getBlockIndexFromID(c)
+                    const index = $._getBlockIndexFromID(c);
+                    let value = -1;
+                    if(index >= 0) {
+                        let connBlock = $._blocks[index];
+                        connBlock.connected.map( (cb, cbi) => {
+                            if(cb === b.id){
+                                value = connBlock.values[cbi];
+                            }
+                        })
+                    }
+                    return {
+                        index: index,
+                        value: value
+                    }
                 })
             })
             $._groupUpdatedFn(result)

@@ -1,14 +1,3 @@
-const RED = [1.0, 0, 0];
-const ORANGE = [1.0, 1.0 / 2, 0];
-const YELLOW = [1.0, 1.0, 0];
-const GREEN = [0, 1.0, 0];
-const CYAN = [0, 1.0, 1.0];
-const BLUE = [0, 0, 1.0];
-const MAGENTA = [1.0, 0, 1.0];
-const WHITE = [1.0, 1.0, 1.0];
-const OFF = [0, 0, 0];
-const NEVER = Number.MAX_SAFE_INTEGER;
-
 self._millis = 0;
 self.connected = [-1, -1, -1, -1, -1, -1];
 self.millisOffset = Math.floor(Math.random() * 1000);
@@ -56,26 +45,34 @@ self.onmessage = function (event) {
     }
 }
 
-function millis() {
-    return self._millis;
+/* Display */
+
+function setColor(newColor) {
+    self.postMessage({
+        name: 'setColor',
+        values: [self.index, newColor]
+    });
 }
 
-function dim(color, brightness) {
-    return color.map(c => c * brightness / 255);
+function setColorOnFace(newColor, face) {
+    self.postMessage({
+        name: 'setColorOnFace',
+        values: [self.index, newColor, face]
+    })
 }
 
-function sin8_C(theta) {
-    return Math.sin(theta / 256.0 * Math.PI) * 128 + 128;
-}
 
-function map(x, in_min, in_max, out_min, out_max) {
-    let val = out_min + (out_max - out_min) * ((x - in_min) * 1.0 / (in_max - in_min));
-    if (out_min < out_max) {
-        return Math.min(Math.max(val, out_min), out_max);
-    } else {
-        return Math.min(Math.max(val, out_max), out_min);
-    }
-}
+/* Colors */
+
+const RED = [1.0, 0, 0];
+const ORANGE = [1.0, 1.0 / 2, 0];
+const YELLOW = [1.0, 1.0, 0];
+const GREEN = [0, 1.0, 0];
+const CYAN = [0, 1.0, 1.0];
+const BLUE = [0, 0, 1.0];
+const MAGENTA = [1.0, 0, 1.0];
+const WHITE = [1.0, 1.0, 1.0];
+const OFF = [0, 0, 0];
 
 function makeColorRGB(red, green, blue) {
     return [red / 255.0, green / 255.0, blue / 255.0];
@@ -134,23 +131,12 @@ function makeColorHSB(hue, saturation, brightness) {
     return (makeColorRGB(r, g, b));
 }
 
-function setColor(newColor) {
-    self.postMessage({
-        name: 'setColor',
-        values: [self.index, newColor]
-    });
+function dim(color, brightness) {
+    return color.map(c => c * brightness / 255);
 }
 
-function setColorOnFace(newColor, face) {
-    self.postMessage({
-        name: 'setColorOnFace',
-        values: [self.index, newColor, face]
-    })
-}
 
-function isValueReceivedOnFaceExpired(f) {
-    return self.connected[f] >= 0;
-}
+/* Button */
 
 function buttonDown(){
     return self._buttondown;
@@ -198,6 +184,50 @@ function buttonClickCount() {
     return result;
 }
 
+
+/* Communication */
+
+function setValueSentOnAllFaces(value) {
+    self.postMessage({
+        name: 'setValueSentOnAllFaces',
+        values: [self.index, value]
+    });
+}
+
+function setValueSentOnFace(value, face) {
+    self.postMessage({
+        name: 'setValueSentOnFace',
+        values: [self.index, value, face]
+    });
+}
+
+function getLastValueReceivedOnFace(face) {
+    return self.connected[face].value;
+}
+
+function isValueReceivedOnFaceExpired(face) {
+    return self.connected[face].index < 0;
+}
+
+function didValueOnFaceChange(face) {
+
+}
+
+function isAlone() {
+    return self.connected.reduce(function (prev, curr) { return curr.index < 0 ? prev : false }, true)
+}
+
+/* Datagrams */
+
+
+/* Time */
+
+const NEVER = Number.MAX_SAFE_INTEGER;
+
+function millis() {
+    return self._millis;
+}
+
 class Timer {
     constructor(s) {
         this.worker = s;
@@ -236,3 +266,35 @@ class Timer {
         return timeRemaining;
     }
 }
+
+/* Convenience */
+
+const FACE_COUNT = 6;
+const MAX_BRIGHTNESS = 255;
+const START_STATE_POWER_UP = 0;
+const START_STATE_WE_ARE_ROOT = 1;
+const START_STATE_DOWNLOAD_SUCCESS = 2;
+const IR_DATA_VALUE_MAX = 63;
+
+function COUNT_OF(array) {
+    return array.length;
+}
+
+function sin8_C(theta) {
+    return Math.sin(theta / 256.0 * Math.PI) * 128 + 128;
+}
+
+function random(limit) {
+    return Math.round(Math.random() * limit);
+}
+
+function map(x, in_min, in_max, out_min, out_max) {
+    let val = out_min + (out_max - out_min) * ((x - in_min) * 1.0 / (in_max - in_min));
+    if (out_min < out_max) {
+        return Math.min(Math.max(val, out_min), out_max);
+    } else {
+        return Math.min(Math.max(val, out_max), out_min);
+    }
+}
+
+/* System */
