@@ -237,7 +237,7 @@ function init(scope) {
         }
 
         $.setColorOnFace = function (i, c, j) {
-            if (i < $._blocks.length) {
+            if (i < $._blocks.length && j < $.BLOCKSIDES) {
                 $._blocks[i].colors[j] = c
             }
         }
@@ -304,17 +304,15 @@ function init(scope) {
                 mouseOnClick = true
                 longpressTimer = setTimeout(() => {
                     clearTimeout(longpressTimer)
+                    longpressTimer = null
                     if ($._blockOnHighlight >= 0) {
                         $._buttonLongPressedFn($._getBlockIndexFromID($._blockOnHighlight))
-                        $._blockOnHighlight = -1
                     }
-                    mouseOnClick = false
-                    clicks = 0
                 }, $.LONGPRESSTIMEOUT)
 
                 if ($._blockOnHighlight >= 0) {
                     // call mouse down event on a button
-                    $._buttonDownFn($._getBlockIndexFromID($._blockOnHighlight))
+                    $._buttonPressedFn($._getBlockIndexFromID($._blockOnHighlight))
                 }
 
                 // freeze matter bodies
@@ -431,35 +429,37 @@ function init(scope) {
                 }
 
                 if (mouseOnClick) {
-                    clearTimeout(longpressTimer)
-                    clearTimeout(clickTimer)
-                    clicks++
                     let blockIndex = $._getBlockIndexFromID($._blockOnHighlight)
                     if (blockIndex >= 0) {
                         $._buttonReleasedFn(blockIndex)
                     }
-                    clickTimer = setTimeout(() => {
-                        if (clicks === 1) {
-                            if (blockIndex >= 0) {
-                                $._buttonSingleClickedFn(blockIndex)
+                    if (longpressTimer) {
+                        clearTimeout(longpressTimer)
+                        clearTimeout(clickTimer)
+                        clicks++
+                        clickTimer = setTimeout(() => {
+                            if (clicks === 1) {
+                                if (blockIndex >= 0) {
+                                    $._buttonSingleClickedFn(blockIndex)
+                                }
                             }
-                        }
-                        else if (clicks === 2) {
-                            if (blockIndex >= 0) {
-                                $._buttonDoubleClickedFn(blockIndex)
+                            else if (clicks === 2) {
+                                if (blockIndex >= 0) {
+                                    $._buttonDoubleClickedFn(blockIndex)
+                                }
+                                else {
+                                    $._doubleClickedFn()
+                                }
                             }
-                            else {
-                                $._doubleClickedFn()
+                            else if (clicks > 2) {
+                                if (blockIndex >= 0) {
+                                    $._buttonMultiClickedFn(blockIndex, clicks)
+                                    $.buttonClickCount = clicks
+                                }
                             }
-                        }
-                        else if (clicks > 2) {
-                            if (blockIndex >= 0) {
-                                $._buttonMultiClickedFn(blockIndex, clicks)
-                                $.buttonClickCount = clicks
-                            }
-                        }
-                        clicks = 0
-                    }, $.CLICKTIMEOUT)
+                            clicks = 0
+                        }, $.CLICKTIMEOUT)
+                    }
                     mouseOnClick = false
                 }
 
@@ -470,7 +470,7 @@ function init(scope) {
             }
 
             // reset all highlights
-            $._resetHighlight()
+            // $._resetHighlight()
         }
 
         function onCollisionEndEvent() {
@@ -483,11 +483,11 @@ function init(scope) {
         /* EXTERNAL EVENTS */
         let eventNames = [
             "beforeFrameUpdated", "afterFrameUpdated",
-            "doubleClicked",
+            "doubleClicked", "buttonLongPressed",
             "buttonPressed", "buttonReleased",
             "buttonSingleClicked", "buttonDoubleClicked",
             "buttonMultiClicked", "buttonClickCount",
-            "buttonLongPressed", "buttonDown"
+            "groupUpdated"
         ];
         for (let k of eventNames) {
             let intern = "_" + k + "Fn";
@@ -814,6 +814,8 @@ function init(scope) {
                 console.log('Groups:', $._groups)
                 console.log('World', $._MatterBodies)
             }
+
+            $._sendGroupUpdates();
             return result
         }
 
@@ -919,6 +921,15 @@ function init(scope) {
                     $._generateGroupPts(i)
                 })
             }, 100)
+        }
+
+        $._sendGroupUpdates = function () {
+            let result = $._blocks.map(b => {
+                return b.connected.map(c => {
+                    return $._getBlockIndexFromID(c)
+                })
+            })
+            $._groupUpdatedFn(result)
         }
 
         $._generateGroupPts = function (gid) {
@@ -1318,7 +1329,7 @@ function init(scope) {
                 bool within_border = false;
                 float TOTAL_BRIGHTNESS = 0.0;
                 for (int i = 0; i < 6; i++) {
-                    float angle = u_angle + PI_3 * float(i);
+                    float angle = u_angle + PI_3 * float(i + 1);
                     float px = u_pos.x + cos(angle) * u_radius * 2.0;
                     float py = u_pos.y - sin(angle) * u_radius * 2.0;
                     float dc = distance(fragCoord.xy, u_pos.xy); // distance to center
@@ -1342,14 +1353,13 @@ function init(scope) {
                     color = blendColors(vec3(bg_color), color, 1.0, 1);  // blend color with background using overlay
                 }
                 else {
-                    // set to default color
-                    color = vec3(BG_LIGHT);
-                }
-                if (u_highlight) {
-                    color = blendColors(color, vec3(1.0, 0.0, 0.0), 0.33, 0); // add red overlay
-                }
-                else if(u_group_highlight) {
-                    color = blendColors(color, vec3(1.0), 0.5, 0); // add white overlay
+                    if (u_highlight || u_group_highlight) {
+                        color = vec3(0.72, 0.49, 0.49); // add red border
+                    }
+                    else {
+                        // set to default color
+                        color = vec3(BG_LIGHT);
+                    }
                 }
                 gl_FragColor = vec4(color, 1.0);
             }

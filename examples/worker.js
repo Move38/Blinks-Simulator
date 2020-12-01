@@ -9,22 +9,55 @@ const WHITE = [1.0, 1.0, 1.0];
 const OFF = [0, 0, 0];
 const NEVER = Number.MAX_SAFE_INTEGER;
 
-self.milliseconds = 0;
+self._millis = 0;
+self.connected = [-1, -1, -1, -1, -1, -1];
 self.millisOffset = Math.floor(Math.random() * 1000);
 
 self.onmessage = function (event) {
     if (event.data.name === 'index') {
         self.index = event.data.value;
-        setup();
+        if(typeof(setup) === 'function'){
+            setup();
+        }
     }
     else if (event.data.name === 'loop') {
-        self.milliseconds = event.data.value + self.millisOffset;
-        loop();
+        self._millis = event.data.value + self.millisOffset;
+        if(typeof(loop) === 'function'){
+            loop();
+        }
+    }
+    else if (event.data.name === 'connected') {
+        self.connected = event.data.values;
+    }
+    else if(event.data.name === 'btnpressed'){
+        self._buttondown = true;
+        self._buttonPressedFlag = true;
+
+    }
+    else if(event.data.name === 'btnreleased'){
+        self._buttondown = false;
+        self._buttonReleasedFlag = true;
+
+    }
+    else if(event.data.name === 'btnclicked'){
+        self._buttonClickCount = event.data.value;
+        if(event.data.value === 1){
+            self._buttonSingleClickedFlag = true;
+        }
+        else if(event.data.value === 2){
+            self._buttonDoubleClickedFlag = true;
+        }
+        else {
+            self._buttonMultiClickedFlag = true;
+        }
+    }
+    else if(event.data.name === 'btnlongpressed'){
+        self._buttonLongPressedFlag = true;
     }
 }
 
 function millis() {
-    return self.milliseconds;
+    return self._millis;
 }
 
 function dim(color, brightness) {
@@ -115,13 +148,64 @@ function setColorOnFace(newColor, face) {
     })
 }
 
+function isValueReceivedOnFaceExpired(f) {
+    return self.connected[f] >= 0;
+}
+
+function buttonDown(){
+    return self._buttondown;
+}
+
+function buttonPressed(){
+    const result = self._buttonPressedFlag;
+    self._buttonPressedFlag = false;
+    return result;
+}
+
+function buttonReleased(){
+    const result = self._buttonReleasedFlag;
+    self._buttonReleasedFlag = false;
+    return result;
+}
+
+function buttonLongPressed(){
+    const result = self._buttonLongPressedFlag;
+    self._buttonLongPressedFlag = false;
+    return result;
+}
+
+function buttonSingleClicked(){
+    const result = self._buttonSingleClickedFlag;
+    self._buttonSingleClickedFlag = false;
+    return result;
+}
+
+function buttonDoubleClicked(){
+    const result = self._buttonDoubleClickedFlag;
+    self._buttonDoubleClickedFlag = false;
+    return result;
+}
+
+function buttonMultiClicked(){
+    const result = self._buttonMultiClickedFlag;
+    self._buttonMultiClickedFlag = false;
+    return result;
+}
+
+function buttonClickCount() {
+    const result = self._buttonClickCount;
+    self._buttonClickCount = 0;
+    return result;
+}
+
 class Timer {
     constructor(s) {
         this.worker = s;
+        this.m_expireTime = this.worker._millis;
     }
 
     set(ms) {
-        this.m_expireTime = this.worker.milliseconds + ms;
+        this.m_expireTime = this.worker._millis + ms;
     }
 
     add(ms) {
@@ -138,16 +222,17 @@ class Timer {
     }
 
     isExpired() {
-        return this.worker.milliseconds > this.m_expireTime;
+        return this.worker._millis > this.m_expireTime;
     }
 
     getRemaining() {
-        let timeRemaining;
-        if (this.worker.milliseconds >= this.m_expireTime) {
+        let timeRemaining = 0;
+        if (this.worker._millis >= this.m_expireTime) {
             timeRemaining = 0;
         } else {
-            timeRemaining = this.m_expireTime - this.worker.milliseconds;
+            timeRemaining = this.m_expireTime - this.worker._millis;
         }
+        // return 0;
         return timeRemaining;
     }
 }

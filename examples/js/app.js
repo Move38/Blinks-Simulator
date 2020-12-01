@@ -7,10 +7,10 @@ document.body.appendChild(stats.dom);
 const SETTINGS = {
     global: {
         debug: false,
-        clear: () => blk.clearCanvas(),
+        clear: () => { clear(); },
         reset: () => {
-            blk.clearCanvas();
-            blk.createBlocks(BLOCKS_NUM);
+            clear();
+            init();
         },
     },
 };
@@ -23,33 +23,10 @@ gui.close();
 
 /* SETUP */
 const blk = new blinks.init();
+blk.debugMode = SETTINGS.global.debug;
 const BLOCKS_NUM = 6;
 let frameCount = 0;
-blk.createBlocks(BLOCKS_NUM);
 let workers = [];
-
-// setup webworkers for each blink
-for (let i = 0; i < BLOCKS_NUM; i++) {
-    let index = i;
-    let worker = new Worker('../time.js');
-    worker.postMessage({
-        name: 'index',
-        value: index
-    })
-
-    // listen to message event of worker
-    worker.addEventListener('message', function (event) {
-        // console.log('message received => ', event.data);
-        let eventName = event.data.name;
-        let eventValues = event.data.values;
-        blk[eventName].apply(this, eventValues);
-    });
-    // listen to error event of worker
-    worker.addEventListener('error', function (event) {
-        console.error('error received => ', event);
-    });
-    workers.push(worker);
-}
 
 
 /* UPDATE */
@@ -72,35 +49,117 @@ blk.afterFrameUpdated = function () {
 
 /* EVENTS */
 
+blk.groupUpdated = function (bks) {
+    if (SETTINGS.global.debug)
+        console.log('group updated', bks)
+    workers.map((w, i) => {
+        w.postMessage({
+            name: 'connected',
+            values: bks[i]
+        })
+    })
+}
+
 blk.doubleClicked = function () {
-    console.log('double clicked on canvas');
+    if (SETTINGS.global.debug)
+        console.log('double clicked on canvas');
     // blk.createBlockAt(blk.mouseX, blk.mouseY);
 }
 
 blk.buttonPressed = function (id) {
-    console.log("#", id, "button is pressed");
+    if (SETTINGS.global.debug)
+        console.log("#", id, "button is pressed");
+    if (id < workers.length) {
+        workers[id].postMessage({
+            name: 'btnpressed'
+        })
+    }
 }
 
 blk.buttonReleased = function (id) {
-    console.log("#", id, "button is released");
+    if (SETTINGS.global.debug)
+        console.log("#", id, "button is released");
+    if (id < workers.length) {
+        workers[id].postMessage({
+            name: 'btnreleased'
+        })
+    }
 }
 
 blk.buttonSingleClicked = function (id) {
-    console.log("#", id, "button is single clicked");
+    if (SETTINGS.global.debug)
+        console.log("#", id, "button is single clicked");
+    if (id < workers.length) {
+        workers[id].postMessage({
+            name: 'btnclicked',
+            value: 1
+        })
+    }
 }
 
 blk.buttonDoubleClicked = function (id) {
-    console.log("#", id, "button is double clicked");
+    if (SETTINGS.global.debug)
+        console.log("#", id, "button is double clicked");
+    if (id < workers.length) {
+        workers[id].postMessage({
+            name: 'btnclicked',
+            value: 2
+        })
+    }
 }
 
 blk.buttonMultiClicked = function (id, count) {
-    console.log("#", id, "button is multi clicked, count: ", count);
+    if (SETTINGS.global.debug)
+        console.log("#", id, "button is multi clicked, count: ", count);
+    if (id < workers.length) {
+        workers[id].postMessage({
+            name: 'btnclicked',
+            value: count
+        })
+    }
 }
 
 blk.buttonLongPressed = function (id) {
-    console.log("#", id, "button is long pressed");
+    if (SETTINGS.global.debug)
+        console.log("#", id, "button is long pressed");
+    if (id < workers.length) {
+        workers[id].postMessage({
+            name: 'btnlongpressed'
+        })
+    }
 }
 
-blk.buttonDown = function (id) {
-    console.log("#", id, "button is down");
+function clear() {
+    blk.clearCanvas();
+    workers.map(w => w.terminate())
+    workers = []
+    frameCount = 0;
 }
+
+function init() {
+    // setup webworkers for each blink
+    for (let i = 0; i < BLOCKS_NUM; i++) {
+        let index = i;
+        let worker = new Worker('../communication.js');
+        worker.postMessage({
+            name: 'index',
+            value: index
+        })
+
+        // listen to message event of worker
+        worker.addEventListener('message', function (event) {
+            // console.log('message received => ', event.data);
+            let eventName = event.data.name;
+            let eventValues = event.data.values;
+            blk[eventName].apply(this, eventValues);
+        });
+        // listen to error event of worker
+        worker.addEventListener('error', function (event) {
+            console.error('error received => ', event);
+        });
+        workers.push(worker);
+    }
+    blk.createBlocks(BLOCKS_NUM);
+}
+
+init();

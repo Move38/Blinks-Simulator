@@ -8,10 +8,6 @@ void loop() {
 
 self.importScripts('worker.js')
 
-function setup(){
-    
-}
-
 function loop(){
     setColor(RED);
     setColorOnFace(BLUE, parseInt((millis() / 1000)) % 6);
