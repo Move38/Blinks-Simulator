@@ -29,7 +29,7 @@ void loop() {
 }
 */
 
-self.importScripts('worker.js')
+self.importScripts('js/blinks.js')
 
 const PULSE_LENGTH = 2000;
 const TIMER_LENGTH = 6000;

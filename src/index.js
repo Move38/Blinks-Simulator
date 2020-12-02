@@ -243,6 +243,7 @@ function init(scope) {
         }
 
         $.setValuesSentOnFaces = function (i, arr) {
+            // console.log('sent', i, arr)
             if (i < $._blocks.length) {
                 let b = $._blocks[i]
                 b.connected.map((c, f) => {

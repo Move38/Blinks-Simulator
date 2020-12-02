@@ -148,7 +148,7 @@ function init() {
     // setup webworkers for each blink
     for (let i = 0; i < BLOCKS_NUM; i++) {
         let index = i;
-        let worker = new Worker('../communication.js');
+        let worker = new Worker('../sendSignal.js');
         worker.postMessage({
             name: 'index',
             value: index

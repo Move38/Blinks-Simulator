@@ -230,7 +230,7 @@ function _sendFaces() {
 }
 
 function setValueSentOnAllFaces(value) {
-    self._newouts.map(o => o = value);
+    self._newouts = self._newouts.map(o => o = value);
 }
 
 function setValueSentOnFace(value, face) {
