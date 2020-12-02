@@ -1,47 +1,87 @@
+const FACE_COUNT = 6;
+const MAX_BRIGHTNESS = 255;
+const START_STATE_POWER_UP = 0;
+const START_STATE_WE_ARE_ROOT = 1;
+const START_STATE_DOWNLOAD_SUCCESS = 2;
+const IR_DATA_VALUE_MAX = 63;
+
+const RED = [1.0, 0, 0];
+const ORANGE = [1.0, 1.0 / 2, 0];
+const YELLOW = [1.0, 1.0, 0];
+const GREEN = [0, 1.0, 0];
+const CYAN = [0, 1.0, 1.0];
+const BLUE = [0, 0, 1.0];
+const MAGENTA = [1.0, 0, 1.0];
+const WHITE = [1.0, 1.0, 1.0];
+const OFF = [0, 0, 0];
+
 self._millis = 0;
-self.connected = [-1, -1, -1, -1, -1, -1];
-self.millisOffset = Math.floor(Math.random() * 1000);
+self._connects = Array.from({ length: FACE_COUNT }, () => -1);
+self._outs = Array.from({ length: FACE_COUNT }, () => -1);
+self._newouts = Array.from({ length: FACE_COUNT }, () => -1); //aggregate all face values during each loop
+self._ins = Array.from({ length: FACE_COUNT }, () => {
+    return {
+        value: -1,
+        flag: false // updates
+    }
+});
+self._millisOffset = Math.floor(Math.random() * 1000);
 
 self.onmessage = function (event) {
     if (event.data.name === 'index') {
         self.index = event.data.value;
-        if(typeof(setup) === 'function'){
+        if (typeof (setup) === 'function') {
             setup();
+            _sendFaces();
         }
     }
     else if (event.data.name === 'loop') {
-        self._millis = event.data.value + self.millisOffset;
-        if(typeof(loop) === 'function'){
+        self._millis = event.data.value + self._millisOffset;
+        if (typeof (loop) === 'function') {
+            self._newouts = self._outs.slice();
             loop();
+            _sendFaces();
         }
     }
-    else if (event.data.name === 'connected') {
-        self.connected = event.data.values;
-    }
-    else if(event.data.name === 'btnpressed'){
-        self._buttondown = true;
-        self._buttonPressedFlag = true;
-
-    }
-    else if(event.data.name === 'btnreleased'){
+    else if (event.data.name === 'btnreleased') {
         self._buttondown = false;
         self._buttonReleasedFlag = true;
 
     }
-    else if(event.data.name === 'btnclicked'){
+    else if (event.data.name === 'btnclicked') {
         self._buttonClickCount = event.data.value;
-        if(event.data.value === 1){
+        if (event.data.value === 1) {
             self._buttonSingleClickedFlag = true;
         }
-        else if(event.data.value === 2){
+        else if (event.data.value === 2) {
             self._buttonDoubleClickedFlag = true;
         }
         else {
             self._buttonMultiClickedFlag = true;
         }
     }
-    else if(event.data.name === 'btnlongpressed'){
+    else if (event.data.name === 'btnlongpressed') {
         self._buttonLongPressedFlag = true;
+    }
+    else if (event.data.name === 'connects') {
+        if (!self._connects.every((c, i) => c === event.data.values[i])) {
+            self._connects = event.data.values;
+            self.postMessage({
+                name: 'setValuesSentOnFaces',
+                values: [self.index, self._outs]
+            });
+        }
+    }
+    else if (event.data.name === 'receive') {
+        if (self._ins[event.data.face].value !== event.data.value) {
+            self._ins[event.data.face].value = event.data.value;
+            self._ins[event.data.face].flag = true;
+        }
+    }
+    else if (event.data.name === 'btnpressed') {
+        self._buttondown = true;
+        self._buttonPressedFlag = true;
+
     }
 }
 
@@ -63,16 +103,6 @@ function setColorOnFace(newColor, face) {
 
 
 /* Colors */
-
-const RED = [1.0, 0, 0];
-const ORANGE = [1.0, 1.0 / 2, 0];
-const YELLOW = [1.0, 1.0, 0];
-const GREEN = [0, 1.0, 0];
-const CYAN = [0, 1.0, 1.0];
-const BLUE = [0, 0, 1.0];
-const MAGENTA = [1.0, 0, 1.0];
-const WHITE = [1.0, 1.0, 1.0];
-const OFF = [0, 0, 0];
 
 function makeColorRGB(red, green, blue) {
     return [red / 255.0, green / 255.0, blue / 255.0];
@@ -138,41 +168,41 @@ function dim(color, brightness) {
 
 /* Button */
 
-function buttonDown(){
+function buttonDown() {
     return self._buttondown;
 }
 
-function buttonPressed(){
+function buttonPressed() {
     const result = self._buttonPressedFlag;
     self._buttonPressedFlag = false;
     return result;
 }
 
-function buttonReleased(){
+function buttonReleased() {
     const result = self._buttonReleasedFlag;
     self._buttonReleasedFlag = false;
     return result;
 }
 
-function buttonLongPressed(){
+function buttonLongPressed() {
     const result = self._buttonLongPressedFlag;
     self._buttonLongPressedFlag = false;
     return result;
 }
 
-function buttonSingleClicked(){
+function buttonSingleClicked() {
     const result = self._buttonSingleClickedFlag;
     self._buttonSingleClickedFlag = false;
     return result;
 }
 
-function buttonDoubleClicked(){
+function buttonDoubleClicked() {
     const result = self._buttonDoubleClickedFlag;
     self._buttonDoubleClickedFlag = false;
     return result;
 }
 
-function buttonMultiClicked(){
+function buttonMultiClicked() {
     const result = self._buttonMultiClickedFlag;
     self._buttonMultiClickedFlag = false;
     return result;
@@ -187,34 +217,44 @@ function buttonClickCount() {
 
 /* Communication */
 
+function _sendFaces() {
+    const repeated = self._outs.every((o, i) => o === self._newouts[i]);
+    self._outs = self._newouts.slice();
+    if (!repeated) {
+        self.postMessage({
+            name: 'setValuesSentOnFaces',
+            values: [self.index, self._newouts]
+        });
+    }
+
+}
+
 function setValueSentOnAllFaces(value) {
-    self.postMessage({
-        name: 'setValueSentOnAllFaces',
-        values: [self.index, value]
-    });
+    self._newouts.map(o => o = value);
 }
 
 function setValueSentOnFace(value, face) {
-    self.postMessage({
-        name: 'setValueSentOnFace',
-        values: [self.index, value, face]
-    });
+    self._newouts[face] = value;
 }
 
 function getLastValueReceivedOnFace(face) {
-    return self.connected[face].value;
+    return self._ins[face].value;
 }
 
 function isValueReceivedOnFaceExpired(face) {
-    return self.connected[face].index < 0;
+    return self._connects[face] < 0;
 }
 
 function didValueOnFaceChange(face) {
-
+    let result = self._ins[face].flag;
+    if (result) {
+        self._ins[face].flag = false;
+    }
+    return result;
 }
 
 function isAlone() {
-    return self.connected.reduce(function (prev, curr) { return curr.index < 0 ? prev : false }, true)
+    return self._connects.reduce(function (prev, curr) { return curr < 0 ? prev : false }, true)
 }
 
 /* Datagrams */
@@ -268,13 +308,6 @@ class Timer {
 }
 
 /* Convenience */
-
-const FACE_COUNT = 6;
-const MAX_BRIGHTNESS = 255;
-const START_STATE_POWER_UP = 0;
-const START_STATE_WE_ARE_ROOT = 1;
-const START_STATE_DOWNLOAD_SUCCESS = 2;
-const IR_DATA_VALUE_MAX = 63;
 
 function COUNT_OF(array) {
     return array.length;

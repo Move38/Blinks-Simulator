@@ -54,9 +54,17 @@ blk.groupUpdated = function (bks) {
         console.log('group updated', bks)
     workers.map((w, i) => {
         w.postMessage({
-            name: 'connected',
-            values: bks[i]
+            name: 'connects',
+            values: bks[i],
         })
+    })
+}
+
+blk.receiveValueOnFace = function (index, value, face) {
+    workers[index].postMessage({
+        name: 'receive',
+        face: face,
+        value: value
     })
 }
 
@@ -151,7 +159,7 @@ function init() {
             // console.log('message received => ', event.data);
             let eventName = event.data.name;
             let eventValues = event.data.values;
-            if(blk[eventName]){
+            if (blk[eventName]) {
                 blk[eventName].apply(this, eventValues);
             }
         });

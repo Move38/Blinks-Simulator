@@ -194,7 +194,6 @@ function init(scope) {
             let block = Matter.Bodies.polygon(0, 0, $.BLOCKSIDES, $.BLOCKRADIUS * 2)
 
             block.colors = Array.from({ length: $.BLOCKSIDES * 3 }, () => 0.0)
-            block.values = Array.from({ length: $.BLOCKSIDES}, () => -1)
 
             let vertices = Matter.Vertices.chamfer(block.vertices, $.BLOCKCORNERRADIUS, -1, 2, 14) //default chamfer
             const geometry = new pGeometry()
@@ -243,22 +242,26 @@ function init(scope) {
             }
         }
 
-        $.setValueSentOnAllFaces = function (i, v) {
-            if (i < $._blocks.length)
-                $._blocks[i].values = Array.from({ length: $.BLOCKSIDES }, () => v);
-        }
-
-        $.setValueSentOnFace = function (i, v, f) {
-            if (i < $._blocks.length){
-                if($._blocks[i].values[f] !== v){
-                    $._blocks[i].values[f] = v;
-                    // update connected neighbor
-                    if($._blocks[i].connected[f].index >= 0){
-                        // let connBlock = $
+        $.setValuesSentOnFaces = function (i, arr) {
+            if (i < $._blocks.length) {
+                let b = $._blocks[i]
+                b.connected.map((c, f) => {
+                    const index = $._getBlockIndexFromID(c)
+                    if (index >= 0) {
+                        const value = arr[f]
+                        let face = 0
+                        let connBlock = $._blocks[index]
+                        connBlock.connected.map((cb, cbi) => {
+                            if (cb === b.id) {
+                                face = cbi
+                            }
+                        })
+                        if (value >= 0) {
+                            $._receiveValueOnFaceFn(index, value, face)
+                        }
                     }
-                }
+                })
             }
-            
         }
 
         // Time
@@ -506,7 +509,7 @@ function init(scope) {
             "buttonPressed", "buttonReleased",
             "buttonSingleClicked", "buttonDoubleClicked",
             "buttonMultiClicked", "buttonClickCount",
-            "groupUpdated"
+            "groupUpdated", "receiveValueOnFace"
         ];
         for (let k of eventNames) {
             let intern = "_" + k + "Fn";
@@ -943,25 +946,9 @@ function init(scope) {
         }
 
         $._sendGroupUpdates = function () {
-            let result = $._blocks.map(b => {
-                return b.connected.map(c => {
-                    const index = $._getBlockIndexFromID(c);
-                    let value = -1;
-                    if(index >= 0) {
-                        let connBlock = $._blocks[index];
-                        connBlock.connected.map( (cb, cbi) => {
-                            if(cb === b.id){
-                                value = connBlock.values[cbi];
-                            }
-                        })
-                    }
-                    return {
-                        index: index,
-                        value: value
-                    }
-                })
-            })
-            $._groupUpdatedFn(result)
+            $._groupUpdatedFn($._blocks.map(b => {
+                return b.connected.map(c => $._getBlockIndexFromID(c))
+            }))
         }
 
         $._generateGroupPts = function (gid) {
