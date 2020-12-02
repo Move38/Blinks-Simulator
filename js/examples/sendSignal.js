@@ -93,7 +93,7 @@ byte getSignalState(byte data) {
 }
 */
 
-self.importScripts('js/blink.js')
+self.importScripts('../blink.js')
 
 const INERT = 0;
 const GO = 1;

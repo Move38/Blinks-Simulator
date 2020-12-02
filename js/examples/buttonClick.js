@@ -28,7 +28,7 @@ void displayLoop() {
 }
 */
 
-self.importScripts('js/blink.js')
+self.importScripts('../blink.js')
 
 let clicks = 1;
 

@@ -35,7 +35,7 @@ void displayLoop() {
 }
 */
 
-self.importScripts('js/blink.js')
+self.importScripts('../blink.js')
 
 const PRESS_FADE_DURATION = 500;
 let pressFadeTimer = new Timer(self);

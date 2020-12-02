@@ -9,7 +9,7 @@ void loop() {
     }
 }
 */
-self.importScripts('js/blink.js')
+self.importScripts('../blink.js')
 
 function loop(){
     for (let f = 0; f < 6; f++) {//check every face
