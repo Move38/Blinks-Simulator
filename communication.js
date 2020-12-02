@@ -23,7 +23,7 @@ void loop() {
 }
 */
 
-self.importScripts('../blink.js')
+self.importScripts('js/blink.js')
 
 function setup() {
     setValueSentOnAllFaces(0);

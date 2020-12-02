@@ -29,7 +29,7 @@ void loop() {
 }
 */
 
-self.importScripts('../blink.js')
+self.importScripts('js/blink.js')
 
 const PULSE_LENGTH = 2000;
 const TIMER_LENGTH = 6000;

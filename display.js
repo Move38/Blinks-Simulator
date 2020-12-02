@@ -6,7 +6,7 @@ void loop() {
 }
 */
 
-self.importScripts('../blink.js')
+self.importScripts('js/blink.js')
 
 function loop(){
     setColor(RED);
