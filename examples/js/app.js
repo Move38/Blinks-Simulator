@@ -3,6 +3,16 @@ const stats = new Stats();
 stats.showPanel(0); // 0: fps, 1: ms, 2: mb, 3+: customß
 document.body.appendChild(stats.dom);
 
+const examples = [
+    'time', 
+    'display',
+    'buttonClick',
+    'buttonPress',
+    'neighbors',
+    'communication',
+    'sendSignal'
+];
+
 // Dat GUI
 const SETTINGS = {
     global: {
@@ -10,19 +20,24 @@ const SETTINGS = {
         clear: () => { clear(); },
         reset: () => {
             clear();
-            init();
+            init(SETTINGS.global.select);
         },
+        select: examples[4]
     },
 };
 const gui = new dat.GUI();
-gui.add(SETTINGS.global, "debug").onFinishChange((d) => (blk.debugMode = d));
-gui.add(SETTINGS.global, "clear");
-gui.add(SETTINGS.global, "reset");
-gui.close();
+gui.add(SETTINGS.global, 'select', examples).onFinishChange(s => {
+    clear();
+    init(s);
+});
+gui.add(SETTINGS.global, "debug").onFinishChange( d => blk.debugMode = d);
+// gui.add(SETTINGS.global, "clear");
+// gui.add(SETTINGS.global, "reset");
+// gui.close();
 
 
 /* SETUP */
-const blk = new blinks.init();
+const blk = new blinks.init(SETTINGS.global.select);
 blk.debugMode = SETTINGS.global.debug;
 const BLOCKS_NUM = 6;
 let frameCount = 0;
@@ -144,11 +159,11 @@ function clear() {
     frameCount = 0;
 }
 
-function init() {
+function init(f) {
     // setup webworkers for each blink
     for (let i = 0; i < BLOCKS_NUM; i++) {
         let index = i;
-        let worker = new Worker('../sendSignal.js');
+        let worker = new Worker('../' + f + '.js');
         worker.postMessage({
             name: 'index',
             value: index
@@ -172,4 +187,4 @@ function init() {
     blk.createBlocks(BLOCKS_NUM);
 }
 
-init();
+init(SETTINGS.global.select);
