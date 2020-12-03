@@ -4,7 +4,7 @@ This simulator is using PIXIJS as rendering engine and MatterJS as physics engin
 
 
 ## Build
-run `npm run install` to install packages
+run `npm install` to install packages
 run `npm run build` to build blinks library
 run `npm run dev` to start examples in a local server
 
