@@ -1,0 +1,219 @@
+[
+    {
+        "type": "FunctionDeclaration",
+        "defType": {
+            "type": "Type",
+            "modifier": [],
+            "pos": {
+                "file": "unknown",
+                "line": 1
+            },
+            "name": "void"
+        },
+        "name": "setup",
+        "pos": {
+            "file": "unknown",
+            "line": 1
+        },
+        "arguments": [],
+        "body": []
+    },
+    {
+        "type": "FunctionDeclaration",
+        "defType": {
+            "type": "Type",
+            "modifier": [],
+            "pos": {
+                "file": "unknown",
+                "line": 4
+            },
+            "name": "void"
+        },
+        "name": "loop",
+        "pos": {
+            "file": "unknown",
+            "line": 4
+        },
+        "arguments": [],
+        "body": [
+            {
+                "type": "ForStatement",
+                "pos": {
+                    "file": "unknown",
+                    "line": 5
+                },
+                "init": {
+                    "type": "VariableDeclaration",
+                    "defType": {
+                        "type": "Type",
+                        "modifier": [],
+                        "pos": {
+                            "file": "unknown",
+                            "line": 5
+                        },
+                        "name": "int"
+                    },
+                    "name": "f",
+                    "pos": {
+                        "file": "unknown",
+                        "line": 5
+                    },
+                    "value": {
+                        "type": "Literal",
+                        "value": 0,
+                        "pos": {
+                            "file": "unknown",
+                            "line": 5
+                        }
+                    }
+                },
+                "condition": {
+                    "type": "BinaryExpression",
+                    "operator": "<",
+                    "left": {
+                        "type": "Identifier",
+                        "value": "f",
+                        "pos": {
+                            "file": "unknown",
+                            "line": 5
+                        }
+                    },
+                    "right": {
+                        "type": "Literal",
+                        "value": 6,
+                        "pos": {
+                            "file": "unknown",
+                            "line": 5
+                        }
+                    },
+                    "pos": {
+                        "file": "unknown",
+                        "line": 5
+                    }
+                },
+                "step": {
+                    "type": "PrefixExpression",
+                    "operator": "++",
+                    "value": {
+                        "type": "Identifier",
+                        "value": "f",
+                        "pos": {
+                            "file": "unknown",
+                            "line": 5
+                        }
+                    },
+                    "pos": {
+                        "file": "unknown",
+                        "line": 5
+                    }
+                },
+                "body": [
+                    {
+                        "type": "IfStatement",
+                        "pos": {
+                            "file": "unknown",
+                            "line": 6
+                        },
+                        "condition": {
+                            "type": "CallExpression",
+                            "base": {
+                                "type": "Identifier",
+                                "value": "isValueReceivedOnFaceExpired"
+                            },
+                            "arguments": [
+                                {
+                                    "type": "Identifier",
+                                    "value": "f",
+                                    "pos": {
+                                        "file": "unknown",
+                                        "line": 6
+                                    }
+                                }
+                            ],
+                            "pos": {
+                                "file": "unknown",
+                                "line": 6
+                            }
+                        },
+                        "body": [
+                            {
+                                "type": "ExpressionStatement",
+                                "expression": {
+                                    "type": "CallExpression",
+                                    "base": {
+                                        "type": "Identifier",
+                                        "value": "setColorOnFace"
+                                    },
+                                    "arguments": [
+                                        {
+                                            "type": "Identifier",
+                                            "value": "BLUE",
+                                            "pos": {
+                                                "file": "unknown",
+                                                "line": 7
+                                            }
+                                        },
+                                        {
+                                            "type": "Identifier",
+                                            "value": "f",
+                                            "pos": {
+                                                "file": "unknown",
+                                                "line": 7
+                                            }
+                                        }
+                                    ],
+                                    "pos": {
+                                        "file": "unknown",
+                                        "line": 7
+                                    }
+                                },
+                                "pos": {
+                                    "file": "unknown",
+                                    "line": 7
+                                }
+                            }
+                        ],
+                        "else": [
+                            {
+                                "type": "ExpressionStatement",
+                                "expression": {
+                                    "type": "CallExpression",
+                                    "base": {
+                                        "type": "Identifier",
+                                        "value": "setColorOnFace"
+                                    },
+                                    "arguments": [
+                                        {
+                                            "type": "Identifier",
+                                            "value": "WHITE",
+                                            "pos": {
+                                                "file": "unknown",
+                                                "line": 9
+                                            }
+                                        },
+                                        {
+                                            "type": "Identifier",
+                                            "value": "f",
+                                            "pos": {
+                                                "file": "unknown",
+                                                "line": 9
+                                            }
+                                        }
+                                    ],
+                                    "pos": {
+                                        "file": "unknown",
+                                        "line": 9
+                                    }
+                                },
+                                "pos": {
+                                    "file": "unknown",
+                                    "line": 9
+                                }
+                            }
+                        ]
+                    }
+                ]
+            }
+        ]
+    }
+]
