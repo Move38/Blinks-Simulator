@@ -163,7 +163,7 @@ function init(f) {
     // setup webworkers for each blink
     for (let i = 0; i < BLOCKS_NUM; i++) {
         let index = i;
-        let worker = new Worker('./js/examples/' + f + '.js');
+        let worker = new Worker('js/examples/' + f + '.js');
         worker.postMessage({
             name: 'index',
             value: index
