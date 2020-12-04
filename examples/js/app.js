@@ -16,7 +16,7 @@ const examples = [
 // Dat GUI
 const SETTINGS = {
     global: {
-        debug: true,
+        debug: false,
         clear: () => { clear(); },
         reset: () => {
             clear();
@@ -33,7 +33,6 @@ gui.add(SETTINGS.global, 'select', examples).onFinishChange(s => {
 gui.add(SETTINGS.global, "debug").onFinishChange( d => blk.debugMode = d);
 // gui.add(SETTINGS.global, "clear");
 // gui.add(SETTINGS.global, "reset");
-// gui.close();
 
 
 /* SETUP */
@@ -43,6 +42,10 @@ const BLOCKS_NUM = 6;
 let frameCount = 0;
 let workers = [];
 
+if(blk.isTouchDevice> 0){
+    gui.close();
+    document.body.removeChild(stats.dom);
+}
 
 /* UPDATE */
 

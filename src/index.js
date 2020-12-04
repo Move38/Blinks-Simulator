@@ -19,16 +19,17 @@ function init(scope) {
 
     function simulation(scope) {
         let $ = (scope == "global" ? window : this);
+        $.isTouchDevice = 'ontouchstart' in document.documentElement;
 
         /* CONSTANTS */
         $.BLOCKSIDES = 6;
-        $.BLOCKRADIUS = 24;
+        $.BLOCKRADIUS = $.isTouchDevice ? 20 : 24;
         $.BLOCKCORNERRADIUS = 10;
         $.BLOCKFRICTION = 0.8;
         $.BLOCKFRICTIONAIR = 0.8;
         $.CLICKTIMEOUT = 330;
         $.LONGPRESSTIMEOUT = 1200;
-        $.BLOCKHIGHLIGHTRADIUS = 9;
+        $.BLOCKHIGHLIGHTRADIUS = $.isTouchDevice ? 12 : 9;;
 
         $.RED = [1.0, 0, 0];
         $.ORANGE = [1.0, 1.0 / 2, 0];
@@ -381,17 +382,6 @@ function init(scope) {
                         let blockIndex = $._getBlockIndexFromID($._blockOnHighlight)
                         if (blockIndex >= 0) {
                             $._buttonReleasedFn(blockIndex)
-                            // clicks++
-                            // if (clicks === 1) {
-                            //     $._buttonSingleClickedFn(blockIndex)
-                            // }
-                            // else if (clicks === 2) {
-                            //     $._buttonDoubleClickedFn(blockIndex)
-                            // }
-                            // else if (clicks > 2) {
-                            //     $._buttonMultiClickedFn(blockIndex, clicks)
-                            //     $.buttonClickCount = clicks
-                            // }
                         }
                     }
                     clicks = 0
@@ -497,7 +487,9 @@ function init(scope) {
             }
 
             // reset all highlights
-            // $._resetHighlight()
+            if($.isTouchDevice){
+                $._resetHighlight()
+            }
         }
 
         function onCollisionEndEvent() {
