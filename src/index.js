@@ -10,8 +10,8 @@ import { Mesh as pMesh } from '@pixi/mesh'
 import { TickerPlugin as pTickerPlugin } from '@pixi/ticker'
 
 import * as Matter from "matter-js"
-import decomp from 'poly-decomp'
-window.decomp = decomp
+import { decompose } from 'fernandez-polygon-decomposition'
+window.decomp = decompose
 
 function init(scope) {
     "use strict";
@@ -138,6 +138,7 @@ function init(scope) {
                     $._drawMatchingEdge()
                 }
                 $._drawConnections()
+                $._drawGroupArea()
             }
 
             // draw break stripes on dragging
@@ -177,7 +178,9 @@ function init(scope) {
             for (let i = 0; i < number; i++) {
                 // generate a new block and keep them centered
                 let alt = i % 2 * 2 - 1 // -1 or 1
-                let block = $.generateBlock($._PIXI.screen.width / 2 + (i - number / 2) * $.BLOCKRADIUS * 1.732, $._PIXI.screen.height / 2 + alt * $.BLOCKRADIUS * 1.5)
+                let px = $._PIXI.screen.width / 2 + (i - number / 2) * $.BLOCKRADIUS * 1.732
+                let py = $._PIXI.screen.height / 2 + alt * $.BLOCKRADIUS * 1.5
+                let block = $.generateBlock(px, py)
                 $._blocks.push(block)
             }
             // initialize group based on newly created blocks
@@ -310,7 +313,8 @@ function init(scope) {
         let clickTimer
         let longpressTimer
         function onMouseDownEvent() {
-            // console.log('mouse down', $._MatterEngine.world.bodies)
+            // console.log('mouse down')
+
             $.pmouseX = $.mouseX;
             $.pmouseY = $.mouseY;
             $.mouseX = $._MatterMouse.position.x;
@@ -652,6 +656,20 @@ function init(scope) {
             }
         }
 
+        $._drawGroupArea = function () {
+            // draw lines
+            $._MatterBodies.map( b => {
+                let vts = b.vertices;
+                let drawingPath = []
+                drawingPath.push(vts[0].x, vts[0].y)
+                for (let n = 1; n < vts.length; n++) {
+                    drawingPath.push(vts[n].x, vts[n].y)
+                }
+                $._PIXIOverlayView.lineStyle(3, 0x0000FF, 0.2)
+                $._PIXIOverlayView.drawPolygon(drawingPath)
+            })
+        }
+
         $._drawBreakLines = function () {
             if ($._breakLines.length < 2) {
                 return
@@ -800,7 +818,7 @@ function init(scope) {
             result.map(function (g) {
                 let gid = $._groups.indexOf(g)
                 $._generateGroupPts(gid)
-                // console.log('create a new body', $._groups[g].pts)
+                // console.log('create a new body', g.pts)
                 // add group to the world
                 let comp = $._generatePolygonFromVertices(g.pts)
                 g.poly = comp

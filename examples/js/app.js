@@ -16,13 +16,13 @@ const examples = [
 // Dat GUI
 const SETTINGS = {
     global: {
-        debug: false,
+        debug: true,
         clear: () => { clear(); },
         reset: () => {
             clear();
             init(SETTINGS.global.select);
         },
-        select: examples[4]
+        select: examples[0]
     },
 };
 const gui = new dat.GUI();
