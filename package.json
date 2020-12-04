@@ -1,0 +1,34 @@
+{
+    "name": "blinks",
+    "version": "0.1.0",
+    "description": "a web simulator",
+    "main": "dist/blinks.js",
+    "scripts": {
+        "dev": "webpack-dev-server --watch-content-base --host 0.0.0.0",
+        "build": "webpack --mode=development && webpack --mode=production",
+        "test": "echo \"Error: no test specified\" && exit 1"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/Move38/Blinks-Simulator.git"
+    },
+    "author": "XY Feng",
+    "license": "ISC",
+    "bugs": {
+        "url": "https://github.com/Move38/Blinks-Simulator/issues"
+    },
+    "homepage": "https://github.com/Move38/Blinks-Simulator#readme",
+    "devDependencies": {
+        "@pixi/app": "^5.3.3",
+        "@pixi/core": "^5.3.3",
+        "@pixi/graphics": "^5.3.3",
+        "@pixi/mesh": "^5.3.3",
+        "@pixi/ticker": "^5.3.3",
+        "@webpack-cli/serve": "^1.1.0",
+        "fernandez-polygon-decomposition": "^2.0.0",
+        "matter-js": "https://github.com/xyfeng/matter-js.git",
+        "webpack": "^4.44.2",
+        "webpack-cli": "^3.3.11",
+        "webpack-dev-server": "^3.11.0"
+    }
+}

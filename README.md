@@ -1,5 +1,12 @@
 # Blinks-Simulator
-This simulator is using PIXIJS as rendering engine and MatterJS as physics engine. The core library file is `lib/blinks.js`, you need to include `decomp.js`, `hmpoly.js`, `matter.min.js` & `pixi.min.js` as dependencies. 
+This simulator is using PIXIJS as rendering engine and MatterJS as physics engine. The core library file is `build/blinks.min.js`
+[Demo](https://move38.github.io/Blinks-Simulator/)
+
+
+## Build
+run `npm install` to install packages
+run `npm run build` to build blinks library
+run `npm run dev` to start examples in a local server
 
 ## Usage
 Use mouse to drag the blocks around to reposition them. Click and drag on an empty space to create a ribbon, when ribbon go through the blocks, it will break them into different groups, when you move groups around you will rejoin them when one get close to another.

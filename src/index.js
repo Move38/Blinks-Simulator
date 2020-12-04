@@ -1,19 +1,35 @@
-function BLINKS(scope) {
+import { Application as pApplication } from '@pixi/app'
+import {
+    Geometry as pGeometry,
+    Shader as pShader,
+    Renderer as pRenderer,
+    BatchRenderer as pBatchRenderer
+} from '@pixi/core'
+import { Graphics as pGraphics } from '@pixi/graphics'
+import { Mesh as pMesh } from '@pixi/mesh'
+import { TickerPlugin as pTickerPlugin } from '@pixi/ticker'
+
+import * as Matter from "matter-js"
+import { decompose } from 'fernandez-polygon-decomposition'
+window.decomp = decompose
+
+function init(scope) {
     "use strict";
     return new simulation(scope);
 
     function simulation(scope) {
         let $ = (scope == "global" ? window : this);
+        $.isTouchDevice = 'ontouchstart' in document.documentElement;
 
         /* CONSTANTS */
         $.BLOCKSIDES = 6;
-        $.BLOCKRADIUS = 24;
+        $.BLOCKRADIUS = $.isTouchDevice ? 20 : 24;
         $.BLOCKCORNERRADIUS = 10;
         $.BLOCKFRICTION = 0.8;
         $.BLOCKFRICTIONAIR = 0.8;
-        $.CLICKTIMEOUT = 320;
-        $.LONGPRESSTIMEOUT = 2000;
-        $.BLOCKHIGHLIGHTRADIUS = 9;
+        $.CLICKTIMEOUT = 330;
+        $.LONGPRESSTIMEOUT = 1200;
+        $.BLOCKHIGHLIGHTRADIUS = $.isTouchDevice ? 12 : 9;;
 
         $.RED = [1.0, 0, 0];
         $.ORANGE = [1.0, 1.0 / 2, 0];
@@ -48,9 +64,11 @@ function BLINKS(scope) {
         $._groups = [] // data structure for block groups
         $._breakLines = []
         $._blockOnHighlight = -1
-        $._groupHighlight = false
+        $._groupOnHighlight = false
         $._currDragging = null
         $._targetShadow = {}
+
+
 
 
         /* SETUP */
@@ -78,7 +96,9 @@ function BLINKS(scope) {
         $._createMatterWalls($.width, $.height)
 
         // PIXI
-        $._PIXI = new PIXI.Application({
+        pApplication.registerPlugin(pTickerPlugin)
+        pRenderer.registerPlugin('batch', pBatchRenderer)
+        $._PIXI = new pApplication({
             width: $.width,
             height: $.height,
             antialias: true,
@@ -87,16 +107,19 @@ function BLINKS(scope) {
             backgroundColor: 0x444444
         })
         document.body.appendChild($._PIXI.view)
-        $._PIXIShadowView = new PIXI.Graphics()
+        $._PIXIShadowView = new pGraphics()
         $._PIXI.stage.addChild($._PIXIShadowView)
-        $._PIXIBlockView = new PIXI.Graphics()
+        $._PIXIBlockView = new pGraphics()
         $._PIXI.stage.addChild($._PIXIBlockView)
-        $._PIXIOverlayView = new PIXI.Graphics()
+        $._PIXIOverlayView = new pGraphics()
         $._PIXI.stage.addChild($._PIXIOverlayView)
+
+        // Others
+        let millisStart = 0
 
 
         /* UPDATES */
-
+        $._PIXI.ticker.maxFPS = 30
         $._PIXI.ticker.add((delta) => {
             $._beforeFrameUpdatedFn()
 
@@ -116,8 +139,7 @@ function BLINKS(scope) {
                     $._drawMatchingEdge()
                 }
                 $._drawConnections()
-                // draw group area
-                // $._drawGroupAreas()
+                $._drawGroupArea()
             }
 
             // draw break stripes on dragging
@@ -157,7 +179,9 @@ function BLINKS(scope) {
             for (let i = 0; i < number; i++) {
                 // generate a new block and keep them centered
                 let alt = i % 2 * 2 - 1 // -1 or 1
-                let block = $.generateBlock($._PIXI.screen.width / 2 + (i - number / 2) * $.BLOCKRADIUS * 1.732, $._PIXI.screen.height / 2 + alt * $.BLOCKRADIUS * 1.5)
+                let px = $._PIXI.screen.width / 2 + (i - number / 2) * $.BLOCKRADIUS * 1.732
+                let py = $._PIXI.screen.height / 2 + alt * $.BLOCKRADIUS * 1.5
+                let block = $.generateBlock(px, py)
                 $._blocks.push(block)
             }
             // initialize group based on newly created blocks
@@ -176,21 +200,21 @@ function BLINKS(scope) {
             block.colors = Array.from({ length: $.BLOCKSIDES * 3 }, () => 0.0)
 
             let vertices = Matter.Vertices.chamfer(block.vertices, $.BLOCKCORNERRADIUS, -1, 2, 14) //default chamfer
-            const geometry = new PIXI.Geometry()
+            const geometry = new pGeometry()
                 .addAttribute(
                     'aVertexPosition',
                     vertices.reduce((a, c) => a.concat([c.x, c.y]), []),
                     2
                 )
                 .addIndex([...Array(vertices.length - 2).keys()].reduce((a, c) => a.concat([0, c + 1, c + 2]), []))
-            let shader = PIXI.Shader.from(vertexSrc, fragmentSrc, {
+            let shader = pShader.from(vertexSrc, fragmentSrc, {
                 u_pixel_ratio: $.pixelRatio,
                 u_radius: $.BLOCKRADIUS / 2,
                 u_angle: 0.0,
                 u_pos: [x, y],
                 u_leds: block.colors
             })
-            block.mesh = new PIXI.Mesh(geometry, shader)
+            block.mesh = new pMesh(geometry, shader)
             $._PIXIBlockView.addChild(block.mesh)
 
             Matter.Body.setPosition(block, {
@@ -216,32 +240,38 @@ function BLINKS(scope) {
                 $._blocks[i].colors = Array.from({ length: $.BLOCKSIDES }, () => c)
         }
 
-        $.setColorOnFace = function (i, j, c) {
-            if (i < $._blocks.length)
+        $.setColorOnFace = function (i, c, j) {
+            if (i < $._blocks.length && j < $.BLOCKSIDES) {
                 $._blocks[i].colors[j] = c
-        }
-
-        $.getObject = function (i) {
-            if (i < $._blocks.length)
-                return $._blocks[i].status || {};
-        }
-
-        $.setObject = function (i, obj) {
-            if (i < $._blocks.length)
-                $._blocks[i].status = obj;
-        }
-
-        $.getValue = function (i, v) {
-            if (i < $._blocks.length){
-                // console.log(($._blocks[i].status || {}), ($._blocks[i].status || {})[v])
-                return ($._blocks[i].status || {})[v] || null;
             }
         }
 
-        $.setValue = function (i, k, v) {
-            if (i < $._blocks.length)
-                $._blocks[i].status = $._blocks[i].status || {};
-                $._blocks[i].status[k] = v;
+        $.setValuesSentOnFaces = function (i, arr) {
+            // console.log('sent', i, arr)
+            if (i < $._blocks.length) {
+                let b = $._blocks[i]
+                b.connected.map((c, f) => {
+                    const index = $._getBlockIndexFromID(c)
+                    if (index >= 0) {
+                        const value = arr[f]
+                        let face = 0
+                        let connBlock = $._blocks[index]
+                        connBlock.connected.map((cb, cbi) => {
+                            if (cb === b.id) {
+                                face = cbi
+                            }
+                        })
+                        if (value >= 0) {
+                            $._receiveValueOnFaceFn(index, value, face)
+                        }
+                    }
+                })
+            }
+        }
+
+        // Time
+        $.millis = function () {
+            return window.performance.now() - millisStart;
         }
 
         /* EVENTS */
@@ -284,14 +314,16 @@ function BLINKS(scope) {
         let clickTimer
         let longpressTimer
         function onMouseDownEvent() {
-            // console.log('mouse down', $._MatterEngine.world.bodies)
+            // console.log('mouse down')
+
             $.pmouseX = $.mouseX;
             $.pmouseY = $.mouseY;
             $.mouseX = $._MatterMouse.position.x;
             $.mouseY = $._MatterMouse.position.y;
 
             // mouse down to start drag a group of blocks
-            if ($._groupHighlight) {
+            $._updateHighlight();
+            if ($._groupOnHighlight) {
                 $._currDragging = $._MatterMouseConstraint.body
                 $._targetShadow.opacity = 0
             }
@@ -300,17 +332,15 @@ function BLINKS(scope) {
                 mouseOnClick = true
                 longpressTimer = setTimeout(() => {
                     clearTimeout(longpressTimer)
+                    longpressTimer = null
                     if ($._blockOnHighlight >= 0) {
                         $._buttonLongPressedFn($._getBlockIndexFromID($._blockOnHighlight))
-                        $._blockOnHighlight = -1
                     }
-                    mouseOnClick = false
-                    clicks = 0
                 }, $.LONGPRESSTIMEOUT)
 
                 if ($._blockOnHighlight >= 0) {
                     // call mouse down event on a button
-                    $._buttonDownFn($._getBlockIndexFromID($._blockOnHighlight))
+                    $._buttonPressedFn($._getBlockIndexFromID($._blockOnHighlight))
                 }
 
                 // freeze matter bodies
@@ -352,17 +382,6 @@ function BLINKS(scope) {
                         let blockIndex = $._getBlockIndexFromID($._blockOnHighlight)
                         if (blockIndex >= 0) {
                             $._buttonReleasedFn(blockIndex)
-                            // clicks++
-                            // if (clicks === 1) {
-                            //     $._buttonSingleClickedFn(blockIndex)
-                            // }
-                            // else if (clicks === 2) {
-                            //     $._buttonDoubleClickedFn(blockIndex)
-                            // }
-                            // else if (clicks > 2) {
-                            //     $._buttonMultiClickedFn(blockIndex, clicks)
-                            //     $.buttonClickCount = clicks
-                            // }
                         }
                     }
                     clicks = 0
@@ -379,38 +398,7 @@ function BLINKS(scope) {
                 $._breakLines.push({ ...$._MatterMouse.position })
                 return
             }
-
-            $._blockOnHighlight = -1
-            $._groupHighlight = false
-            document.body.style.cursor = 'default'
-            $._MatterBodies.map(function (b) {
-                let parts = b.parts.filter(function (part, i) {
-                    return i !== 0
-                })
-                // reset all block highlights
-                parts.map(p => p.isHighlighted = p.isHighlightedOnGroup = false)
-
-                for (let i = 0; i < parts.length; i++) {
-                    let part = parts[i]
-                    // loose check based on bounds
-                    if (Matter.Bounds.contains(part.bounds, $._MatterMouse.position)) {
-                        // check based on vertices
-                        if ($.pointInsidePolygon(part.vertices, $._MatterMouse.position)) {
-                            let dist = Matter.Vector.magnitude(Matter.Vector.sub(part.position, $._MatterMouse.position))
-                            if (dist < $.BLOCKHIGHLIGHTRADIUS) {
-                                $._blockOnHighlight = part.id
-                                part.isHighlighted = true
-                                document.body.style.cursor = 'pointer'
-                            }
-                            else {
-                                parts.map(p => p.isHighlightedOnGroup = true)
-                                $._groupHighlight = true
-                            }
-                            break
-                        }
-                    }
-                }
-            })
+            $._updateHighlight();
         }
 
         function onMouseUpEvent() {
@@ -458,35 +446,37 @@ function BLINKS(scope) {
                 }
 
                 if (mouseOnClick) {
-                    clearTimeout(longpressTimer)
-                    clearTimeout(clickTimer)
-                    clicks++
                     let blockIndex = $._getBlockIndexFromID($._blockOnHighlight)
                     if (blockIndex >= 0) {
                         $._buttonReleasedFn(blockIndex)
                     }
-                    clickTimer = setTimeout(() => {
-                        if (clicks === 1) {
-                            if (blockIndex >= 0) {
-                                $._buttonSingleClickedFn(blockIndex)
+                    if (longpressTimer) {
+                        clearTimeout(longpressTimer)
+                        clearTimeout(clickTimer)
+                        clicks++
+                        clickTimer = setTimeout(() => {
+                            if (clicks === 1) {
+                                if (blockIndex >= 0) {
+                                    $._buttonSingleClickedFn(blockIndex)
+                                }
                             }
-                        }
-                        else if (clicks === 2) {
-                            if (blockIndex >= 0) {
-                                $._buttonDoubleClickedFn(blockIndex)
+                            else if (clicks === 2) {
+                                if (blockIndex >= 0) {
+                                    $._buttonDoubleClickedFn(blockIndex)
+                                }
+                                else {
+                                    $._doubleClickedFn()
+                                }
                             }
-                            else {
-                                $._doubleClickedFn()
+                            else if (clicks > 2) {
+                                if (blockIndex >= 0) {
+                                    $._buttonMultiClickedFn(blockIndex, clicks)
+                                    $.buttonClickCount = clicks
+                                }
                             }
-                        }
-                        else if (clicks > 2) {
-                            if (blockIndex >= 0) {
-                                $._buttonMultiClickedFn(blockIndex, clicks)
-                                $.buttonClickCount = clicks
-                            }
-                        }
-                        clicks = 0
-                    }, $.CLICKTIMEOUT)
+                            clicks = 0
+                        }, $.CLICKTIMEOUT)
+                    }
                     mouseOnClick = false
                 }
 
@@ -494,6 +484,11 @@ function BLINKS(scope) {
                 $._MatterBodies.map(function (b) {
                     Matter.Body.setStatic(b, false)
                 })
+            }
+
+            // reset all highlights
+            if($.isTouchDevice){
+                $._resetHighlight()
             }
         }
 
@@ -507,11 +502,11 @@ function BLINKS(scope) {
         /* EXTERNAL EVENTS */
         let eventNames = [
             "beforeFrameUpdated", "afterFrameUpdated",
-            "doubleClicked",
+            "doubleClicked", "buttonLongPressed",
             "buttonPressed", "buttonReleased",
             "buttonSingleClicked", "buttonDoubleClicked",
             "buttonMultiClicked", "buttonClickCount",
-            "buttonLongPressed", "buttonDown"
+            "groupUpdated", "receiveValueOnFace"
         ];
         for (let k of eventNames) {
             let intern = "_" + k + "Fn";
@@ -528,6 +523,52 @@ function BLINKS(scope) {
 
 
         /* PRIVATE FUNCTIONS */
+        $._updateHighlight = function () {
+            $._blockOnHighlight = -1
+            $._groupOnHighlight = false
+            document.body.style.cursor = 'default'
+            $._MatterBodies.map(function (b) {
+                let parts = b.parts.filter(function (part, i) {
+                    return i !== 0
+                })
+                // reset all block highlights
+                parts.map(p => p.isHighlighted = p.isHighlightedOnGroup = false)
+
+                for (let i = 0; i < parts.length; i++) {
+                    let part = parts[i]
+                    // loose check based on bounds
+                    if (Matter.Bounds.contains(part.bounds, $._MatterMouse.position)) {
+                        // check based on vertices
+                        if ($.pointInsidePolygon(part.vertices, $._MatterMouse.position)) {
+                            let dist = Matter.Vector.magnitude(Matter.Vector.sub(part.position, $._MatterMouse.position))
+                            if (dist < $.BLOCKHIGHLIGHTRADIUS) {
+                                $._blockOnHighlight = part.id
+                                part.isHighlighted = true
+                                document.body.style.cursor = 'pointer'
+                            }
+                            else {
+                                parts.map(p => p.isHighlightedOnGroup = true)
+                                $._groupOnHighlight = true
+                            }
+                            break
+                        }
+                    }
+                }
+            })
+        }
+
+        $._resetHighlight = function () {
+            $._blockOnHighlight = -1
+            $._groupOnHighlight = false
+            document.body.style.cursor = 'default'
+            $._MatterBodies.map(function (b) {
+                let parts = b.parts.filter(function (part, i) {
+                    return i !== 0
+                })
+                // reset all block highlights
+                parts.map(p => p.isHighlighted = p.isHighlightedOnGroup = false)
+            })
+        }
 
         // Render
         $._drawSpikes = function () {
@@ -607,6 +648,20 @@ function BLINKS(scope) {
             }
         }
 
+        $._drawGroupArea = function () {
+            // draw lines
+            $._MatterBodies.map( b => {
+                let vts = b.vertices;
+                let drawingPath = []
+                drawingPath.push(vts[0].x, vts[0].y)
+                for (let n = 1; n < vts.length; n++) {
+                    drawingPath.push(vts[n].x, vts[n].y)
+                }
+                $._PIXIOverlayView.lineStyle(3, 0x0000FF, 0.2)
+                $._PIXIOverlayView.drawPolygon(drawingPath)
+            })
+        }
+
         $._drawBreakLines = function () {
             if ($._breakLines.length < 2) {
                 return
@@ -662,30 +717,6 @@ function BLINKS(scope) {
                     $._PIXIBlockView.lineStyle(1, 0xEB4034, 0.25)
                     $._PIXIBlockView.moveTo(block.position.x, block.position.y)
                     $._PIXIBlockView.lineTo(block.position.x + (midPoint.x - block.position.x) * 0.88, block.position.y + (midPoint.y - block.position.y) * 0.88)
-                }
-            }
-        }
-
-        $._drawGroupAreas = function () {
-            for (let i = 0; i < $._groups.length; i++) {
-                if (!$._groups[i].innerpts) {
-                    return
-                }
-                let drawingPath = []
-                for (let j = 0; j < $._groups[i].innerpts.length; j++) {
-                    let ver = $._groups[i].innerpts[j]
-                    drawingPath.push(ver.x, ver.y)
-                }
-                $._PIXIOverlayView.lineStyle(1, 0x0000FF, 0.25)
-                $._PIXIOverlayView.beginFill(0xFFFF00, 0.25)
-                $._PIXIOverlayView.drawPolygon(drawingPath)
-                $._PIXIOverlayView.endFill()
-                $._PIXIOverlayView.lineStyle(0)
-                for (let j = 0; j < $._groups[i].innerpts.length; j++) {
-                    let ver = $._groups[i].innerpts[j]
-                    $._PIXIOverlayView.beginFill(0xFF0000, 1)
-                    $._PIXIOverlayView.drawCircle(ver.x, ver.y, 3)
-                    $._PIXIOverlayView.endFill()
                 }
             }
         }
@@ -779,7 +810,7 @@ function BLINKS(scope) {
             result.map(function (g) {
                 let gid = $._groups.indexOf(g)
                 $._generateGroupPts(gid)
-                // console.log('create a new body', $._groups[g].pts)
+                // console.log('create a new body', g.pts)
                 // add group to the world
                 let comp = $._generatePolygonFromVertices(g.pts)
                 g.poly = comp
@@ -816,6 +847,8 @@ function BLINKS(scope) {
                 console.log('Groups:', $._groups)
                 console.log('World', $._MatterBodies)
             }
+
+            $._sendGroupUpdates();
             return result
         }
 
@@ -923,6 +956,12 @@ function BLINKS(scope) {
             }, 100)
         }
 
+        $._sendGroupUpdates = function () {
+            $._groupUpdatedFn($._blocks.map(b => {
+                return b.connected.map(c => $._getBlockIndexFromID(c))
+            }))
+        }
+
         $._generateGroupPts = function (gid) {
             let group = $._groups[gid]
 
@@ -990,10 +1029,6 @@ function BLINKS(scope) {
                         console.warn('Could not find group pts')
                     group.pts = []
                 }
-            }
-
-            if ($.debugMode) {
-                // group.innerpts = hmpoly.createPaddingPolygon(group.pts, $.BLOCKRADIUS)
             }
         }
 
@@ -1260,7 +1295,9 @@ function BLINKS(scope) {
             precision mediump float;
             const float PI_6 = 0.5235987755982988;
             const float PI_3 = 1.0471975511965976;
-            const vec3 BG_COLOR = vec3(0.72);
+            // const vec3 BG_COLOR = vec3(0.72);
+            const float BG_LIGHT = 0.81;
+            const float BG_DARK = 0.72; 
 
             uniform bool u_highlight; //on hover
             uniform bool u_group_highlight; //on group hover
@@ -1320,8 +1357,9 @@ function BLINKS(scope) {
                 // set color based on LED lights
                 vec3 color = vec3(0);
                 bool within_border = false;
+                float TOTAL_BRIGHTNESS = 0.0;
                 for (int i = 0; i < 6; i++) {
-                    float angle = u_angle + PI_3 * float(i);
+                    float angle = u_angle + PI_3 * float(i + 1);
                     float px = u_pos.x + cos(angle) * u_radius * 2.0;
                     float py = u_pos.y - sin(angle) * u_radius * 2.0;
                     float dc = distance(fragCoord.xy, u_pos.xy); // distance to center
@@ -1338,19 +1376,20 @@ function BLINKS(scope) {
                         }
                         color = blendColors(color, u_leds[i].rgb, o * o, 2); // blend lights using lighten; use exp instead of linear for opacity
                     }
+                    TOTAL_BRIGHTNESS = TOTAL_BRIGHTNESS + (0.299 * u_leds[i].r + 0.587 * u_leds[i].g + 0.114 * u_leds[i].b);
                 }
                 if (within_border) {
-                    color = blendColors(BG_COLOR, color, 1.0, 1);  // blend color with background using overlay
+                    float bg_color = map(TOTAL_BRIGHTNESS, 0.0, 6.0, BG_LIGHT, BG_DARK);
+                    color = blendColors(vec3(bg_color), color, 1.0, 1);  // blend color with background using overlay
                 }
                 else {
-                    // set to default color
-                    color = BG_COLOR;
-                }
-                if (u_highlight) {
-                    color = blendColors(color, vec3(1.0, 0.0, 0.0), 0.33, 0); // add red overlay
-                }
-                else if(u_group_highlight) {
-                    color = blendColors(color, vec3(1.0), 0.5, 0); // add white overlay
+                    if (u_highlight || u_group_highlight) {
+                        color = vec3(0.72, 0.49, 0.49); // add red border
+                    }
+                    else {
+                        // set to default color
+                        color = vec3(BG_LIGHT);
+                    }
                 }
                 gl_FragColor = vec4(color, 1.0);
             }
@@ -1358,3 +1397,5 @@ function BLINKS(scope) {
     }
 
 }
+
+export { init }
