@@ -43,6 +43,10 @@ const BLOCKS_NUM = 6;
 let frameCount = 0;
 let workers = [];
 
+if(blk.isTouchDevice> 0){
+    gui.close();
+    document.body.removeChild(stats.dom);
+}
 
 /* UPDATE */
 
