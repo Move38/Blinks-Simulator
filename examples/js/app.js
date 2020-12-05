@@ -4,7 +4,6 @@ stats.showPanel(0); // 0: fps, 1: ms, 2: mb, 3+: customß
 document.body.appendChild(stats.dom);
 
 const examples = [
-    'Darkball',
     'time',
     'display',
     'buttonClick',
@@ -18,6 +17,7 @@ const examples = [
     'BombBridge',
     'Mortals',
     'Puzzle101',
+    'Darkball'
 ];
 
 // Dat GUI

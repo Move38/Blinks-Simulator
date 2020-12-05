@@ -86,9 +86,9 @@ self.onmessage = function (event) {
         }
     }
     else if (event.data.name === 'data') {
-        if(self._dataIns[event.data.face] === null){
+        if (self._dataIns[event.data.face] === null) {
             self._dataIns[event.data.face] = event.data.datagram;
-        } 
+        }
     }
 }
 
@@ -102,6 +102,13 @@ function setColor(newColor) {
 }
 
 function setColorOnFace(newColor, face) {
+    self.postMessage({
+        name: 'setColorOnFace',
+        values: [self.index, newColor, face]
+    })
+}
+// depreciatd 
+function setFaceColor(face, newColor) {
     self.postMessage({
         name: 'setColorOnFace',
         values: [self.index, newColor, face]
@@ -368,18 +375,76 @@ function startSate() {
     return 0;
 }
 
+
+/* Arduino */
+
+// utility
 function sizeof(arr) {
     return arr.length;
 }
 
-function byte(number) {
-    return parseInt(number);
+// conversion
+function byte(n) {
+    return parseInt(n);
 }
 
-function int(number) {
-    return parseInt(number);
+function int(n) {
+    return parseInt(n);
 }
 
-function float(number) {
-    return parseFloat(number);
+function word(n) {
+    return parseInt(n);
+}
+
+function long(n) {
+    return parseInt(n);
+}
+
+function float(n) {
+    return parseFloat(n);
+}
+
+// math
+function sin(n) {
+    return Math.sin(n);
+}
+
+function cos(n) {
+    return Math.cos(n);
+}
+
+function tan(n) {
+    return Math.tan(n);
+}
+
+function abs(n) {
+    return Math.abs(n);
+}
+
+function randomSeed(n) {
+    // todo
+}
+
+function constrain(x, lo, hi) {
+    return Math.min(Math.max(x, lo), hi);
+}
+
+function max(m, n) {
+    return Math.max(m, n);
+}
+
+function min(m, n) {
+    return Math.min(m, n);
+}
+
+function pow(b, n) {
+    return Math.pow(b, n);
+}
+
+function sq(n) {
+    return n * n;
+}
+
+function sqrt(n) {
+    return Math.sqrt(n);
 }
