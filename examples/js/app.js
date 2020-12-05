@@ -10,7 +10,12 @@ const examples = [
     'buttonPress',
     'neighbors',
     'communication',
-    'sendSignal'
+    'sendSignal',
+    'WHAM',
+    'Fracture',
+    'Berry',
+    'BombBridge',
+    'Mortals'
 ];
 
 // Dat GUI
@@ -22,7 +27,7 @@ const SETTINGS = {
             clear();
             init(SETTINGS.global.select);
         },
-        select: examples[4]
+        select: examples[0]
     },
 };
 const gui = new dat.GUI();
@@ -33,7 +38,6 @@ gui.add(SETTINGS.global, 'select', examples).onFinishChange(s => {
 gui.add(SETTINGS.global, "debug").onFinishChange( d => blk.debugMode = d);
 // gui.add(SETTINGS.global, "clear");
 // gui.add(SETTINGS.global, "reset");
-// gui.close();
 
 
 /* SETUP */
@@ -43,6 +47,10 @@ const BLOCKS_NUM = 6;
 let frameCount = 0;
 let workers = [];
 
+if(blk.isTouchDevice> 0){
+    gui.close();
+    document.body.removeChild(stats.dom);
+}
 
 /* UPDATE */
 

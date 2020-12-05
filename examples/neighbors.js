@@ -12,7 +12,7 @@ void loop() {
 self.importScripts('js/blink.js')
 
 function loop(){
-    for (let f = 0; f < 6; f++) {//check every face
+    for (let f = 0; f < FACE_COUNT; f++) {//check every face
         if (isValueReceivedOnFaceExpired(f)) {//no one there
             setColorOnFace(BLUE, f);
         } else {//someone there
