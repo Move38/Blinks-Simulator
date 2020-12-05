@@ -35,10 +35,10 @@ let happyFlashOn;
 
 let sparkleOffset = [0, 3, 5, 1, 4, 2];
 
-let edgeTimer = [];
+let edgeTimer = Array.from({ length: 6 }, () => new Timer(self));
 let  edgeAcquired;
 
-let hasRecentlySeenNeighbor = [];
+let hasRecentlySeenNeighbor = []
 
 function setup() {
 }

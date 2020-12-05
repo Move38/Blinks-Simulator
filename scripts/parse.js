@@ -93,13 +93,13 @@ function removeExtras(string) {
     }
 
     // remove array pointers
-    const pointerExp = /&([A-Za-z0-9\_]+)/;
+    const pointerExp = /&([a-zA-Z_{1}][A-Za-z0-9_]+)/;
     match = pointerExp.exec(result);
     while (match != null) {
         result = result.replace(match[0], match[1]);
         match = pointerExp.exec(result);
     }
-    const starExp = /\*([A-Za-z0-9\_]+)/;
+    const starExp = /\*([a-zA-Z_{1}][A-Za-z0-9_]+)/;
     match = starExp.exec(result);
     while (match != null) {
         result = result.replace(match[0], match[1]);
@@ -115,7 +115,7 @@ function removeExtras(string) {
 function cleanFuncitons(string) {
     // match line start with a word followed by space and braces
     let result = string;
-    const funcExp = /^\s?[A-Za-z0-9\_]+\s.*(\(.*\))/gm;
+    const funcExp = /^\s?[a-zA-Z_{1}][A-Za-z0-9_]+\s.*(\(.*\))/gm;
     let match = funcExp.exec(result);
     while (match != null) {
         let funcLine = match[0].replace(match[1], '');
@@ -137,7 +137,7 @@ function cleanFuncitons(string) {
 function cleanDatatypes(string) {
     let result = string;
     // match line with datetype followed by varable name followed by square braces
-    const arrExp = /[A-Za-z0-9\_]+\s+([A-Za-z0-9\_]+)(\[.*\]).*/;
+    const arrExp = /[a-zA-Z_{1}][A-Za-z0-9_]+\s+([a-zA-Z_{1}][A-Za-z0-9_]+)(\[.*\]).*/;
     let typeMatch = arrExp.exec(result);
     while (typeMatch != null) {
         let varable = typeMatch[1];
@@ -153,12 +153,11 @@ function cleanDatatypes(string) {
             }
             else if(arrayDim == 2){
                 const length = /\[([0-9]+)\]/.exec(typeMatch[2])[1]
-                console.log(length)
                 arrLine = "Array.from({ length: " + length + " }, () => [])"
             }
         }
 
-        let replacement = 'let ' + typeMatch[1] + ' = ' + arrLine;
+        let replacement = 'let ' + varable + ' = ' + arrLine;
         result = result.replace(typeMatch[0], replacement);
         typeMatch = arrExp.exec(result);
     }
@@ -177,7 +176,7 @@ function cleanDatatypes(string) {
 }
 
 function updateTimer(string) {
-    const timerExp = /Timer\s+([A-Za-z0-9\_]+).*;?/;
+    const timerExp = /Timer\s+([a-zA-Z_{1}][A-Za-z0-9_]+).*;?/;
     let result = string;
     let match = timerExp.exec(string);
     while (match != null) {
@@ -198,7 +197,7 @@ function updateTimer(string) {
 }
 
 function replaceDefine(string) {
-    const defineExp = /.*?#define\s+([A-Za-z0-9\_]+)\s+/;
+    const defineExp = /.*?#define\s+([a-zA-Z_{1}][A-Za-z0-9_]+)\s+/;
     let result = string;
     let match = defineExp.exec(string);
     while (match != null) {
@@ -210,7 +209,7 @@ function replaceDefine(string) {
 }
 
 function replaceEnum(string) {
-    const enumExp = /enum\s+([A-Za-z0-9\_]+)\s+\{([^\}]*)\};?/;
+    const enumExp = /enum\s+([a-zA-Z_{1}][A-Za-z0-9_]+)\s+\{([^\}]*)\};?/;
     let result = string;
     let match = enumExp.exec(string);
     while (match != null) {

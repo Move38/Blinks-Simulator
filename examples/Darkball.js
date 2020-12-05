@@ -2,7 +2,7 @@ self.importScripts('js/blink.js')
 
 /*
    Darkball
-   by Che-Wei Wang,  CWT
+   by Che-Wei Wang,  CW&T
    for Blinks by Move38
 
   setup:

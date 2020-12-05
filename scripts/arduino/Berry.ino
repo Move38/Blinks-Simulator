@@ -1,5 +1,3 @@
-self.importScripts('js/blink.js')
-
 /*
  *  Berry
  *  by VV Studio
@@ -7,7 +5,7 @@ self.importScripts('js/blink.js')
  *  Lead development by Jonathan Bobrow, Move38 Inc.
  *  original game by ViVi and Vanilla
  *
- *  Rules: https:
+ *  Rules: https://github.com/Move38/Berry/blob/master/README.md
  *
  *  --------------------
  *  Blinks by Move38
@@ -18,26 +16,26 @@ self.importScripts('js/blink.js')
  *  --------------------
  */
 
-let colors = [ BLUE, RED, YELLOW ];
-let currentColorIndex = 0;
-let faceIndex = 0;
-let faceStartIndex = 0;
+Color colors[] = { BLUE, RED, YELLOW };
+byte currentColorIndex = 0;
+byte faceIndex = 0;
+byte faceStartIndex = 0;
 
-let isWaiting = false;
+bool isWaiting = false;
 
-const FACE_DURATION = 60
-const WAIT_DURATION = 2000
+#define FACE_DURATION 60
+#define WAIT_DURATION 2000
 
-let faceTimer = new Timer(self);
-let waitTimer = new Timer(self);
+Timer faceTimer;
+Timer waitTimer;
 
-function setup() {
-  
+void setup() {
+  // put your setup code here, to run once:
 
 }
 
-function loop() {
-  
+void loop() {
+  // put your main code here, to run repeatedly:
 
   if ( buttonSingleClicked() ) {
 
@@ -59,7 +57,7 @@ function loop() {
         waitTimer.set( WAIT_DURATION );
         isWaiting = true;
 
-        
+        // shift the starting point
         faceStartIndex++;
         if (faceStartIndex >= 6) {
           faceStartIndex = 0;
@@ -71,42 +69,42 @@ function loop() {
     }
   }
 
-  
+  // display color
   setColor( colors[currentColorIndex] );
 
-  
+  // show locked sides
   if (isPositionLocked()) {
-    
-    let bri = 153 + (sin8_C((millis() / 6) % 255)*2)/5;
+    // show the state of locked animation on all faces
+    byte bri = 153 + (sin8_C((millis() / 6) % 255)*2)/5;
     setColor(dim(colors[currentColorIndex], bri));
   }
 
-  
+  // show next color
   if (!isWaiting) {
-    let nextColorIndex = (currentColorIndex + 1) % 3;
-    let face = (faceStartIndex + faceIndex - 1) % FACE_COUNT;
+    byte nextColorIndex = (currentColorIndex + 1) % 3;
+    byte face = (faceStartIndex + faceIndex - 1) % FACE_COUNT;
     setFaceColor( face, colors[nextColorIndex] );
   }
 }
 
-function isPositionLocked() {
-  
-  let neighborPattern = []
-  let lockedA = [1, 0, 1, 0, 1, 0];
-  let lockedB = [1, 0, 1, 0, 0, 0];
+bool isPositionLocked() {
+  // based on the arrangement of neighbors, am I locked...
+  bool neighborPattern[6];
+  bool lockedA[6] = {1, 0, 1, 0, 1, 0};
+  bool lockedB[6] = {1, 0, 1, 0, 0, 0};
 
-  for(let f = 0; f < FACE_COUNT; f++) {
+  FOREACH_FACE(f) {
     neighborPattern[f] = !isValueReceivedOnFaceExpired(f);
   }
 
-  
-  for (let i = 0; i < 3; i++) {
+  // neighbors across from each other
+  for (byte i = 0; i < 3; i++) {
     if (neighborPattern[i] && neighborPattern[i + 3]) {
       return true;
     }
   }
 
-  
+  // special case lock patterns
   if ( isThisPatternPresent(lockedA, neighborPattern)) {
     return true;
   }
@@ -117,34 +115,34 @@ function isPositionLocked() {
   return false;
 }
 
+// check to see if pattern is in the array
+// return true if the pattern is in fact in the array
+// pattern is always 6 bools
+// source is always 12 bools (2 x 6 bools)
+bool isThisPatternPresent( bool pat[], bool source[]) {
 
+  // first double the source to be cyclical
+  bool source_double[12];
 
-
-
-function isThisPatternPresent( pat, source) {
-
-  
-  let source_double = []
-
-  for (let i = 0; i < 12; i++) {
+  for (byte i = 0; i < 12; i++) {
     source_double[i] = source[i % 6];
   }
 
-  
-  let pat_index = 0;
+  // then find the pattern
+  byte pat_index = 0;
 
-  for (let i = 0; i < 12; i++) {
+  for (byte i = 0; i < 12; i++) {
     if (source_double[i] == pat[pat_index]) {
-      
+      // increment index
       pat_index++;
 
       if ( pat_index == 6 ) {
-        
+        // found the entire pattern
         return true;
       }
     }
     else {
-      
+      // set index back to 0
       pat_index = 0;
     }
   }

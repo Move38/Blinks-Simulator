@@ -37,8 +37,8 @@ let team = 0;
 
 let health;
 
-let healthTimer   = new Timer(self);
-let injuryDecayTimer  = new Timer(self);
+let healthTimer = new Timer(self);
+let injuryDecayTimer = new Timer(self);
 
 const START_DELAY = 100
 let startTimer = new Timer(self);
@@ -48,7 +48,7 @@ let injuredFace;
 
 let deathBrightness = 0;
 
-let attackSuccess = [];
+let attackSuccess = []
 
 let bChangeTeam = false;
 
@@ -68,9 +68,9 @@ const START = 2;
 
 let gameState = WAITING;
 
-let neighbors = [];
+let neighbors = []
 
-let modeTimeout      = new Timer(self);
+let modeTimeout = new Timer(self);
 
 
 

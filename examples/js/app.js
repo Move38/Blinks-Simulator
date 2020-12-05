@@ -14,7 +14,7 @@ const examples = [
     'WHAM',
     'Fracture',
     'Berry',
-    'BombBridge',
+    'BombBrigade',
     'Mortals',
     'Puzzle101',
     'Darkball'

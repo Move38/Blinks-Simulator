@@ -5,6 +5,7 @@ const START_STATE_WE_ARE_ROOT = 1;
 const START_STATE_DOWNLOAD_SUCCESS = 2;
 const IR_DATA_VALUE_MAX = 63;
 const IR_DATAGRAM_LEN = 16;
+const PI = Math.PI;
 
 const RED = [1.0, 0, 0];
 const ORANGE = [1.0, 1.0 / 2, 0];
