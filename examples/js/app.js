@@ -4,7 +4,8 @@ stats.showPanel(0); // 0: fps, 1: ms, 2: mb, 3+: customß
 document.body.appendChild(stats.dom);
 
 const examples = [
-    'time', 
+    'Darkball',
+    'time',
     'display',
     'buttonClick',
     'buttonPress',
@@ -15,7 +16,8 @@ const examples = [
     'Fracture',
     'Berry',
     'BombBridge',
-    'Mortals'
+    'Mortals',
+    'Puzzle101',
 ];
 
 // Dat GUI
@@ -35,7 +37,7 @@ gui.add(SETTINGS.global, 'select', examples).onFinishChange(s => {
     clear();
     init(s);
 });
-gui.add(SETTINGS.global, "debug").onFinishChange( d => blk.debugMode = d);
+gui.add(SETTINGS.global, "debug").onFinishChange(d => blk.debugMode = d);
 // gui.add(SETTINGS.global, "clear");
 // gui.add(SETTINGS.global, "reset");
 
@@ -43,11 +45,11 @@ gui.add(SETTINGS.global, "debug").onFinishChange( d => blk.debugMode = d);
 /* SETUP */
 const blk = new blinks.init(SETTINGS.global.select);
 blk.debugMode = SETTINGS.global.debug;
-const BLOCKS_NUM = 6;
+const BLOCKS_NUM = 8;
 let frameCount = 0;
 let workers = [];
 
-if(blk.isTouchDevice> 0){
+if (blk.isTouchDevice > 0) {
     gui.close();
     document.body.removeChild(stats.dom);
 }
@@ -88,6 +90,14 @@ blk.receiveValueOnFace = function (index, value, face) {
         name: 'receive',
         face: face,
         value: value
+    })
+}
+
+blk.receiveDatagramOnFace = function (index, data, face) {
+    workers[index].postMessage({
+        name: 'data',
+        face: face,
+        datagram: data
     })
 }
 

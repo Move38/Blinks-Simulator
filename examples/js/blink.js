@@ -4,6 +4,7 @@ const START_STATE_POWER_UP = 0;
 const START_STATE_WE_ARE_ROOT = 1;
 const START_STATE_DOWNLOAD_SUCCESS = 2;
 const IR_DATA_VALUE_MAX = 63;
+const IR_DATAGRAM_LEN = 16;
 
 const RED = [1.0, 0, 0];
 const ORANGE = [1.0, 1.0 / 2, 0];
@@ -26,6 +27,7 @@ self._ins = Array.from({ length: FACE_COUNT }, () => {
     }
 });
 self._millisOffset = Math.floor(Math.random() * 1000);
+self._dataIns = Array.from({ length: FACE_COUNT }, () => null);
 
 self.onmessage = function (event) {
     if (event.data.name === 'index') {
@@ -72,16 +74,21 @@ self.onmessage = function (event) {
             });
         }
     }
+    else if (event.data.name === 'btnpressed') {
+        self._buttondown = true;
+        self._buttonPressedFlag = true;
+
+    }
     else if (event.data.name === 'receive') {
         if (self._ins[event.data.face].value !== event.data.value) {
             self._ins[event.data.face].value = event.data.value;
             self._ins[event.data.face].flag = true;
         }
     }
-    else if (event.data.name === 'btnpressed') {
-        self._buttondown = true;
-        self._buttonPressedFlag = true;
-
+    else if (event.data.name === 'data') {
+        if(self._dataIns[event.data.face] === null){
+            self._dataIns[event.data.face] = event.data.datagram;
+        } 
     }
 }
 
@@ -258,7 +265,28 @@ function isAlone() {
 }
 
 /* Datagrams */
+function getDatagramLengthOnFace(face) {
+    return _dataIns[face].length;
+}
 
+function isDatagramReadyOnFace(face) {
+    return _dataIns[face] !== null;
+}
+
+function getDatagramOnFace(face) {
+    return _dataIns[face];
+}
+
+function markDatagramReadOnFace(face) {
+    _dataIns[face] = null;
+}
+
+function sendDatagramOnFace(data, len, face) {
+    self.postMessage({
+        name: 'setDatagramSentOnFace',
+        values: [self.index, data, face]
+    });
+}
 
 /* Time */
 
@@ -338,4 +366,20 @@ function hasWoken() {
 
 function startSate() {
     return 0;
+}
+
+function sizeof(arr) {
+    return arr.length;
+}
+
+function byte(number) {
+    return parseInt(number);
+}
+
+function int(number) {
+    return parseInt(number);
+}
+
+function float(number) {
+    return parseFloat(number);
 }

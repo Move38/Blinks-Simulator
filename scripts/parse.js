@@ -92,6 +92,23 @@ function removeExtras(string) {
         match = floatExp.exec(result);
     }
 
+    // remove array pointers
+    const pointerExp = /&([A-Za-z0-9\_]+)/;
+    match = pointerExp.exec(result);
+    while (match != null) {
+        result = result.replace(match[0], match[1]);
+        match = pointerExp.exec(result);
+    }
+    const starExp = /\*([A-Za-z0-9\_]+)/;
+    match = starExp.exec(result);
+    while (match != null) {
+        result = result.replace(match[0], match[1]);
+        match = starExp.exec(result);
+    }
+
+    // remove data type caster
+    result = result.replaceAll(/\(byte+\s+\*\)/g, '');
+
     return result;
 }
 
@@ -120,16 +137,28 @@ function cleanFuncitons(string) {
 function cleanDatatypes(string) {
     let result = string;
     // match line with datetype followed by varable name followed by square braces
-    const arrExp = /[A-Za-z0-9\_]+\s+([A-Za-z0-9\_]+)\[.*\].*/;
+    const arrExp = /[A-Za-z0-9\_]+\s+([A-Za-z0-9\_]+)(\[.*\]).*/;
     let typeMatch = arrExp.exec(result);
     while (typeMatch != null) {
-        let replacement = 'let ' + typeMatch[1] + ' = ';
-        let arrLine = '[];'
+        let varable = typeMatch[1];
+        let arrLine = ''
         let arrMatch = /\{(.+)\}/.exec(typeMatch[0]);
         if (arrMatch) {
-            arrLine = '[' + arrMatch[1] + '];'
+            arrLine = '[' + arrMatch[1] + '];';
         }
-        replacement += arrLine;
+        else {
+            const arrayDim = (typeMatch[2].match(/\[/g) || []).length
+            if(arrayDim == 1){
+                arrLine = '[]';
+            }
+            else if(arrayDim == 2){
+                const length = /\[([0-9]+)\]/.exec(typeMatch[2])[1]
+                console.log(length)
+                arrLine = "Array.from({ length: " + length + " }, () => [])"
+            }
+        }
+
+        let replacement = 'let ' + typeMatch[1] + ' = ' + arrLine;
         result = result.replace(typeMatch[0], replacement);
         typeMatch = arrExp.exec(result);
     }
@@ -148,12 +177,20 @@ function cleanDatatypes(string) {
 }
 
 function updateTimer(string) {
-    const timerExp = /Timer\s.*/g;
+    const timerExp = /Timer\s+([A-Za-z0-9\_]+).*;?/;
     let result = string;
     let match = timerExp.exec(string);
     while (match != null) {
-        const p = match[0].replace('Timer ', '').replaceAll(';', '');
-        const replacement = "let " + p + " = new Timer(self);";
+        const varable = match[1];
+        let replacement = "let " + varable + " = new Timer(self);";
+        // check whether it's an array
+        const arrExp = /\[(.*)\]/;
+        const arrMatch = arrExp.exec(match[0]);
+        if(arrMatch){
+            const arrLength = arrMatch[1].trim();
+            replacement = "let " + varable + " = " + "Array.from({ length: " + arrLength + " }, () => new Timer(self));"
+        }
+
         result = result.replace(match[0], replacement);
         match = timerExp.exec(result);
     }

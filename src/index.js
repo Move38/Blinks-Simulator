@@ -181,6 +181,8 @@ function init(scope) {
                 let alt = i % 2 * 2 - 1 // -1 or 1
                 let px = $._PIXI.screen.width / 2 + (i - number / 2) * $.BLOCKRADIUS * 1.732
                 let py = $._PIXI.screen.height / 2 + alt * $.BLOCKRADIUS * 1.5
+                // let px = $._PIXI.screen.width / 2 + (i - number / 2) * $.BLOCKRADIUS * 1.732 * 2
+                // let py = $._PIXI.screen.height / 2
                 let block = $.generateBlock(px, py)
                 $._blocks.push(block)
             }
@@ -266,6 +268,26 @@ function init(scope) {
                         }
                     }
                 })
+            }
+        }
+
+        $.setDatagramSentOnFace = function(i, data, f){
+            if (i < $._blocks.length) {
+                let b = $._blocks[i]
+                let bid = b.connected[f];
+                const index = $._getBlockIndexFromID(bid)
+                if (index >= 0) {
+                    let face = 0
+                    let connBlock = $._blocks[index]
+                    connBlock.connected.map((cb, cbi) => {
+                        if (cb === b.id) {
+                            face = cbi
+                        }
+                    })
+                    if (data) {
+                        $._receiveDatagramOnFaceFn(index, data, face)
+                    }
+                }
             }
         }
 
@@ -506,7 +528,8 @@ function init(scope) {
             "buttonPressed", "buttonReleased",
             "buttonSingleClicked", "buttonDoubleClicked",
             "buttonMultiClicked", "buttonClickCount",
-            "groupUpdated", "receiveValueOnFace"
+            "groupUpdated",
+            "receiveValueOnFace", "receiveDatagramOnFace"
         ];
         for (let k of eventNames) {
             let intern = "_" + k + "Fn";
