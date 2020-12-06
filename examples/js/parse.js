@@ -1,7 +1,3 @@
-const fs = require("fs");
-const path = require("path");
-const filepath = process.argv[2];
-
 let dataTypes = [
     'unsigned byte',
     'unsigned int',
@@ -22,22 +18,7 @@ let dataTypes = [
 
 let customDataTypes = [];
 
-if (filepath) {
-    fs.readFile('./' + filepath, 'utf8', function (error, data) {
-        if (error) {
-            throw error;
-        }
-        const jsCode = parseArduino(data.toString());
-
-        fs.writeFile('./examples/' + path.parse(filepath).name + '.js', jsCode, (err) => {
-            if (err) throw err;
-            console.log('The file has been saved!');
-        });
-    });
-}
-
-
-function parseArduino(fileData) {
+function parseCode(fileData) {
     // remove comments
     fileData = removeComments(fileData)
 
@@ -69,14 +50,14 @@ function parseArduino(fileData) {
     // fileData = fileData.replace(/\n\s*\n/g, '\n');
 
     // add importScripts
-    fileData = "self.importScripts('js/blink.js')" + "\n\n" + fileData
+    // fileData = "self.importScripts('js/blink.js')" + "\n\n" + fileData
 
     return fileData;
 }
 
 function removeComments(string) {
     let result = string
-    result = result.replace(/\/\/.*/g, ''); //remove inline comments
+    result = result.replace(/(?<!:)\/\/.*/g, ''); //remove inline comments
     return result;
 }
 

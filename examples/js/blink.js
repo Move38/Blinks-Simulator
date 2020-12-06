@@ -105,14 +105,14 @@ function setColor(newColor) {
 function setColorOnFace(newColor, face) {
     self.postMessage({
         name: 'setColorOnFace',
-        values: [self.index, newColor, face]
+        values: [self.index, newColor, parseInt(face)]
     })
 }
 // depreciatd 
 function setFaceColor(face, newColor) {
     self.postMessage({
         name: 'setColorOnFace',
-        values: [self.index, newColor, face]
+        values: [self.index, newColor, parseInt(face)]
     })
 }
 
@@ -449,3 +449,4 @@ function sq(n) {
 function sqrt(n) {
     return Math.sqrt(n);
 }
+
