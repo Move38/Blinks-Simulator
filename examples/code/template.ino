@@ -1,6 +1,6 @@
 /*
     Blinks Simulator by Move38
-    
+
     Find out more about this project: 
     https://github.com/Move38/Blinks-Simulator
 */

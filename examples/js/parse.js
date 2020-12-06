@@ -56,8 +56,11 @@ function parseCode(fileData) {
 }
 
 function removeComments(string) {
+    //remove inline comments
+    // const re = /(?<!:)\/\/.*/g 
+    const re = /\/\/.*/g // this replaces web urls, current safari does not support lookbehind
     let result = string
-    result = result.replace(/(?<!:)\/\/.*/g, ''); //remove inline comments
+    result = result.replaceAll(re, '');
     return result;
 }
 
