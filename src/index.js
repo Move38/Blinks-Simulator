@@ -175,14 +175,24 @@ function init(scope) {
         }
 
         $.createBlocks = function (number) {
+            const numPerRow = Math.floor(Math.sqrt(number))
+            const numOfRows = Math.ceil((number * 2) / (numPerRow * 2 + 1))
+            const startX = $._PIXI.screen.width / 2 - (numPerRow - 1) * $.BLOCKRADIUS * 1.732
+            const startY = $._PIXI.screen.height / 2 - (numOfRows - 1) * $.BLOCKRADIUS * 1.5 
             // add hexgons
+            let row = 0;
+            let col = 0;
             for (let i = 0; i < number; i++) {
-                // generate a new block and keep them centered
-                let alt = i % 2 * 2 - 1 // -1 or 1
-                let px = $._PIXI.screen.width / 2 + (i - number / 2) * $.BLOCKRADIUS * 1.732
-                let py = $._PIXI.screen.height / 2 + alt * $.BLOCKRADIUS * 1.5
+                let alt = row % 2
+                let px = startX + (col - alt/2) * $.BLOCKRADIUS * 1.732 * 2
+                let py = startY + row * $.BLOCKRADIUS * 1.5 * 2
                 let block = $.generateBlock(px, py)
                 $._blocks.push(block)
+                col++
+                if(col == numPerRow + alt){
+                    col = 0
+                    row++
+                }
             }
             // initialize group based on newly created blocks
             $._formGroupByLocation($._blocks.map(b => b.id))
@@ -266,6 +276,26 @@ function init(scope) {
                         }
                     }
                 })
+            }
+        }
+
+        $.setDatagramSentOnFace = function(i, data, f){
+            if (i < $._blocks.length) {
+                let b = $._blocks[i]
+                let bid = b.connected[f];
+                const index = $._getBlockIndexFromID(bid)
+                if (index >= 0) {
+                    let face = 0
+                    let connBlock = $._blocks[index]
+                    connBlock.connected.map((cb, cbi) => {
+                        if (cb === b.id) {
+                            face = cbi
+                        }
+                    })
+                    if (data) {
+                        $._receiveDatagramOnFaceFn(index, data, face)
+                    }
+                }
             }
         }
 
@@ -506,7 +536,8 @@ function init(scope) {
             "buttonPressed", "buttonReleased",
             "buttonSingleClicked", "buttonDoubleClicked",
             "buttonMultiClicked", "buttonClickCount",
-            "groupUpdated", "receiveValueOnFace"
+            "groupUpdated",
+            "receiveValueOnFace", "receiveDatagramOnFace"
         ];
         for (let k of eventNames) {
             let intern = "_" + k + "Fn";

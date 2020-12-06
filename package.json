@@ -25,6 +25,7 @@
         "@pixi/mesh": "^5.3.3",
         "@pixi/ticker": "^5.3.3",
         "@webpack-cli/serve": "^1.1.0",
+        "codemirror-minified": "^5.58.3",
         "fernandez-polygon-decomposition": "^2.0.0",
         "matter-js": "https://github.com/xyfeng/matter-js.git",
         "webpack": "^4.44.2",

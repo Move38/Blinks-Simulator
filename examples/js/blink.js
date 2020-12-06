@@ -4,6 +4,8 @@ const START_STATE_POWER_UP = 0;
 const START_STATE_WE_ARE_ROOT = 1;
 const START_STATE_DOWNLOAD_SUCCESS = 2;
 const IR_DATA_VALUE_MAX = 63;
+const IR_DATAGRAM_LEN = 16;
+const PI = Math.PI;
 
 const RED = [1.0, 0, 0];
 const ORANGE = [1.0, 1.0 / 2, 0];
@@ -26,6 +28,7 @@ self._ins = Array.from({ length: FACE_COUNT }, () => {
     }
 });
 self._millisOffset = Math.floor(Math.random() * 1000);
+self._dataIns = Array.from({ length: FACE_COUNT }, () => null);
 
 self.onmessage = function (event) {
     if (event.data.name === 'index') {
@@ -72,16 +75,21 @@ self.onmessage = function (event) {
             });
         }
     }
+    else if (event.data.name === 'btnpressed') {
+        self._buttondown = true;
+        self._buttonPressedFlag = true;
+
+    }
     else if (event.data.name === 'receive') {
         if (self._ins[event.data.face].value !== event.data.value) {
             self._ins[event.data.face].value = event.data.value;
             self._ins[event.data.face].flag = true;
         }
     }
-    else if (event.data.name === 'btnpressed') {
-        self._buttondown = true;
-        self._buttonPressedFlag = true;
-
+    else if (event.data.name === 'data') {
+        if (self._dataIns[event.data.face] === null) {
+            self._dataIns[event.data.face] = event.data.datagram;
+        }
     }
 }
 
@@ -97,7 +105,14 @@ function setColor(newColor) {
 function setColorOnFace(newColor, face) {
     self.postMessage({
         name: 'setColorOnFace',
-        values: [self.index, newColor, face]
+        values: [self.index, newColor, parseInt(face)]
+    })
+}
+// depreciatd 
+function setFaceColor(face, newColor) {
+    self.postMessage({
+        name: 'setColorOnFace',
+        values: [self.index, newColor, parseInt(face)]
     })
 }
 
@@ -258,7 +273,28 @@ function isAlone() {
 }
 
 /* Datagrams */
+function getDatagramLengthOnFace(face) {
+    return _dataIns[face].length;
+}
 
+function isDatagramReadyOnFace(face) {
+    return _dataIns[face] !== null;
+}
+
+function getDatagramOnFace(face) {
+    return _dataIns[face];
+}
+
+function markDatagramReadOnFace(face) {
+    _dataIns[face] = null;
+}
+
+function sendDatagramOnFace(data, len, face) {
+    self.postMessage({
+        name: 'setDatagramSentOnFace',
+        values: [self.index, data, face]
+    });
+}
 
 /* Time */
 
@@ -331,3 +367,86 @@ function map(x, in_min, in_max, out_min, out_max) {
 }
 
 /* System */
+
+function hasWoken() {
+    return 1;
+}
+
+function startSate() {
+    return 0;
+}
+
+
+/* Arduino */
+
+// utility
+function sizeof(arr) {
+    return arr.length;
+}
+
+// conversion
+function byte(n) {
+    return parseInt(n);
+}
+
+function int(n) {
+    return parseInt(n);
+}
+
+function word(n) {
+    return parseInt(n);
+}
+
+function long(n) {
+    return parseInt(n);
+}
+
+function float(n) {
+    return parseFloat(n);
+}
+
+// math
+function sin(n) {
+    return Math.sin(n);
+}
+
+function cos(n) {
+    return Math.cos(n);
+}
+
+function tan(n) {
+    return Math.tan(n);
+}
+
+function abs(n) {
+    return Math.abs(n);
+}
+
+function randomSeed(n) {
+    // todo
+}
+
+function constrain(x, lo, hi) {
+    return Math.min(Math.max(x, lo), hi);
+}
+
+function max(m, n) {
+    return Math.max(m, n);
+}
+
+function min(m, n) {
+    return Math.min(m, n);
+}
+
+function pow(b, n) {
+    return Math.pow(b, n);
+}
+
+function sq(n) {
+    return n * n;
+}
+
+function sqrt(n) {
+    return Math.sqrt(n);
+}
+
