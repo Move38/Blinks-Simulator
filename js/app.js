@@ -1,58 +1,97 @@
+window.URL = window.URL || window.webkitURL;
+
 // STATS
 const stats = new Stats();
 stats.showPanel(0); // 0: fps, 1: ms, 2: mb, 3+: customß
 document.body.appendChild(stats.dom);
+stats.dom.style.left = null;
+stats.dom.style.top = null;
+stats.dom.style.right = 0;
+stats.dom.style.bottom = 0;
 
-const examples = [
-    'time', 
-    'display',
-    'buttonClick',
-    'buttonPress',
-    'neighbors',
-    'communication',
-    'sendSignal'
-];
+const examples = {
+    "Template": 'code/template.ino',
+    "Learn: Time": 'code/time.ino',
+    'Learn: Display': 'code/display.ino',
+    'Learn: Button Click': 'code/buttonClick.ino',
+    'Learn: Button Press': 'code/buttonPress.ino',
+    'Learn: Neighbors': 'code/neighbors.ino',
+    'Learn: Communication': 'code/communication.ino',
+    'Learn: Send Signal': 'code/sendSignal.ino',
+    'Game: WHAM': 'code/WHAM.ino',
+    'Game: Fracture': 'code/Fracture.ino',
+    'Game: Berry': 'code/Berry.ino',
+    'Game: Bomb Brigade': 'code/BombBrigade.ino',
+    'Game: Mortals': 'code/Mortals.ino',
+    'Game: Puzzle101': 'code/Puzzle101.ino',
+    'Game: Darkball': 'code/Darkball.ino'
+}
 
 // Dat GUI
 const SETTINGS = {
-    global: {
-        debug: false,
-        clear: () => { clear(); },
-        reset: () => {
-            clear();
-            init(SETTINGS.global.select);
-        },
-        select: examples[4]
+    'Debug Mode': false,
+    'Run Code': () => {
+        clear();
+        webWorkerURL = createWebWorker(editor.getValue());
+        init();
     },
+    'Load File': examples["Template"],
+    'Blinks Number': 6
 };
-const gui = new dat.GUI();
-gui.add(SETTINGS.global, 'select', examples).onFinishChange(s => {
+const gui = new dat.GUI({ hideable: false });
+gui.width = 300;
+gui.add(SETTINGS, 'Load File', examples).onChange(s => {
     clear();
-    init(s);
+    loadCode(s);
 });
-gui.add(SETTINGS.global, "debug").onFinishChange( d => blk.debugMode = d);
-// gui.add(SETTINGS.global, "clear");
-// gui.add(SETTINGS.global, "reset");
-// gui.close();
+gui.add(SETTINGS, 'Blinks Number', 6, 18).step(1); 
+gui.add(SETTINGS, "Run Code");
+gui.add(SETTINGS, "Debug Mode").onFinishChange(d => blk.debugMode = d);
 
+// Editor
+
+const editorEl = document.getElementById('editor');
+const editor = CodeMirror.fromTextArea(editorEl, {
+    theme: 'material-darker',
+    mode: "text/x-c++src",
+    tabSize: 4,
+    styleActiveLine: true,
+    matchBrackets: true,
+    lineNumbers: true
+});
+
+// autorun on save
+document.addEventListener("keydown", function (e) {
+    if (e.keyCode == 83 && (navigator.platform.match("Mac") ? e.metaKey : e.ctrlKey)) {
+        e.preventDefault();
+        
+        clear();
+        webWorkerURL = createWebWorker(editor.getValue());
+        init();
+    }
+}, false);
 
 /* SETUP */
-const blk = new blinks.init(SETTINGS.global.select);
-blk.debugMode = SETTINGS.global.debug;
-const BLOCKS_NUM = 6;
+const blk = new blinks.init(SETTINGS['Load File']);
+blk.debugMode = SETTINGS.debug;
 let frameCount = 0;
 let workers = [];
+let webWorkerURL;
+let blinkFns;
 
-if(blk.isTouchDevice> 0){
+if (blk.isTouchDevice > 0) {
     gui.close();
     document.body.removeChild(stats.dom);
+    editorEl.style.display = 'none';
+}
+else {
+    blk.resizeCanvas(blk.width / 2, blk.height);
 }
 
 /* UPDATE */
 
 blk.beforeFrameUpdated = function () {
     stats.begin();
-
     workers.map(w => {
         w.postMessage({
             name: 'loop',
@@ -69,7 +108,7 @@ blk.afterFrameUpdated = function () {
 /* EVENTS */
 
 blk.groupUpdated = function (bks) {
-    if (SETTINGS.global.debug)
+    if (SETTINGS.debug)
         console.log('group updated', bks)
     workers.map((w, i) => {
         w.postMessage({
@@ -87,14 +126,22 @@ blk.receiveValueOnFace = function (index, value, face) {
     })
 }
 
+blk.receiveDatagramOnFace = function (index, data, face) {
+    workers[index].postMessage({
+        name: 'data',
+        face: face,
+        datagram: data
+    })
+}
+
 blk.doubleClicked = function () {
-    if (SETTINGS.global.debug)
+    if (SETTINGS.debug)
         console.log('double clicked on canvas');
     // blk.createBlockAt(blk.mouseX, blk.mouseY);
 }
 
 blk.buttonPressed = function (id) {
-    if (SETTINGS.global.debug)
+    if (SETTINGS.debug)
         console.log("#", id, "button is pressed");
     if (id < workers.length) {
         workers[id].postMessage({
@@ -104,7 +151,7 @@ blk.buttonPressed = function (id) {
 }
 
 blk.buttonReleased = function (id) {
-    if (SETTINGS.global.debug)
+    if (SETTINGS.debug)
         console.log("#", id, "button is released");
     if (id < workers.length) {
         workers[id].postMessage({
@@ -114,7 +161,7 @@ blk.buttonReleased = function (id) {
 }
 
 blk.buttonSingleClicked = function (id) {
-    if (SETTINGS.global.debug)
+    if (SETTINGS.debug)
         console.log("#", id, "button is single clicked");
     if (id < workers.length) {
         workers[id].postMessage({
@@ -125,7 +172,7 @@ blk.buttonSingleClicked = function (id) {
 }
 
 blk.buttonDoubleClicked = function (id) {
-    if (SETTINGS.global.debug)
+    if (SETTINGS.debug)
         console.log("#", id, "button is double clicked");
     if (id < workers.length) {
         workers[id].postMessage({
@@ -136,7 +183,7 @@ blk.buttonDoubleClicked = function (id) {
 }
 
 blk.buttonMultiClicked = function (id, count) {
-    if (SETTINGS.global.debug)
+    if (SETTINGS.debug)
         console.log("#", id, "button is multi clicked, count: ", count);
     if (id < workers.length) {
         workers[id].postMessage({
@@ -147,7 +194,7 @@ blk.buttonMultiClicked = function (id, count) {
 }
 
 blk.buttonLongPressed = function (id) {
-    if (SETTINGS.global.debug)
+    if (SETTINGS.debug)
         console.log("#", id, "button is long pressed");
     if (id < workers.length) {
         workers[id].postMessage({
@@ -163,11 +210,12 @@ function clear() {
     frameCount = 0;
 }
 
-function init(f) {
+function init() {
+    // console.log( 'init blocks', SETTINGS['Blinks Number'], workers.length )
     // setup webworkers for each blink
-    for (let i = 0; i < BLOCKS_NUM; i++) {
+    for (let i = 0; i < SETTINGS['Blinks Number']; i++) {
         let index = i;
-        let worker = new Worker('./js/examples/' + f + '.js');
+        let worker = new Worker(webWorkerURL);
         worker.postMessage({
             name: 'index',
             value: index
@@ -188,7 +236,57 @@ function init(f) {
         });
         workers.push(worker);
     }
-    blk.createBlocks(BLOCKS_NUM);
+    blk.createBlocks(SETTINGS['Blinks Number']);
 }
 
-init(SETTINGS.global.select);
+loadCode(SETTINGS['Load File'])
+
+// Utilities
+function loadCode(path) {
+    if (!blinkFns) {
+        fetch('js/blink.js')
+            .then(response => response.text())
+            .then(data => {
+                blinkFns = data;
+                loadWorkerFns(path)
+            })
+            .catch((error) => {
+                console.error('Error:', error);
+            });
+    }
+    else {
+        loadWorkerFns(path)
+    }
+}
+
+function loadWorkerFns(path) {
+    fetch(path)
+        .then(response => response.text())
+        .then(data => {
+            // pass data to editor
+            editor.setValue(data);
+            // convert code into js and create webworker URL
+            webWorkerURL = createWebWorker(data);
+            init()
+
+        })
+        .catch((error) => {
+            console.error('Error:', error);
+        });
+}
+
+function createWebWorker(data) {
+    const jsString = blinkFns + parseCode(data);
+    // console.log(parseCode(data))
+    // create web worker URL
+    var blob;
+    try {
+        blob = new Blob([jsString], { type: 'application/javascript' });
+    } catch (e) { // Backwards-compatibility
+        window.BlobBuilder = window.BlobBuilder || window.WebKitBlobBuilder || window.MozBlobBuilder;
+        blob = new BlobBuilder();
+        blob.append(response);
+        blob = blob.getBlob();
+    }
+    return URL.createObjectURL(blob);
+}
