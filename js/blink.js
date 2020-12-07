@@ -1,3 +1,13 @@
+/*
+*   A library that simulates a single blink tile using JS webworker
+*   
+*   It shares the same names of variables, function that exists in blinklib.h
+*   It also contains Math functions that used in Arduino.
+*   
+*   A Blink tile sends out data on each face on every update event, for better performance,
+*   this simulation tile only sends out updated data or when blink clusters get updated
+*/
+
 const FACE_COUNT = 6;
 const MAX_BRIGHTNESS = 255;
 const START_STATE_POWER_UP = 0;
@@ -17,18 +27,20 @@ const MAGENTA = [1.0, 0, 1.0];
 const WHITE = [1.0, 1.0, 1.0];
 const OFF = [0, 0, 0];
 
+/* Private Varables */
+
 self._millis = 0;
-self._connects = Array.from({ length: FACE_COUNT }, () => -1);
-self._outs = Array.from({ length: FACE_COUNT }, () => -1);
-self._newouts = Array.from({ length: FACE_COUNT }, () => -1); //aggregate all face values during each loop
-self._ins = Array.from({ length: FACE_COUNT }, () => {
+self._connects = Array.from({ length: FACE_COUNT }, () => -1); //array that contains the IDs of conntected blink tiles on each face
+self._outs = Array.from({ length: FACE_COUNT }, () => -1);  // stores outgoing face values
+self._newouts = Array.from({ length: FACE_COUNT }, () => -1); //aggregates all face values during each loop
+self._ins = Array.from({ length: FACE_COUNT }, () => {  //stores incoming face values
     return {
         value: -1,
         flag: false // updates
     }
 });
-self._millisOffset = Math.floor(Math.random() * 1000);
-self._dataIns = Array.from({ length: FACE_COUNT }, () => null);
+self._millisOffset = Math.floor(Math.random() * 1000);  // simulate out of sync system clock
+self._dataIns = Array.from({ length: FACE_COUNT }, () => null); // stores incoming datagram
 
 self.onmessage = function (event) {
     if (event.data.name === 'index') {
@@ -38,17 +50,18 @@ self.onmessage = function (event) {
             _sendFaces();
         }
     }
-    else if (event.data.name === 'loop') {
+    else if (event.data.name === 'loop') {  // each blink tile running as web worker on its own thread, but it doesn't have its own clock, it updates whenever the main thread tells it
         self._millis = event.data.value + self._millisOffset;
         if (typeof (loop) === 'function') {
-            self._newouts = self._outs.slice();
+            self._newouts = self._outs.slice(); // make a copy for current outgoing face values
             loop();
-            _sendFaces();
+            _sendFaces();   // send out face values if there are updates
         }
     }
     else if (event.data.name === 'btnreleased') {
         self._buttondown = false;
         self._buttonReleasedFlag = true;
+        self._buttonLongPressedFlag = false;    // reset long press flag after button is released
 
     }
     else if (event.data.name === 'btnclicked') {
@@ -66,7 +79,7 @@ self.onmessage = function (event) {
     else if (event.data.name === 'btnlongpressed') {
         self._buttonLongPressedFlag = true;
     }
-    else if (event.data.name === 'connects') {
+    else if (event.data.name === 'connects') {  // update incoming face values
         if (!self._connects.every((c, i) => c === event.data.values[i])) {
             self._connects = event.data.values;
             self.postMessage({
@@ -200,9 +213,7 @@ function buttonReleased() {
 }
 
 function buttonLongPressed() {
-    const result = self._buttonLongPressedFlag;
-    self._buttonLongPressedFlag = false;
-    return result;
+    return self._buttonLongPressedFlag;
 }
 
 function buttonSingleClicked() {
@@ -235,7 +246,7 @@ function buttonClickCount() {
 function _sendFaces() {
     const repeated = self._outs.every((o, i) => o === self._newouts[i]);
     self._outs = self._newouts.slice();
-    if (!repeated) {
+    if (!repeated) {     // only send out if there is an update
         self.postMessage({
             name: 'setValuesSentOnFaces',
             values: [self.index, self._newouts]

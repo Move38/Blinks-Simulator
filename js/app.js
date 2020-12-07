@@ -1,3 +1,10 @@
+/* 
+*   Javascript that runs the code editor and simulation
+*   Code Editor is supported by Code Mirror
+*   Interaction (mouse click / drag) and rendering are done in `Blinks.js`
+*   Multithreading webworker, messagings among them are created here at `app.js`
+*/
+
 window.URL = window.URL || window.webkitURL;
 
 // STATS
@@ -79,6 +86,7 @@ let workers = [];
 let webWorkerURL;
 let blinkFns;
 
+// close GUI folders & remove framecount display on mobile devices
 if (blk.isTouchDevice > 0) {
     gui.close();
     document.body.removeChild(stats.dom);
@@ -92,7 +100,7 @@ else {
 
 blk.beforeFrameUpdated = function () {
     stats.begin();
-    workers.map(w => {
+    workers.map(w => {  // calling update on each web worker thread
         w.postMessage({
             name: 'loop',
             value: blk.millis()
@@ -107,6 +115,7 @@ blk.afterFrameUpdated = function () {
 
 /* EVENTS */
 
+// function get called when blink cluster get updated
 blk.groupUpdated = function (bks) {
     if (SETTINGS['Debug Mode'])
         console.log('group updated', bks)
@@ -243,7 +252,7 @@ loadCode(SETTINGS['Load File'])
 
 // Utilities
 function loadCode(path) {
-    if (!blinkFns) {
+    if (!blinkFns) {    // load blink library if not yet
         fetch('js/blink.js')
             .then(response => response.text())
             .then(data => {
@@ -267,7 +276,7 @@ function loadWorkerFns(path) {
             editor.setValue(data);
             // convert code into js and create webworker URL
             webWorkerURL = createWebWorker(data);
-            init()
+            init()  // start simulator
 
         })
         .catch((error) => {
@@ -276,9 +285,9 @@ function loadWorkerFns(path) {
 }
 
 function createWebWorker(data) {
-    const jsString = blinkFns + parseCode(data);
+    const jsString = blinkFns + parseCode(data);    // combine blink library and newly converted JS code
     // console.log(parseCode(data))
-    // create web worker URL
+    // create web worker URL    // web worker are only created using URL, here we are using Blob to generate an URL dynamically
     var blob;
     try {
         blob = new Blob([jsString], { type: 'application/javascript' });
