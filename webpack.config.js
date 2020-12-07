@@ -15,8 +15,8 @@ module.exports = (env, arg) => {
         optimization: { minimize: isProd },
         devServer: {
             contentBase: [
-                path.resolve(__dirname, './examples'),
-                path.resolve(__dirname, './build')
+                path.resolve(__dirname, './examples'), 
+                path.resolve(__dirname, './build')  // serve the library
             ],
             compress: true,
             port: 8000

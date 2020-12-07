@@ -1,3 +1,4 @@
+// use Pixi as rendering engine
 import { Application as pApplication } from '@pixi/app'
 import {
     Geometry as pGeometry,
@@ -9,6 +10,7 @@ import { Graphics as pGraphics } from '@pixi/graphics'
 import { Mesh as pMesh } from '@pixi/mesh'
 import { TickerPlugin as pTickerPlugin } from '@pixi/ticker'
 
+// use MatterJS as physics engine, replace poly-decomp.js with fernandez's library for better convex & concave support
 import * as Matter from "matter-js"
 import { decompose } from 'fernandez-polygon-decomposition'
 window.decomp = decompose
@@ -61,12 +63,12 @@ function init(scope) {
 
         /* PRIVATE PROPERTY */
         $._blocks = [] // hexgon blocks
-        $._groups = [] // data structure for block groups
-        $._breakLines = []
-        $._blockOnHighlight = -1
-        $._groupOnHighlight = false
-        $._currDragging = null
-        $._targetShadow = {}
+        $._groups = [] // data structure for block groups/clusters
+        $._breakLines = [] // red ribbon on mouse drag
+        $._blockOnHighlight = -1    // for single block highlight on mouse hover 
+        $._groupOnHighlight = false // for group/cluster highlight on mouse hover
+        $._currDragging = null  // for mouse dragging 
+        $._targetShadow = {}    // the grey area that blinks can snap onto when releasing mouse drag
 
 
 
@@ -107,11 +109,11 @@ function init(scope) {
             backgroundColor: 0x444444
         })
         document.body.appendChild($._PIXI.view)
-        $._PIXIShadowView = new pGraphics()
+        $._PIXIShadowView = new pGraphics() // rendering target shadow
         $._PIXI.stage.addChild($._PIXIShadowView)
-        $._PIXIBlockView = new pGraphics()
+        $._PIXIBlockView = new pGraphics()  // rendering each blink tile
         $._PIXI.stage.addChild($._PIXIBlockView)
-        $._PIXIOverlayView = new pGraphics()
+        $._PIXIOverlayView = new pGraphics()    // rendering overlay, such as red ribbons, debugging view, etc
         $._PIXI.stage.addChild($._PIXIOverlayView)
 
         // Others
@@ -157,7 +159,7 @@ function init(scope) {
             })
             $._MatterBodies = []
 
-            // clear blocks and groups
+            // clear blocks and groups/clusters
             $._blocks = []
             $._groups = []
 
@@ -175,6 +177,7 @@ function init(scope) {
         }
 
         $.createBlocks = function (number) {
+            // form a blinks cluster when simulation starts
             const numPerRow = Math.floor(Math.sqrt(number))
             const numOfRows = Math.ceil((number * 2) / (numPerRow * 2 + 1))
             const startX = $._PIXI.screen.width / 2 - (numPerRow - 1) * $.BLOCKRADIUS * 1.732
@@ -194,7 +197,7 @@ function init(scope) {
                     row++
                 }
             }
-            // initialize group based on newly created blocks
+            // initialize group/cluster based on newly created blocks
             $._formGroupByLocation($._blocks.map(b => b.id))
         }
 
@@ -205,11 +208,13 @@ function init(scope) {
         }
 
         $.generateBlock = function (x, y) {
-            let block = Matter.Bodies.polygon(0, 0, $.BLOCKSIDES, $.BLOCKRADIUS * 2)
+            let block = Matter.Bodies.polygon(0, 0, $.BLOCKSIDES, $.BLOCKRADIUS * 2) // create a matter polygon
 
-            block.colors = Array.from({ length: $.BLOCKSIDES * 3 }, () => 0.0)
+            block.colors = Array.from({ length: $.BLOCKSIDES * 3 }, () => 0.0)  // set default color (OFF) on each face
 
-            let vertices = Matter.Vertices.chamfer(block.vertices, $.BLOCKCORNERRADIUS, -1, 2, 14) //default chamfer
+            let vertices = Matter.Vertices.chamfer(block.vertices, $.BLOCKCORNERRADIUS, -1, 2, 14) //default chamfer for rounded corner
+
+            // create shader mesh for rendering
             const geometry = new pGeometry()
                 .addAttribute(
                     'aVertexPosition',
@@ -224,7 +229,7 @@ function init(scope) {
                 u_pos: [x, y],
                 u_leds: block.colors
             })
-            block.mesh = new pMesh(geometry, shader)
+            block.mesh = new pMesh(geometry, shader)  
             $._PIXIBlockView.addChild(block.mesh)
 
             Matter.Body.setPosition(block, {
@@ -256,6 +261,7 @@ function init(scope) {
             }
         }
 
+        // take face values recieved from one blink tile and send to its neighboring tiles
         $.setValuesSentOnFaces = function (i, arr) {
             // console.log('sent', i, arr)
             if (i < $._blocks.length) {
@@ -279,6 +285,7 @@ function init(scope) {
             }
         }
 
+        // take datagram recieved from one blink tile and send to its connected tile
         $.setDatagramSentOnFace = function(i, data, f){
             if (i < $._blocks.length) {
                 let b = $._blocks[i]
@@ -333,7 +340,7 @@ function init(scope) {
                 collisionTimeout = null
             }
             collisionTimeout = setTimeout(function () {
-                //end of collision
+                //end of collision, to update group/cluster points(the vertices for a cluster)
                 onCollisionEndEvent()
             }, 200)
         })
@@ -351,7 +358,7 @@ function init(scope) {
             $.mouseX = $._MatterMouse.position.x;
             $.mouseY = $._MatterMouse.position.y;
 
-            // mouse down to start drag a group of blocks
+            // mouse down to start drag a group/cluster of blocks
             $._updateHighlight();
             if ($._groupOnHighlight) {
                 $._currDragging = $._MatterMouseConstraint.body
@@ -394,14 +401,13 @@ function init(scope) {
                 // angle = atan2(cross(a,b), dot(a,b))
                 let currDraggingOffset = Matter.Vector.sub($._MatterMouse.position, $._currDragging.position)
                 let mouseDelta = Matter.Vector.sub($._MatterMouse.position, pMousePosition)
-                // let addedVec = Matter.Vector.add(currDraggingOffset, Matter.Vector.mult(mouseDelta, Matter.Vector.magnitude(currDraggingOffset) / $.BLOCKRADIUS / $._currDragging.parts.length))
-                // let rotationAngle = Math.atan2(Matter.Vector.cross(currDraggingOffset, addedVec), Matter.Vector.dot(currDraggingOffset, addedVec))
-                // Matter.Body.setAngle($._currDragging, $._currDragging.angle + rotationAngle)
+                // apply a force on the tile to make it rotate a bit on dragging
                 Matter.Body.applyForce($._currDragging, pMousePosition, Matter.Vector.mult(Matter.Vector.normalise(mouseDelta), Matter.Vector.magnitude(currDraggingOffset) / $._currDragging.parts.length / 256))
                 return
             }
 
             if (mouseOnClick) {
+                // if mouse moves too much after mouse pressed before moue released, cancel the mouse click event
                 let dist = Matter.Vector.magnitude(Matter.Vector.sub(pMousePosition, $._MatterMouse.position))
                 if (dist > 1) {
                     // cancel mouse click events
@@ -424,7 +430,7 @@ function init(scope) {
                 return
             }
 
-            if (mouseOnDrag) {
+            if (mouseOnDrag) { // create the red ribbon on dragging
                 $._breakLines.push({ ...$._MatterMouse.position })
                 return
             }
@@ -439,11 +445,11 @@ function init(scope) {
             $.mouseY = $._MatterMouse.position.y;
 
             if ($._currDragging) {
-                if ($._targetShadow.targetGroup) {
+                if ($._targetShadow.targetGroup) { // snap blinks group / cluster into target shadow position
                     // console.log($._targetShadow.dragGroup, $._targetShadow.targetGroup)
                     Matter.Body.rotate($._currDragging, $._targetShadow.angle)
                     Matter.Body.translate($._currDragging, $._targetShadow.offset)
-                    // update group
+                    // update group / cluster
                     let bks = $._targetShadow.dragGroup.blocks.concat($._targetShadow.targetGroup.blocks)
                     $._MatterBodies = $._MatterBodies.filter(function (b) {
                         if (b === $._targetShadow.targetGroup.poly || b === $._targetShadow.dragGroup.poly) {
@@ -476,6 +482,7 @@ function init(scope) {
                 }
 
                 if (mouseOnClick) {
+                    // handle mouse click / press / longpress events
                     let blockIndex = $._getBlockIndexFromID($._blockOnHighlight)
                     if (blockIndex >= 0) {
                         $._buttonReleasedFn(blockIndex)
@@ -754,7 +761,7 @@ function init(scope) {
 
         // Groups
         $._formGroupByLocation = function (bks) {
-            let conns = []
+            let conns = [] // array of connections, each connection consists of two blink tile IDs
             // clear block connected array
             for (let i = 0; i < bks.length; i++) {
                 $._getBlockFromID(bks[i]).connected = [0, 0, 0, 0, 0, 0]
@@ -775,7 +782,7 @@ function init(scope) {
             $._createGroups(bks, conns)
         }
 
-        // create groups based on block connections
+        // create groups / clusters based on block connections
         $._createGroups = function (bks, conns) {
             if ($.debugMode)
                 console.log('create group', bks, conns)
@@ -840,10 +847,10 @@ function init(scope) {
             // generate group points for groups
             result.map(function (g) {
                 let gid = $._groups.indexOf(g)
-                $._generateGroupPts(gid)
+                $._generateGroupPts(gid)    // based on each blink tile vertices
                 // console.log('create a new body', g.pts)
                 // add group to the world
-                let comp = $._generatePolygonFromVertices(g.pts)
+                let comp = $._generatePolygonFromVertices(g.pts) // recreate a Matter body from these group/cluster points
                 g.poly = comp
                 let parts = []
                 g.blocks.map(function (bid) {
@@ -854,7 +861,7 @@ function init(scope) {
                 Matter.Body.setParts(comp, parts, false)
             })
 
-            // create group points for singles
+            // create group points for single tiles
             if ($.debugMode)
                 console.log('single blocks', bks)
             bks.map(function (bid) {
@@ -883,6 +890,8 @@ function init(scope) {
             return result
         }
 
+        // valid break connections
+        // example: if a blink tile is connected to a cluster of blinks with two pairs of connection link, and only one is broken by red ribbon, ignore this broken connection
         $._analyzingConnections = function (conns) {
             let sets = []
             for (let i = 0; i < conns.length; i++) {
@@ -914,6 +923,7 @@ function init(scope) {
             return sets
         }
 
+        // bconns(broken connections) are an array of connection pairs that red ribbon breaks
         $._divideGroup = function (gid, bconns) {
             if ($.debugMode)
                 console.log('divide group ', gid, bconns)
@@ -987,6 +997,7 @@ function init(scope) {
             }, 100)
         }
 
+        // tell blink tiles that group / cluster data is updated
         $._sendGroupUpdates = function () {
             $._groupUpdatedFn($._blocks.map(b => {
                 return b.connected.map(c => $._getBlockIndexFromID(c))
@@ -1064,6 +1075,7 @@ function init(scope) {
         }
 
         // Connections
+        // update .connected array on blink tile
         $._createConnection = function (b0, b1) {
             // console.log('create connection with', b0.id, b1.id)
             for (let i = 0; i < b0.vertices.length; i++) {
