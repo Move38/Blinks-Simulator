@@ -1,22 +1,20 @@
 # Blinks-Simulator
-An online editor to preview games that developped in Blinks systems.
-- Live editing C++ code powered by [Code Mirror](https://codemirror.net/)
-- Auto compile C++ code into javascript and feed into the simulator with custom parser
+An online editor to preview games that developped in Blinks systems. [Demo](https://move38.github.io/Blinks-Simulator/)
+- Live edit C++ code powered by [Code Mirror](https://codemirror.net/)
+- Auto compile C++ code into javascript with custom parser
 - Each blink tile is running in its own thread using WebWorker
 - LED lighting simulates in shader with [PixiJS](https://www.pixijs.com/)
-- Physics engine powered by [MatterJS] (using custom build with fernandez's decomp library for better convex & concave support)
-
-[Demo](https://move38.github.io/Blinks-Simulator/)
-
+- Physics engine powered by [MatterJS](https://brm.io/matter-js/) (using custom build with fernandez's decomp library for better convex & concave support)
 
 ## Start
-run `npm install` to install packages
-run `npm run build` to build blinks library
-run `npm run dev` to run demo
-run `node scripts/compile.js xxx.ino` to test compile an xxx.ino Arduino file into `scripts/temp.js` javascript
+- `npm install` to install packages
+- `npm run build` to build blinks.js library
+- `npm run dev` to start a local dev server
+- `node scripts/compile.js xxx.ino` to compile an xxx.ino Arduino file into `scripts/temp.js` javascript
 
 ## Usage
-Click and drag blinks to re-arrange them. Click and drag in an open space to break them.
+- Click and drag blinks to re-arrange them. 
+- Click and drag in an open space to break them.
 
 ## Files
 - `build/blinks.js` core library to handle user interaction and simulation using PixiJS & MatterJS
@@ -28,7 +26,7 @@ Click and drag blinks to re-arrange them. Click and drag in an open space to bre
 `build/blinks.js` can be used independently to interact and display blinks, it has its own namespace, and supports multiple instances on a single page
 
 ```js
-new BLINKS("global"); //initialize Blinks with global namespace
+new BLINKS("global"); //with global namespace
 resizeCanvas(800, 640);
 createBlocks(6)
 for (let i = 0; i < 6; i++) {
@@ -36,9 +34,9 @@ for (let i = 0; i < 6; i++) {
     setColorOnFace(i, Math.floor(Math.random() * 6), CYAN)
 }
 ```
-Alternatively you can create a namespace and call all the functions under that
+Alternatively you can create a custom namespace
 ```js
-const blk = new BLINKS(); //initialize Blinks with custom namespace
+const blk = new BLINKS();
 blk.resizeCanvas(800, 640);
 blk.createBlocks(6)
 for (let i = 0; i < 6; i++) {
@@ -48,14 +46,14 @@ for (let i = 0; i < 6; i++) {
 ```
 It also support multiple instances in one single page
 ```js
-const blk01 = new BLINKS(); //initialize Blinks
+const blk01 = new BLINKS();
 blk01.resizeCanvas(400, 300);
 blk01.createBlocks(4)
 for (let i = 0; i < 4; i++) {
     blk01.setColor(i, blk01.YELLOW)
     blk01.setColorOnFace(i, Math.floor(Math.random() * 6), blk01.CYAN)
 }
-const blk02 = new BLINKS(); //initialize Blinks
+const blk02 = new BLINKS();
 blk02.resizeCanvas(400, 300);
 blk02.createBlocks(4)
 for (let i = 0; i < 4; i++) {
