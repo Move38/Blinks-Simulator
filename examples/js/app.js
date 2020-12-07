@@ -73,7 +73,7 @@ document.addEventListener("keydown", function (e) {
 
 /* SETUP */
 const blk = new blinks.init(SETTINGS['Load File']);
-blk.debugMode = SETTINGS.debug;
+blk.debugMode = SETTINGS['Debug Mode'];
 let frameCount = 0;
 let workers = [];
 let webWorkerURL;
@@ -108,7 +108,7 @@ blk.afterFrameUpdated = function () {
 /* EVENTS */
 
 blk.groupUpdated = function (bks) {
-    if (SETTINGS.debug)
+    if (SETTINGS['Debug Mode'])
         console.log('group updated', bks)
     workers.map((w, i) => {
         w.postMessage({
@@ -135,13 +135,13 @@ blk.receiveDatagramOnFace = function (index, data, face) {
 }
 
 blk.doubleClicked = function () {
-    if (SETTINGS.debug)
+    if (SETTINGS['Debug Mode'])
         console.log('double clicked on canvas');
     // blk.createBlockAt(blk.mouseX, blk.mouseY);
 }
 
 blk.buttonPressed = function (id) {
-    if (SETTINGS.debug)
+    if (SETTINGS['Debug Mode'])
         console.log("#", id, "button is pressed");
     if (id < workers.length) {
         workers[id].postMessage({
@@ -151,7 +151,7 @@ blk.buttonPressed = function (id) {
 }
 
 blk.buttonReleased = function (id) {
-    if (SETTINGS.debug)
+    if (SETTINGS['Debug Mode'])
         console.log("#", id, "button is released");
     if (id < workers.length) {
         workers[id].postMessage({
@@ -161,7 +161,7 @@ blk.buttonReleased = function (id) {
 }
 
 blk.buttonSingleClicked = function (id) {
-    if (SETTINGS.debug)
+    if (SETTINGS['Debug Mode'])
         console.log("#", id, "button is single clicked");
     if (id < workers.length) {
         workers[id].postMessage({
@@ -172,7 +172,7 @@ blk.buttonSingleClicked = function (id) {
 }
 
 blk.buttonDoubleClicked = function (id) {
-    if (SETTINGS.debug)
+    if (SETTINGS['Debug Mode'])
         console.log("#", id, "button is double clicked");
     if (id < workers.length) {
         workers[id].postMessage({
@@ -183,7 +183,7 @@ blk.buttonDoubleClicked = function (id) {
 }
 
 blk.buttonMultiClicked = function (id, count) {
-    if (SETTINGS.debug)
+    if (SETTINGS['Debug Mode'])
         console.log("#", id, "button is multi clicked, count: ", count);
     if (id < workers.length) {
         workers[id].postMessage({
@@ -194,7 +194,7 @@ blk.buttonMultiClicked = function (id, count) {
 }
 
 blk.buttonLongPressed = function (id) {
-    if (SETTINGS.debug)
+    if (SETTINGS['Debug Mode'])
         console.log("#", id, "button is long pressed");
     if (id < workers.length) {
         workers[id].postMessage({
