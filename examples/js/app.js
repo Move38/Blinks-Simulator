@@ -1,3 +1,10 @@
+/* 
+*   Javascript that runs the code editor and simulation
+*   Code Editor is supported by Code Mirror
+*   Interaction (mouse click / drag) and rendering are done in `Blinks.js`
+*   Multithreading webworker, messagings among them are created here at `app.js`
+*/
+
 window.URL = window.URL || window.webkitURL;
 
 // STATS
@@ -73,12 +80,13 @@ document.addEventListener("keydown", function (e) {
 
 /* SETUP */
 const blk = new blinks.init(SETTINGS['Load File']);
-blk.debugMode = SETTINGS.debug;
+blk.debugMode = SETTINGS['Debug Mode'];
 let frameCount = 0;
 let workers = [];
 let webWorkerURL;
 let blinkFns;
 
+// close GUI folders & remove framecount display on mobile devices
 if (blk.isTouchDevice > 0) {
     gui.close();
     document.body.removeChild(stats.dom);
@@ -92,7 +100,7 @@ else {
 
 blk.beforeFrameUpdated = function () {
     stats.begin();
-    workers.map(w => {
+    workers.map(w => {  // calling update on each web worker thread
         w.postMessage({
             name: 'loop',
             value: blk.millis()
@@ -107,8 +115,9 @@ blk.afterFrameUpdated = function () {
 
 /* EVENTS */
 
+// function get called when blink cluster get updated
 blk.groupUpdated = function (bks) {
-    if (SETTINGS.debug)
+    if (SETTINGS['Debug Mode'])
         console.log('group updated', bks)
     workers.map((w, i) => {
         w.postMessage({
@@ -135,13 +144,13 @@ blk.receiveDatagramOnFace = function (index, data, face) {
 }
 
 blk.doubleClicked = function () {
-    if (SETTINGS.debug)
+    if (SETTINGS['Debug Mode'])
         console.log('double clicked on canvas');
     // blk.createBlockAt(blk.mouseX, blk.mouseY);
 }
 
 blk.buttonPressed = function (id) {
-    if (SETTINGS.debug)
+    if (SETTINGS['Debug Mode'])
         console.log("#", id, "button is pressed");
     if (id < workers.length) {
         workers[id].postMessage({
@@ -151,7 +160,7 @@ blk.buttonPressed = function (id) {
 }
 
 blk.buttonReleased = function (id) {
-    if (SETTINGS.debug)
+    if (SETTINGS['Debug Mode'])
         console.log("#", id, "button is released");
     if (id < workers.length) {
         workers[id].postMessage({
@@ -161,7 +170,7 @@ blk.buttonReleased = function (id) {
 }
 
 blk.buttonSingleClicked = function (id) {
-    if (SETTINGS.debug)
+    if (SETTINGS['Debug Mode'])
         console.log("#", id, "button is single clicked");
     if (id < workers.length) {
         workers[id].postMessage({
@@ -172,7 +181,7 @@ blk.buttonSingleClicked = function (id) {
 }
 
 blk.buttonDoubleClicked = function (id) {
-    if (SETTINGS.debug)
+    if (SETTINGS['Debug Mode'])
         console.log("#", id, "button is double clicked");
     if (id < workers.length) {
         workers[id].postMessage({
@@ -183,7 +192,7 @@ blk.buttonDoubleClicked = function (id) {
 }
 
 blk.buttonMultiClicked = function (id, count) {
-    if (SETTINGS.debug)
+    if (SETTINGS['Debug Mode'])
         console.log("#", id, "button is multi clicked, count: ", count);
     if (id < workers.length) {
         workers[id].postMessage({
@@ -194,7 +203,7 @@ blk.buttonMultiClicked = function (id, count) {
 }
 
 blk.buttonLongPressed = function (id) {
-    if (SETTINGS.debug)
+    if (SETTINGS['Debug Mode'])
         console.log("#", id, "button is long pressed");
     if (id < workers.length) {
         workers[id].postMessage({
@@ -243,7 +252,7 @@ loadCode(SETTINGS['Load File'])
 
 // Utilities
 function loadCode(path) {
-    if (!blinkFns) {
+    if (!blinkFns) {    // load blink library if not yet
         fetch('js/blink.js')
             .then(response => response.text())
             .then(data => {
@@ -267,7 +276,7 @@ function loadWorkerFns(path) {
             editor.setValue(data);
             // convert code into js and create webworker URL
             webWorkerURL = createWebWorker(data);
-            init()
+            init()  // start simulator
 
         })
         .catch((error) => {
@@ -276,9 +285,9 @@ function loadWorkerFns(path) {
 }
 
 function createWebWorker(data) {
-    const jsString = blinkFns + parseCode(data);
+    const jsString = blinkFns + parseCode(data);    // combine blink library and newly converted JS code
     // console.log(parseCode(data))
-    // create web worker URL
+    // create web worker URL    // web worker are only created using URL, here we are using Blob to generate an URL dynamically
     var blob;
     try {
         blob = new Blob([jsString], { type: 'application/javascript' });

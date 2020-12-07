@@ -1,3 +1,11 @@
+/*
+*   Convert C++ code in .ino file intop Javascript
+*   Everything is done in Regex, it only supports simple C++ code
+*   Class files are not supported at this moment
+*   Todo: Use tree structure to parse functions
+*/
+
+
 let dataTypes = [
     'unsigned byte',
     'unsigned int',
@@ -48,9 +56,6 @@ function parseCode(fileData) {
 
     // remove linebreak 
     // fileData = fileData.replace(/\n\s*\n/g, '\n');
-
-    // add importScripts
-    // fileData = "self.importScripts('js/blink.js')" + "\n\n" + fileData
 
     return fileData;
 }
@@ -224,3 +229,5 @@ function replaceForEach(string) {
     }
     return result;
 }
+
+module.exports = { parseCode };
