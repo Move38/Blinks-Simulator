@@ -380,7 +380,7 @@ function map(x, in_min, in_max, out_min, out_max) {
 /* System */
 
 function hasWoken() {
-    return 1;
+    return 0;
 }
 
 function startSate() {
