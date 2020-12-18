@@ -33,6 +33,9 @@ function parseCode(fileData) {
     // remove const static
     fileData = removeExtras(fileData)
 
+    // replace Serial
+    fileData = replaceSerial(fileData)
+
     // replace enum
     fileData = replaceEnum(fileData)
 
@@ -52,7 +55,7 @@ function parseCode(fileData) {
     fileData = cleanDatatypes(fileData)
 
     // remove randomize()
-    fileData = fileData.replaceAll(/.*?randomize\(.?\)\;/g, '');
+    fileData = fileData.replace(/.*?randomize\(.?\)\;/g, '');
 
     // remove linebreak 
     // fileData = fileData.replace(/\n\s*\n/g, '\n');
@@ -65,14 +68,14 @@ function removeComments(string) {
     // const re = /(?<!:)\/\/.*/g 
     const re = /\/\/.*/g // this replaces web urls, current safari does not support lookbehind
     let result = string
-    result = result.replaceAll(re, '');
+    result = result.replace(re, '');
     return result;
 }
 
 function removeExtras(string) {
     let result = string
-    result = result.replaceAll('const ', '');
-    result = result.replaceAll('static ', '');
+    result = result.replace(/const /g, '');
+    result = result.replace(/static /g, '');
     // float point postfix
     const floatExp = /([0-9]+)[F|f]/;
     let match = floatExp.exec(result);
@@ -96,7 +99,7 @@ function removeExtras(string) {
     }
 
     // remove data type caster
-    result = result.replaceAll(/\(byte+\s+\*\)/g, '');
+    result = result.replace(/\(byte+\s+\*\)/g, '');
 
     return result;
 }
@@ -112,10 +115,10 @@ function cleanFuncitons(string) {
         funcLine = funcLine.replace('void ', 'function ');
         dataTypes.map(d => {
             funcLine = funcLine.replace(d + ' ', 'function ');
-            paraLine = paraLine.replaceAll(d + ' ', '');
+            paraLine = paraLine.replace(new RegExp(d + ' ', 'g'), '');
         })
         // remove array square brackets if there are any
-        paraLine = paraLine.replaceAll('[]', '');
+        paraLine = paraLine.replace(/[]/g, '');
         let replacement = funcLine + paraLine;
         result = result.replace(match[0], replacement);
         match = funcExp.exec(result);
@@ -185,6 +188,19 @@ function updateTimer(string) {
     return result;
 }
 
+function replaceSerial(string) {
+    const serialExp = /.*?Serial\s+([a-zA-Z_{1}][A-Za-z0-9_]+);?/;
+    let result = string;
+    let match = serialExp.exec(string);
+    while (match != null) {
+        result = result.replace(match[0], '');
+        result = result.replace(new RegExp(match[1] + '.println', 'g'), 'console.log')
+        result = result.replace(new RegExp(match[1] + '.print', 'g'), 'console.log')
+        match = serialExp.exec(result);
+    }
+    return result;
+}
+
 function replaceDefine(string) {
     const defineExp = /.*?#define\s+([a-zA-Z_{1}][A-Za-z0-9_]+)\s+/;
     let result = string;
@@ -224,7 +240,7 @@ function replaceForEach(string) {
     while (match != null) {
         const line = match[0];
         const varable = match[1];
-        result = result.replace(line, 'for(let x = 0; x < FACE_COUNT; x++)'.replaceAll('x', varable));
+        result = result.replace(line, 'for(let x = 0; x < FACE_COUNT; x++)'.replace(/x/g, varable));
         match = forEachExp.exec(result);
     }
     return result;

@@ -10,7 +10,6 @@ An online editor to preview games that developped in Blinks systems. [Demo](http
 - `npm install` to install packages
 - `npm run build` to build blinks.js library
 - `npm run dev` to start a local dev server
-- `node scripts/compile.js xxx.ino` to compile an xxx.ino Arduino file into `scripts/temp.js` javascript
 
 ## Usage
 - Click and drag blinks to re-arrange them. 
