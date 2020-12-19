@@ -39,6 +39,12 @@ function parseCode(fileData) {
     // replace enum
     fileData = replaceEnum(fileData)
 
+    // replace typedef, include typedef struct
+    fileData = replaceTypeDef(fileData)
+
+    // replace struct
+    fileData = replaceStruct(fileData)
+
     // replace void loop and void setup
     fileData = cleanFuncitons(fileData)
 
@@ -83,6 +89,9 @@ function removeExtras(string) {
         result = result.replace(match[0], match[1]);
         match = floatExp.exec(result);
     }
+    
+    // remove arrow operator
+    result = result.replace(/\s*->\s*/g, '.');
 
     // remove array pointers
     const pointerExp = /&([a-zA-Z_{1}][A-Za-z0-9_]+)/;
@@ -91,7 +100,13 @@ function removeExtras(string) {
         result = result.replace(match[0], match[1]);
         match = pointerExp.exec(result);
     }
-    const starExp = /\*([a-zA-Z_{1}][A-Za-z0-9_]+)/;
+    let starExp = /\*([a-zA-Z_{1}][A-Za-z0-9_]+)/;
+    match = starExp.exec(result);
+    while (match != null) {
+        result = result.replace(match[0], match[1]);
+        match = starExp.exec(result);
+    }
+    starExp = /([a-zA-Z_{1}][A-Za-z0-9_]+)\*/;
     match = starExp.exec(result);
     while (match != null) {
         result = result.replace(match[0], match[1]);
@@ -109,13 +124,15 @@ function cleanFuncitons(string) {
     let result = string;
     const funcExp = /^\s?[a-zA-Z_{1}][A-Za-z0-9_]+\s.*(\(.*\))/gm;
     let match = funcExp.exec(result);
+    let allTypes = dataTypes.concat(customDataTypes);
     while (match != null) {
         let funcLine = match[0].replace(match[1], '');
         let paraLine = match[1];
         funcLine = funcLine.replace('void ', 'function ');
-        dataTypes.map(d => {
+        allTypes.map(d => {
             funcLine = funcLine.replace(d + ' ', 'function ');
             paraLine = paraLine.replace(new RegExp(d + ' ', 'g'), '');
+            paraLine = paraLine.replace(/\[\s*\]/g, '');
         })
         // remove array square brackets if there are any
         paraLine = paraLine.replace(/[]/g, '');
@@ -140,10 +157,10 @@ function cleanDatatypes(string) {
         }
         else {
             const arrayDim = (typeMatch[2].match(/\[/g) || []).length
-            if(arrayDim == 1){
+            if (arrayDim == 1) {
                 arrLine = '[]';
             }
-            else if(arrayDim == 2){
+            else if (arrayDim == 2) {
                 const length = /\[([0-9]+)\]/.exec(typeMatch[2])[1]
                 arrLine = "Array.from({ length: " + length + " }, () => [])"
             }
@@ -177,7 +194,7 @@ function updateTimer(string) {
         // check whether it's an array
         const arrExp = /\[(.*)\]/;
         const arrMatch = arrExp.exec(match[0]);
-        if(arrMatch){
+        if (arrMatch) {
             const arrLength = arrMatch[1].trim();
             replacement = "let " + varable + " = " + "Array.from({ length: " + arrLength + " }, () => new Timer(self));"
         }
@@ -209,6 +226,97 @@ function replaceDefine(string) {
         let replacement = "const " + match[1] + ' = ';
         result = result.replace(match[0], replacement);
         match = defineExp.exec(result);
+    }
+    return result;
+}
+
+function createStructDef(name, props, values) {
+    // console.log(name, props, values);
+    if (props.length !== values.length) {
+        console.log('warning');
+        return ''
+    }
+
+    let result = 'let ' + name + ' = ';
+    let valueStr = values.map((v, i) => {
+        return props[i] + ': ' + v.trim()
+    }).join(', ');
+    result += '{ ' + valueStr + '};';
+
+    return result;
+}
+
+function replaceTypeDef(string) {
+    // match and recreate typedef struct
+    const typedefExp = /typedef\s+struct\s*\{([^\}]*)\}\s*([a-zA-Z_{1}][A-Za-z0-9_]+);?/;
+    let result = string;
+    let match = typedefExp.exec(string);
+    while (match != null) {
+        result = result.replace(match[0], '');
+        const propArray = match[1].split(';').map(p => {
+            let cleanProp = p.trim().replace(';', '');
+            return cleanProp.length > 0 ? cleanProp.split(' ')[1] : ''
+        }).filter(p => p !== '');
+        const typeName = match[2];
+        // console.log(propArray, typeName)
+        customDataTypes.push(typeName);
+        const typeNameExp = new RegExp(typeName + '\\s+([a-zA-Z_{1}][A-Za-z0-9_]+)\\s*=\\s*\\{([^\\}]*)\\}.*?;?', '');
+        let mm = typeNameExp.exec(result);
+        while (mm != null) {
+            result = result.replace(mm[0], createStructDef(mm[1], propArray, mm[2].split(',')));
+            mm = typeNameExp.exec(result);
+        }
+        match = typedefExp.exec(result);
+    }
+
+    // replace typedef functions
+    const returnTypes = dataTypes.concat(['void']);
+    for (let i = 0; i < returnTypes.length; i++) {
+        const typeDefFuncExp = new RegExp('typedef\\s+' + returnTypes[i] + '\\s+\\((.*?)\\)\\s*\\(.*?\\)\\s*;?', 'g');
+        match = typeDefFuncExp.exec(result);
+        while (match != null) {
+            customDataTypes.push(match[1]);
+            result = result.replace(match[0], '');
+            match = typeDefFuncExp.exec(result);
+        }
+    }
+
+    // replace short typedef 
+    for (let i = 0; i < dataTypes.length; i++) {
+        const typeDefTypeExp = new RegExp('typedef\\s+' + dataTypes[i] + '\\s+([a-zA-Z_{1}][A-Za-z0-9_]+)\\s*;?', 'g');
+        match = typeDefTypeExp.exec(result);
+        while (match != null) {
+            customDataTypes.push(match[1]);
+            result = result.replace(match[0], '');
+            match = typeDefTypeExp.exec(result);
+        }
+    }
+    return result;
+}
+
+function replaceStruct(string) {
+    // match and recreate typedef struct
+    const structExp = /struct\s+([a-zA-Z_{1}][A-Za-z0-9_]+)\s*{([^\}]*)\}\s*;?/;
+    let result = string;
+    let match = structExp.exec(string);
+    while (match != null) {
+        result = result.replace(match[0], '');
+        const propArray = match[2].split(';').map(p => {
+            let cleanProp = p.trim().replace(';', '');
+            return cleanProp.length > 0 ? cleanProp.split(' ')[1] : ''
+        }).filter(p => p !== '');
+        const structName = match[1];
+        // console.log(propArray, structName)
+        customDataTypes.push(structName);
+        const structDefExp = new RegExp('struct\\s+' + structName + '\\s+([a-zA-Z_{1}][A-Za-z0-9_]+)\\s*=\\s*\\{([^\\}]*)\\}.*?;?', '');
+        let mm = structDefExp.exec(result);
+        while (mm != null) {
+            result = result.replace(mm[0], createStructDef(mm[1], propArray, mm[2].split(',')));
+            mm = structDefExp.exec(result);
+        }
+        const structNameExp = new RegExp('struct\\s+' + structName, 'g');
+        result = result.replace(structNameExp, 'let');
+        match = structExp.exec(result);
     }
     return result;
 }
