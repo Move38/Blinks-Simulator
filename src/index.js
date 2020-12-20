@@ -246,18 +246,21 @@ function init(scope) {
         }
 
         $.setColors = function (i, c) {
+            let color = c ? c : [0, 0, 0];
             if (i < $._blocks.length)
-                $._blocks[i].colors = c
+                $._blocks[i].colors = color;
         }
 
         $.setColor = function (i, c) {
+            let color = c ? c : [0, 0, 0];
             if (i < $._blocks.length)
-                $._blocks[i].colors = Array.from({ length: $.BLOCKSIDES }, () => c)
+                $._blocks[i].colors = Array.from({ length: $.BLOCKSIDES }, () => color)
         }
 
         $.setColorOnFace = function (i, c, j) {
+            let color = c ? c : [0, 0, 0];
             if (i < $._blocks.length && j < $.BLOCKSIDES) {
-                $._blocks[i].colors[j] = c
+                $._blocks[i].colors[j] = color
             }
         }
 

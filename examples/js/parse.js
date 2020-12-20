@@ -120,25 +120,20 @@ function removeExtras(string) {
 }
 
 function cleanFuncitons(string) {
-    // match line start with a word followed by space and braces
     let result = string;
-    const funcExp = /^\s?[a-zA-Z_{1}][A-Za-z0-9_]+\s.*(\(.*\))/gm;
-    let match = funcExp.exec(result);
-    let allTypes = dataTypes.concat(customDataTypes);
-    while (match != null) {
-        let funcLine = match[0].replace(match[1], '');
-        let paraLine = match[1];
-        funcLine = funcLine.replace('void ', 'function ');
-        allTypes.map(d => {
-            funcLine = funcLine.replace(d + ' ', 'function ');
-            paraLine = paraLine.replace(new RegExp(d + ' ', 'g'), '');
-            paraLine = paraLine.replace(/\[\s*\]/g, '');
-        })
-        // remove array square brackets if there are any
-        paraLine = paraLine.replace(/[]/g, '');
-        let replacement = funcLine + paraLine;
-        result = result.replace(match[0], replacement);
-        match = funcExp.exec(result);
+    let allTypes = dataTypes.concat(customDataTypes).concat(['void']);
+    for (let i = 0; i < allTypes.length; i++) {
+        const funcExp = new RegExp('^\\s?' + allTypes[i] + '\\s+([A-Za-z0-9\\_]+)\\s*\\((.*)\\)', 'gm');
+        let match = funcExp.exec(result);
+        while (match != null) {
+            let funcLine = 'function ' + match[1];
+            let paraLine = match[2].split(',').map( p => {
+                return p.trim().split(' ').pop().replace('[]', '');
+            }).join(',');
+            let replacement = funcLine + '(' + paraLine + ')';
+            result = result.replace(match[0], replacement);
+            match = funcExp.exec(result);
+        }
     }
     return result;
 }
