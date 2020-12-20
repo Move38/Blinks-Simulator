@@ -120,25 +120,20 @@ function removeExtras(string) {
 }
 
 function cleanFuncitons(string) {
-    // match line start with a word followed by space and braces
     let result = string;
-    const funcExp = /^\s?[a-zA-Z_{1}][A-Za-z0-9_]+\s.*(\(.*\))/gm;
-    let match = funcExp.exec(result);
-    let allTypes = dataTypes.concat(customDataTypes);
-    while (match != null) {
-        let funcLine = match[0].replace(match[1], '');
-        let paraLine = match[1];
-        funcLine = funcLine.replace('void ', 'function ');
-        allTypes.map(d => {
-            funcLine = funcLine.replace(d + ' ', 'function ');
-            paraLine = paraLine.replace(new RegExp(d + ' ', 'g'), '');
-            paraLine = paraLine.replace(/\[\s*\]/g, '');
-        })
-        // remove array square brackets if there are any
-        paraLine = paraLine.replace(/[]/g, '');
-        let replacement = funcLine + paraLine;
-        result = result.replace(match[0], replacement);
-        match = funcExp.exec(result);
+    let allTypes = dataTypes.concat(customDataTypes).concat(['void']);
+    for (let i = 0; i < allTypes.length; i++) {
+        const funcExp = new RegExp('^\\s?' + allTypes[i] + '\\s+([A-Za-z0-9\\_]+)\\s*\\((.*)\\)', 'gm');
+        let match = funcExp.exec(result);
+        while (match != null) {
+            let funcLine = 'function ' + match[1];
+            let paraLine = match[2].split(',').map( p => {
+                return p.trim().split(' ').pop().replace('[]', '');
+            }).join(',');
+            let replacement = funcLine + '(' + paraLine + ')';
+            result = result.replace(match[0], replacement);
+            match = funcExp.exec(result);
+        }
     }
     return result;
 }
@@ -248,9 +243,9 @@ function createStructDef(name, props, values) {
 
 function replaceTypeDef(string) {
     // match and recreate typedef struct
-    const typedefExp = /typedef\s+struct\s*\{([^\}]*)\}\s*([a-zA-Z_{1}][A-Za-z0-9_]+);?/;
+    const typedefStructExp = /typedef\s+struct\s*\{([^\}]*)\}\s*([a-zA-Z_{1}][A-Za-z0-9_]+);?/;
     let result = string;
-    let match = typedefExp.exec(string);
+    let match = typedefStructExp.exec(string);
     while (match != null) {
         result = result.replace(match[0], '');
         const propArray = match[1].split(';').map(p => {
@@ -260,13 +255,19 @@ function replaceTypeDef(string) {
         const typeName = match[2];
         // console.log(propArray, typeName)
         customDataTypes.push(typeName);
-        const typeNameExp = new RegExp(typeName + '\\s+([a-zA-Z_{1}][A-Za-z0-9_]+)\\s*=\\s*\\{([^\\}]*)\\}.*?;?', '');
-        let mm = typeNameExp.exec(result);
+        let typedefNameExp = new RegExp('^' + typeName + '\\s+([a-zA-Z_{1}][A-Za-z0-9_]+)\\s*=\\s*\\{([^\\}]*)\\}.*?;?', 'm');
+        let mm = typedefNameExp.exec(result);
         while (mm != null) {
             result = result.replace(mm[0], createStructDef(mm[1], propArray, mm[2].split(',')));
-            mm = typeNameExp.exec(result);
+            mm = typedefNameExp.exec(result);
         }
-        match = typedefExp.exec(result);
+        typedefNameExp = new RegExp('^' + typeName + '\\s+([a-zA-Z_{1}][A-Za-z0-9_]+);?', 'm');
+        mm = typedefNameExp.exec(result);
+        while (mm != null) {
+            result = result.replace(mm[0], 'let ' + mm[1] + ' = {};');
+            mm = typedefNameExp.exec(result);
+        }
+        match = typedefStructExp.exec(result);
     }
 
     // replace typedef functions
@@ -295,7 +296,7 @@ function replaceTypeDef(string) {
 }
 
 function replaceStruct(string) {
-    // match and recreate typedef struct
+    // match and recreate struct
     const structExp = /struct\s+([a-zA-Z_{1}][A-Za-z0-9_]+)\s*{([^\}]*)\}\s*;?/;
     let result = string;
     let match = structExp.exec(string);
@@ -308,14 +309,18 @@ function replaceStruct(string) {
         const structName = match[1];
         // console.log(propArray, structName)
         customDataTypes.push(structName);
-        const structDefExp = new RegExp('struct\\s+' + structName + '\\s+([a-zA-Z_{1}][A-Za-z0-9_]+)\\s*=\\s*\\{([^\\}]*)\\}.*?;?', '');
+        let structDefExp = new RegExp('struct\\s+' + structName + '\\s+([a-zA-Z_{1}][A-Za-z0-9_]+)\\s*=\\s*\\{([^\\}]*)\\}.*?;?', '');
         let mm = structDefExp.exec(result);
         while (mm != null) {
             result = result.replace(mm[0], createStructDef(mm[1], propArray, mm[2].split(',')));
             mm = structDefExp.exec(result);
         }
-        const structNameExp = new RegExp('struct\\s+' + structName, 'g');
-        result = result.replace(structNameExp, 'let');
+        structDefExp = new RegExp('struct\\s+' + structName + '\\s+([a-zA-Z_{1}][A-Za-z0-9_]+);?', '');
+        mm = structDefExp.exec(result);
+        while (mm != null) {
+            result = result.replace(mm[0], 'let ' + mm[1] + ' = {};');
+            mm = structDefExp.exec(result);
+        }
         match = structExp.exec(result);
     }
     return result;
@@ -353,5 +358,3 @@ function replaceForEach(string) {
     }
     return result;
 }
-
-module.exports = { parseCode };

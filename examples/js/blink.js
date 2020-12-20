@@ -213,7 +213,9 @@ function buttonReleased() {
 }
 
 function buttonLongPressed() {
-    return self._buttonLongPressedFlag;
+    const result = self._buttonLongPressedFlag;
+    self._buttonLongPressedFlag = false;	
+    return result;
 }
 
 function buttonSingleClicked() {

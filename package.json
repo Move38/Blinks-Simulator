@@ -28,6 +28,7 @@
         "codemirror-minified": "^5.58.3",
         "fernandez-polygon-decomposition": "^2.0.0",
         "matter-js": "https://github.com/xyfeng/matter-js.git",
+        "require-from-string": "^2.0.2",
         "webpack": "^4.44.2",
         "webpack-cli": "^3.3.11",
         "webpack-dev-server": "^3.11.0"

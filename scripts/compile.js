@@ -1,7 +1,9 @@
-const parser = require('../examples/js/parse.js');
 const fs = require('fs');
+const requireFromString = require('require-from-string');
 const filepath = process.argv[2];
 
+const parserCode = fs.readFileSync('./examples/js/parse.js');
+const parser = requireFromString(parserCode + '\nmodule.exports = { parseCode };');
 
 if (filepath) {
     fs.readFile('./' + filepath, 'utf8', function (error, data) {
