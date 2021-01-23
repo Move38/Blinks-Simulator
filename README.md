@@ -14,6 +14,7 @@ An online editor to preview games that developped in Blinks systems. [Demo](http
 ## Usage
 - Click and drag blinks to re-arrange them. 
 - Click and drag in an open space to break them.
+- You can use console for debugging info
 
 ## Files
 - `build/blinks.js` core library to handle user interaction and simulation using PixiJS & MatterJS
