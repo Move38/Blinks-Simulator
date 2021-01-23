@@ -3,6 +3,9 @@
 
     Find out more about this project: 
     https://github.com/Move38/Blinks-Simulator
+    Click and drag blinks to re-arrange them.
+    Click and drag in an open space to break them.
+    You can use console for debugging info
 */
 
 void setup() {
