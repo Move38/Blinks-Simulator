@@ -201,13 +201,11 @@ function updateTimer(string) {
 }
 
 function replaceSerial(string) {
-    const serialExp = /.*?Serial\s+([a-zA-Z_{1}][A-Za-z0-9_]+);?/;
+    const serialExp = /.*?(Serial.print(ln)?);?/;
     let result = string;
     let match = serialExp.exec(string);
     while (match != null) {
-        result = result.replace(match[0], '');
-        result = result.replace(new RegExp(match[1] + '.println', 'g'), 'console.log')
-        result = result.replace(new RegExp(match[1] + '.print', 'g'), 'console.log')
+        result = result.replace(match[0], 'console.log');
         match = serialExp.exec(result);
     }
     return result;
