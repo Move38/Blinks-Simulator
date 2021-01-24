@@ -201,11 +201,11 @@ function updateTimer(string) {
 }
 
 function replaceSerial(string) {
-    const serialExp = /.*?(Serial.print(ln)?);?/;
+    const serialExp = /.*?(Serial.print(ln)?\();?/;
     let result = string;
     let match = serialExp.exec(string);
     while (match != null) {
-        result = result.replace(match[0], 'console.log');
+        result = result.replace(match[0], 'console.log( "[block#" + self.index + "]", ');
         match = serialExp.exec(result);
     }
     return result;
