@@ -310,6 +310,9 @@ function init(scope) {
         }
 
         // Time
+        $.resetMillis = function () {
+          millisStart = window.performance.now();
+        }
         $.millis = function () {
             return window.performance.now() - millisStart;
         }

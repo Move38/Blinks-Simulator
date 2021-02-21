@@ -266,7 +266,10 @@ function setValueSentOnFace(value, face) {
 }
 
 function getLastValueReceivedOnFace(face) {
+  if(self._ins[face].value > 0) {
     return self._ins[face].value;
+  }
+  return 0;
 }
 
 function isValueReceivedOnFaceExpired(face) {

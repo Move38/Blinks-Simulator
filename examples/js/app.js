@@ -246,6 +246,7 @@ function init() {
         workers.push(worker);
     }
     blk.createBlocks(SETTINGS['Blinks Number']);
+    blk.resetMillis();
 }
 
 loadCode(SETTINGS['Load File'])
@@ -286,7 +287,7 @@ function loadWorkerFns(path) {
 
 function createWebWorker(data) {
     const jsString = blinkFns + parseCode(data);    // combine blink library and newly converted JS code
-    // console.log(parseCode(data))
+    console.log(parseCode(data))
     // create web worker URL    // web worker are only created using URL, here we are using Blob to generate an URL dynamically
     var blob;
     try {
