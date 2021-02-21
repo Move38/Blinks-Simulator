@@ -1128,7 +1128,6 @@ function init(scope) {
                     let spii = (spi + 1) % $._targetShadow.dragGroup.spikes.length
                     if ($.pointInsidePolygon(g.pts, sp[1])) {
                         sp[2] = true
-                        FOUND = true
 
                         // find the matching line
                         let p0 = sp[3]
@@ -1140,7 +1139,11 @@ function init(scope) {
                             let p3 = g.pts[jj]
                             let m1 = Matter.Vector.div(Matter.Vector.add(p2, p3), 2)
                             let d = Matter.Vector.magnitude(Matter.Vector.sub(m0, m1))
-                            if (d < minDistance) {
+                            let l0 = Matter.Vector.normalise(Matter.Vector.sub(p0, p1))
+                            let l1 = Matter.Vector.normalise(Matter.Vector.sub(p3, p2))
+                            let angle = Math.atan2(Matter.Vector.cross(l0, l1), Matter.Vector.dot(l0, l1))
+                            if (d < minDistance && Math.abs(angle) < Math.PI / 4) {
+                                FOUND = true
                                 minDistance = d
                                 $._targetShadow.dragGroup.intersectings = [spi, spii]
                                 g.intersectings = [j, jj]
