@@ -51,7 +51,7 @@ gui.add(SETTINGS, 'Load File', examples).onChange(s => {
     clear();
     loadCode(s);
 });
-gui.add(SETTINGS, 'Blinks Number', 6, 18).step(1); 
+gui.add(SETTINGS, 'Blinks Number', 1, 100).step(1); 
 gui.add(SETTINGS, "Run Code");
 gui.add(SETTINGS, "Debug Mode").onFinishChange(d => blk.debugMode = d);
 
