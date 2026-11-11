@@ -125,6 +125,22 @@
 .blocklyWidgetDiv .blocklyContextMenu .blocklyMenuItemHighlight { background: #3a3149; }
 .blocklyWidgetDiv .blocklyContextMenu .blocklyMenuItemDisabled { color: #6e6582; }
 
+/* Color picker (lives in Blockly's drop-down div, outside .bk-host) */
+.bkPicker { width: 216px; padding: 6px 4px 4px; font: 600 12px Figtree, system-ui, sans-serif; color: #eee9f5; }
+.bkPickerNamed { display: grid; grid-template-columns: repeat(9, 1fr); gap: 4px; }
+.bkPickerSwatch { width: 20px; height: 20px; padding: 0; border-radius: 50%; border: 1.5px solid rgba(255, 255, 255, .3); cursor: pointer; }
+.bkPickerSwatch:hover { transform: scale(1.12); }
+.bkPickerSwatch.on { box-shadow: 0 0 0 2px #2a2337, 0 0 0 4px #FA4616; }
+.bkPickerHead { display: flex; align-items: center; justify-content: space-between; margin: 12px 0 6px; color: #a69db8; }
+.bkPickerPreview { width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid rgba(255, 255, 255, .3); }
+.bkPickerRow { display: grid; grid-template-columns: 14px 1fr 28px; align-items: center; gap: 8px; margin: 6px 0; }
+.bkPickerRow span { color: #a69db8; }
+.bkPickerRow output { text-align: right; font: 500 11.5px "JetBrains Mono", ui-monospace, monospace; color: #eee9f5; }
+.bkPickerRow input { -webkit-appearance: none; appearance: none; width: 100%; height: 10px; margin: 0; border-radius: 5px; outline: none; cursor: pointer; }
+.bkPickerRow input::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: #fff; border: 2px solid #1d1827; box-shadow: 0 1px 4px rgba(0, 0, 0, .5); }
+.bkPickerRow input::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: #fff; border: 2px solid #1d1827; }
+.bkPickerRow input:focus-visible { box-shadow: 0 0 0 2px #FA4616; }
+
 /* Dialog for editing multi-line C code */
 .bk-dialog {
   position: absolute;
@@ -166,6 +182,20 @@
   tab-size: 2;
 }
 .bk-dialog-code:focus { border-color: var(--bk-accent); }
+.bk-dialog-small { width: min(360px, 100%); }
+.bk-dialog-message { color: var(--bk-text); font-size: 14px; line-height: 1.4; }
+.bk-dialog-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  background: var(--bk-bg);
+  color: var(--bk-text);
+  border: 1px solid var(--bk-line);
+  border-radius: 8px;
+  outline: none;
+  font: 14px Figtree, system-ui, sans-serif;
+}
+.bk-dialog-input:focus { border-color: var(--bk-accent); }
 .bk-dialog-actions { display: flex; align-items: center; gap: 8px; }
 .bk-dialog-hint { flex: 1; font: 12px Figtree, system-ui, sans-serif; color: #6e6582; }
 .bk-btn {

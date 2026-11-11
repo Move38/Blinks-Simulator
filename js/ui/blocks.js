@@ -26,7 +26,7 @@ const HEADER = 'Made with blocks in the Blinks Playground';
 // Category colors: bright, evenly spaced hues that sit well on the dark panel
 const PALETTE = {
   events: '#E3A21F', light: '#F25A1F', button: '#E0559B', neighbors: '#1EAE9B', time: '#8A63E6',
-  control: '#3C89EA', math: '#3BAA63', logic: '#6E9F2E', variables: '#E2524C', functions: '#B65BD0',
+  control: '#3C89EA', math: '#3BAA63', logic: '#6E9F2E', variables: '#E2524C', lists: '#2FA8D8', functions: '#B65BD0',
   code: '#5D5670',
 };
 
@@ -36,6 +36,21 @@ const COLORS = [
   ['BLUE', '#2f6bff'], ['MAGENTA', '#e040fb'], ['WHITE', '#ffffff'], ['OFF', '#1a1622'],
 ];
 const COLOR_NAMES = new Set(COLORS.map(c => c[0]));
+const COLOR_HEX = Object.fromEntries(COLORS);
+// blinklib's named colors in 5-bit channels, so the color picker's sliders can start there
+const COLOR_RGB5 = {
+  RED: [31, 0, 0], ORANGE: [31, 15, 0], YELLOW: [31, 31, 0], GREEN: [0, 31, 0], CYAN: [0, 31, 31],
+  BLUE: [0, 0, 31], MAGENTA: [31, 0, 31], WHITE: [31, 31, 31], OFF: [0, 0, 0],
+};
+// A color block holds a name (RED) or a mix "r,g,b" (0 to 255 each), which is makeColorRGB(r, g, b)
+function parseMix(value) {
+  const m = /^(\d{1,3}),(\d{1,3}),(\d{1,3})$/.exec(String(value));
+  if (!m) return null;
+  const c = m.slice(1).map(Number);
+  return c.every(x => x <= 255) ? c : null;
+}
+const colorRGB = value => (COLOR_RGB5[value] ? COLOR_RGB5[value].map(x => Math.round(x * 255 / 31)) : parseMix(value));
+const colorCss = value => COLOR_HEX[value] || (c => (c ? `rgb(${c.join(',')})` : '#888'))(parseMix(value));
 
 // [label, blinklib function]
 const BUTTON_EVENTS = [
@@ -48,7 +63,15 @@ const BUTTON_FNS = new Set(BUTTON_STATES.map(b => b[1]));
 // Variable types (Blockly variable type == C type). '' is a parameter made in the function editor (int).
 const NUM_TYPES = ['byte', 'int', 'word', 'long', 'unsigned long', 'char', 'int8_t', 'float', ''];
 const VAR_TYPE_ORDER = ['bool', 'byte', 'char', 'int8_t', 'int', 'word', 'long', 'unsigned long', 'float', 'Color', 'Timer', '', 'face'];
-const kindOf = type => type === 'bool' ? 'bool' : type === 'Color' ? 'color' : type === 'Timer' ? 'timer' : type === 'face' ? 'face' : 'num';
+// Lists (C arrays) are variables whose type is the item type plus "[]": byte[] is a list of bytes
+const isList = type => typeof type === 'string' && type.endsWith('[]');
+const itemType = type => type.slice(0, -2);
+const kindOf = type => isList(type) ? 'list' : type === 'bool' ? 'bool' : type === 'Color' ? 'color' : type === 'Timer' ? 'timer' : type === 'face' ? 'face' : 'num';
+const listKind = type => kindOf(itemType(type));
+const LIST_TYPES = { num: NUM_TYPES.filter(Boolean).map(t => t + '[]'), bool: ['bool[]'], color: ['Color[]'] };
+const ALL_LIST_TYPES = [...LIST_TYPES.num, ...LIST_TYPES.bool, ...LIST_TYPES.color];
+const LIST_SIZE = 6;   // a list without a "list … with N items" block gets one item per face
+const LIST_MAX = 64;
 const cType = type => type === '' ? 'int' : type;
 const GETTER = { num: 'bk_get_num', bool: 'bk_get_bool', color: 'bk_get_color' };
 const SETTER = { num: 'bk_set_num', bool: 'bk_set_bool', color: 'bk_set_color_var' };
@@ -256,17 +279,98 @@ function defineFields(Blockly) {
       this.size_ = new Blockly.utils.Size(Math.ceil(width), lh * (lines.length - 1) + Math.round(size * 1.6));
     }
   }
+  // A color swatch: one of the named colors, or any mix of red, green and blue
+  class FieldBlinkColor extends Blockly.Field {
+    constructor(value, validator, config) {
+      super(value ?? 'RED', validator, config);
+      this.SERIALIZABLE = true;
+      this.CURSOR = 'pointer';
+    }
+    static fromJson(o) { return new FieldBlinkColor(o.value, undefined, o); }
+    doClassValidation_(v) { return COLOR_HEX[v] || parseMix(v) ? String(v) : null; }
+    initView() {
+      this.swatch_ = Blockly.utils.dom.createSvgElement('circle', { cx: 11, cy: 11, r: 10, 'stroke-width': 1.5 }, this.fieldGroup_);
+    }
+    render_() {
+      const v = this.getValue();
+      this.swatch_.setAttribute('fill', colorCss(v));
+      this.swatch_.setAttribute('stroke', v === 'WHITE' ? 'rgba(0,0,0,.25)' : 'rgba(255,255,255,.35)');
+      this.size_ = new Blockly.utils.Size(22, 22);
+    }
+    getText_() {
+      const v = this.getValue();
+      const mix = parseMix(v);
+      return mix ? `red ${mix[0]} green ${mix[1]} blue ${mix[2]}` : String(v).toLowerCase();
+    }
+    showEditor_() { openColorPicker(Blockly, this); }
+  }
+
   if (Blockly.registry.hasItem(Blockly.registry.Type.FIELD, 'field_code')) Blockly.fieldRegistry.unregister('field_code');
   Blockly.fieldRegistry.register('field_code', FieldCode);
+  if (Blockly.registry.hasItem(Blockly.registry.Type.FIELD, 'field_blink_color')) Blockly.fieldRegistry.unregister('field_blink_color');
+  Blockly.fieldRegistry.register('field_blink_color', FieldBlinkColor);
   defineFields.FieldCode = FieldCode;
   defineFields.FieldCodeLine = FieldCodeLine;
   defineFields.FieldCodeLines = FieldCodeLines;
 }
 
-function swatch(hex) {
-  const ring = hex === '#ffffff' ? 'rgba(0,0,0,.25)' : 'rgba(255,255,255,.35)';
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><circle cx="12" cy="12" r="10" fill="${hex}" stroke="${ring}" stroke-width="1.5"/></svg>`;
-  return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+// The color picker: the named colors, then sliders to mix any color from red, green and blue
+function openColorPicker(Blockly, field) {
+  const DD = Blockly.DropDownDiv;
+  const root = document.createElement('div');
+  root.className = 'bkPicker';
+  const named = document.createElement('div');
+  named.className = 'bkPickerNamed';
+  for (const [name, hex] of COLORS) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'bkPickerSwatch';
+    b.style.background = hex;
+    b.title = b.ariaLabel = name.toLowerCase();
+    if (field.getValue() === name) b.classList.add('on');
+    b.addEventListener('click', () => { field.setValue(name); DD.hideIfOwner(field); });
+    named.append(b);
+  }
+  const head = document.createElement('div');
+  head.className = 'bkPickerHead';
+  head.innerHTML = '<span>Mix your own</span><span class="bkPickerPreview"></span>';
+  const preview = head.lastChild;
+  const rgb = colorRGB(field.getValue()) || [255, 0, 0];
+  const rows = ['red', 'green', 'blue'].map((label, i) => {
+    const row = document.createElement('label');
+    row.className = 'bkPickerRow';
+    row.innerHTML = `<span>${label[0].toUpperCase()}</span><input type="range" min="0" max="255" step="1" aria-label="${label}"><output></output>`;
+    const input = row.querySelector('input');
+    input.value = rgb[i];
+    return { row, input, out: row.querySelector('output') };
+  });
+  const paint = () => {
+    const c = rows.map(r => Number(r.input.value));
+    preview.style.background = `rgb(${c.join(',')})`;
+    rows.forEach((r, i) => {
+      const lo = c.slice(), hi = c.slice();
+      lo[i] = 0; hi[i] = 255;
+      r.input.style.background = `linear-gradient(90deg, rgb(${lo.join(',')}), rgb(${hi.join(',')}))`;
+      r.out.textContent = c[i];
+    });
+    return c;
+  };
+  paint();
+  // one slider drag is one undo step
+  let grouped = false;
+  for (const r of rows) {
+    r.input.addEventListener('input', () => {
+      if (!grouped) { Blockly.Events.setGroup(true); grouped = true; }
+      field.setValue(paint().join(','));
+      named.querySelector('.on')?.classList.remove('on');
+    });
+    r.input.addEventListener('change', () => { if (grouped) { Blockly.Events.setGroup(false); grouped = false; } });
+  }
+  root.append(named, head, ...rows.map(r => r.row));
+  const content = DD.getContentDiv();
+  content.replaceChildren(root);
+  DD.showPositionedByField(field, () => { if (grouped) { Blockly.Events.setGroup(false); grouped = false; } });
+  DD.setColour('#2a2337', '#3a3149');
 }
 
 function defineBlocks(Blockly) {
@@ -292,9 +396,8 @@ function defineBlocks(Blockly) {
       tooltip: 'Runs every loop while the timer is done. Set the timer again inside to make it repeat.' },
 
     // Light
-    { type: 'bk_color', message0: '%1', args0: [{ type: 'field_dropdown', name: 'COLOR',
-      options: COLORS.map(([name, hex]) => [{ src: swatch(hex), width: 22, height: 22, alt: name.toLowerCase() }, name]) }],
-      output: C, style: 'bk_light', tooltip: 'One of the named colors (OFF is no light).' },
+    { type: 'bk_color', message0: '%1', args0: [{ type: 'field_blink_color', name: 'COLOR', value: 'RED' }],
+      output: C, style: 'bk_light', tooltip: 'A color: pick a named one (OFF is no light) or mix your own from red, green and blue.' },
     { type: 'bk_random_color', message0: 'random color', output: C, style: 'bk_light',
       tooltip: 'A bright color with a random hue.' },
 
@@ -374,10 +477,118 @@ function defineBlocks(Blockly) {
     defs.push(def);
   }
 
+  // Lists: get, set and change an item, and the length
+  const listField = types => ({ type: 'field_variable', name: 'LIST', variable: null, variableTypes: types, defaultType: types[0] });
+  for (const kind of ['num', 'bool', 'color']) {
+    const what = { num: 'number', bool: 'true/false', color: 'color' }[kind];
+    defs.push(
+      { type: 'bk_list_get_' + kind, message0: 'item %1 of %2', args0: [val('INDEX', N), listField(LIST_TYPES[kind])],
+        output: KIND_CHECK[kind], inputsInline: true, style: 'bk_lists', tooltip: `The ${what} at this place in the list. The first item is item 0.` },
+      { type: 'bk_list_set_' + kind, message0: 'set item %1 of %2 to %3', args0: [val('INDEX', N), listField(LIST_TYPES[kind]), val('VALUE', KIND_CHECK[kind])],
+        ...stmt, inputsInline: true, style: 'bk_lists', tooltip: `Put a ${what} at this place in the list. The first item is item 0.` },
+    );
+  }
+  defs.push(
+    { type: 'bk_list_change', message0: 'change item %1 of %2 by %3', args0: [val('INDEX', N), listField(LIST_TYPES.num), val('DELTA', N)],
+      ...stmt, inputsInline: true, style: 'bk_lists', tooltip: 'Add to the number at this place in the list (use a negative number to subtract).' },
+    { type: 'bk_list_length', message0: 'length of %1', args0: [listField(ALL_LIST_TYPES)], output: N, style: 'bk_lists',
+      tooltip: 'How many items the list holds.' },
+  );
+
   registerExtensions(Blockly);
   for (const d of defs) delete Blockly.Blocks[d.type];
   Blockly.common.defineBlocksWithJsonArray(defs);
   defineCodeBlocks(Blockly);
+  defineListBlocks(Blockly);
+}
+
+const PLUS_MINUS = sign => 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><circle cx="10" cy="10" r="9" fill="rgba(255,255,255,.22)"/>` +
+  `<path d="M6 10h8${sign === '+' ? 'M10 6v8' : ''}" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg>`);
+
+// The blocks that set up a list (a global C array): with a size, or with its starting items
+function defineListBlocks(Blockly) {
+  const itemShadow = kind => (kind === 'color' ? colorBlock('OFF') : kind === 'bool' ? { type: 'bk_bool', fields: { BOOL: 'FALSE' } } : numBlock(0));
+  const kindOfId = (block, id) => {
+    const v = id && block.workspace && block.workspace.getVariableMap().getVariableById(id);
+    return v && isList(v.type) ? listKind(v.type) : 'num';
+  };
+  const warnDuplicate = function () {
+    this.setOnChange(function () {
+      if (!this.workspace || this.isInFlyout || !this.rendered) return;
+      const id = this.getFieldValue('LIST');
+      const first = this.workspace.getTopBlocks(true).find(b => (b.type === 'bk_list_decl' || b.type === 'bk_list_init') && b.isEnabled() && b.getFieldValue('LIST') === id);
+      this.setWarningText(first && first !== this ? 'Another block already sets up this list, so this one is ignored.' : null);
+    });
+  };
+
+  Blockly.Blocks.bk_list_decl = {
+    init() {
+      this.appendDummyInput()
+        .appendField('list')
+        .appendField(new Blockly.FieldVariable(null, undefined, ALL_LIST_TYPES, 'int[]'), 'LIST')
+        .appendField('with')
+        .appendField(new Blockly.FieldNumber(LIST_SIZE, 1, LIST_MAX, 1), 'COUNT')
+        .appendField('items');
+      this.setStyle('bk_lists');
+      this.setTooltip('Sets up a list with this many items. Numbers start at 0, colors off and true/false at false.');
+      warnDuplicate.call(this);
+    },
+  };
+
+  Blockly.Blocks.bk_list_init = {
+    init() {
+      this.items_ = 3;
+      this.kind_ = 'num';
+      this.appendDummyInput('HEAD')
+        .appendField('list')
+        .appendField(new Blockly.FieldVariable(null, id => { this.updateShape_(kindOfId(this, id)); return id; }, ALL_LIST_TYPES, 'int[]'), 'LIST')
+        .appendField('starts as');
+      this.appendDummyInput('TAIL')
+        .appendField(new Blockly.FieldImage(PLUS_MINUS('-'), 18, 18, 'one item fewer', () => this.resize_(-1)))
+        .appendField(new Blockly.FieldImage(PLUS_MINUS('+'), 18, 18, 'one more item', () => this.resize_(1)));
+      this.setInputsInline(true);
+      this.setStyle('bk_lists');
+      this.setTooltip('Sets up a list with these starting items. Use − and + to change how many it holds.');
+      this.updateShape_();
+      warnDuplicate.call(this);
+    },
+    // the item kind is saved too: the item slots are made before the list field is loaded
+    saveExtraState() { return { items: this.items_, kind: this.kind_ }; },
+    loadExtraState(state) {
+      this.items_ = Math.max(1, Math.min(LIST_MAX, Number(state && state.items) || 1));
+      this.updateShape_(KIND_CHECK[state && state.kind] ? state.kind : 'num');
+    },
+    resize_(delta) {
+      if (this.isInFlyout) return;
+      const n = Math.max(1, Math.min(LIST_MAX, this.items_ + delta));
+      if (n === this.items_) return;
+      const before = JSON.stringify(this.saveExtraState());
+      Blockly.Events.setGroup(true);
+      this.items_ = n;
+      this.updateShape_();
+      Blockly.Events.fire(new (Blockly.Events.get(Blockly.Events.BLOCK_CHANGE))(this, 'mutation', null, before, JSON.stringify(this.saveExtraState())));
+      Blockly.Events.setGroup(false);
+    },
+    updateShape_(kind = kindOfId(this, this.getFieldValue('LIST'))) {
+      this.kind_ = kind;
+      for (let i = this.items_; this.getInput('ITEM' + i); i++) this.removeInput('ITEM' + i);
+      const shadow = itemShadow(kind);
+      for (let i = 0; i < this.items_; i++) {
+        let input = this.getInput('ITEM' + i);
+        if (!input) {
+          input = this.appendValueInput('ITEM' + i);
+          this.moveInputBefore('ITEM' + i, 'TAIL');
+        }
+        // swap the shadow before the check, or the old one would be pushed out onto the workspace
+        const conn = input.connection;
+        const now = conn.getShadowState();
+        if (now && now.type !== shadow.type) conn.setShadowState(null);
+        input.setCheck(KIND_CHECK[kind]);
+        if (!now || now.type !== shadow.type) conn.setShadowState(shadow);
+      }
+    },
+  };
 }
 
 function registerExtensions(Blockly) {
@@ -575,7 +786,11 @@ function makeGenerator(Blockly) {
       return out ? [code, ORDER.POSTFIX] : code + ';\n';
     };
   }
-  F.bk_color = block => [block.getFieldValue('COLOR'), ORDER.ATOMIC];
+  F.bk_color = block => {
+    const value = block.getFieldValue('COLOR');
+    const mix = parseMix(value);
+    return mix ? [`makeColorRGB(${mix.join(', ')})`, ORDER.POSTFIX] : [value, ORDER.ATOMIC];
+  };
   F.bk_random_color = () => ['makeColorHSB(random(255), 255, 255)', ORDER.POSTFIX];
   F.bk_button = block => [block.getFieldValue('EVENT') + '()', ORDER.POSTFIX];
   F.bk_neighbor = block => ['!isValueReceivedOnFaceExpired(' + v(block, 'FACE', ORDER.COMMA, '0') + ')', ORDER.UNARY];
@@ -644,6 +859,41 @@ function makeGenerator(Blockly) {
     }
     return `${name} += ${v(block, 'DELTA', ORDER.COMMA, '1')};\n`;
   };
+
+  // Lists
+  const listVar = block => {
+    const id = block.getFieldValue('LIST');
+    const m = id && G.ws_ && G.ws_.getVariableMap().getVariableById(id);
+    return { name: G.varName(id), item: m && isList(m.type) ? cType(itemType(m.type)) : 'int' };
+  };
+  const item = block => `${listVar(block).name}[${v(block, 'INDEX', ORDER.NONE, '0')}]`;
+  F.bk_list_decl = block => {
+    const l = listVar(block);
+    const n = Math.max(1, Math.min(LIST_MAX, Math.floor(Number(block.getFieldValue('COUNT')) || LIST_SIZE)));
+    return `${l.item} ${l.name}[${n}];\n`;
+  };
+  F.bk_list_init = block => {
+    const l = listVar(block);
+    const items = [];
+    for (let i = 0; block.getInput('ITEM' + i); i++) items.push(v(block, 'ITEM' + i, ORDER.COMMA, '0'));
+    return `${l.item} ${l.name}[] = { ${items.join(', ')} };\n`;
+  };
+  for (const kind of ['num', 'bool', 'color']) {
+    F['bk_list_get_' + kind] = block => [item(block), ORDER.POSTFIX];
+    F['bk_list_set_' + kind] = block => `${item(block)} = ${v(block, 'VALUE', ORDER.COMMA, def[KIND_CHECK[kind]])};\n`;
+  }
+  F.bk_list_change = block => {
+    const it = item(block);
+    const by = block.getInputTargetBlock('DELTA');
+    if (by && by.type === 'math_number' && by.isEnabled()) {
+      const n = Number(by.getFieldValue('NUM'));
+      if (n === 1) return `${it}++;\n`;
+      if (n === -1) return `${it}--;\n`;
+      if (n < 0) return `${it} -= ${-n};\n`;
+    }
+    return `${it} += ${v(block, 'DELTA', ORDER.COMMA, '1')};\n`;
+  };
+  F.bk_list_length = block => [`COUNT_OF(${listVar(block).name})`, ORDER.POSTFIX];
 
   F.procedures_callnoreturn = block => procCall(block) + ';\n';
   F.procedures_callreturn = block => [procCall(block), ORDER.POSTFIX];
@@ -783,6 +1033,19 @@ function generateProgram(ws, G) {
     if (declare) globals.push(`${cType(m.type)} ${G.varName(id)};`);
   }
 
+  // Lists are set up by the first block for each one, in workspace order with the C code blocks
+  // (their starting items may use names those define); a list without one gets an item per face
+  const setUp = new Set();
+  const listSetups = new Set(of('bk_list_decl', 'bk_list_init').filter(b => {
+    const id = b.getFieldValue('LIST');
+    if (setUp.has(id)) return false;
+    setUp.add(id);
+    return true;
+  }));
+  for (const m of sortedVars(ws)) {
+    if (isList(m.type) && !setUp.has(m.getId())) globals.push(`${cType(itemType(m.type))} ${G.varName(m.getId())}[${LIST_SIZE}];`);
+  }
+
   const parts = ['// ' + HEADER];
   for (const c of ws.getTopComments(true)) {
     const text = String(c.getText() ?? '').replace(/\s+$/, '');
@@ -790,10 +1053,15 @@ function generateProgram(ws, G) {
   }
   if (globals.length) parts.push(globals.join('\n'));
   const raws = of('bk_c_top');
-  for (const r of raws) {
-    const text = String(r.getFieldValue('CODE') ?? '').trimEnd();
-    if (text) parts.push(hatComment(r) + text);
+  let lists = [];
+  for (const b of of('bk_c_top', 'bk_list_decl', 'bk_list_init')) {
+    if (listSetups.has(b)) { lists.push(G.blockToCode(b).trimEnd()); continue; }
+    if (b.type !== 'bk_c_top') continue;
+    if (lists.length) { parts.push(lists.join('\n')); lists = []; }
+    const text = String(b.getFieldValue('CODE') ?? '').trimEnd();
+    if (text) parts.push(hatComment(b) + text);
   }
+  if (lists.length) parts.push(lists.join('\n'));
   const rawText = raws.map(r => r.getFieldValue('CODE')).join('\n');
 
   const setups = of('bk_setup'), loops = of('bk_loop');
@@ -935,6 +1203,26 @@ function chain(blocks) {
 }
 
 const stripParens = e => { while (e && e.kind === 'Paren') e = e.expr; return e; };
+
+// The value of a constant whole-number expression (an array size), or null
+function constInt(e) {
+  e = stripParens(e);
+  if (!e) return null;
+  if (e.kind === 'Num') return e.isFloat ? null : e.value;
+  if (e.kind === 'Unary' && e.op === '-') { const v = constInt(e.arg); return v == null ? null : -v; }
+  if (e.kind === 'Binary') {
+    const a = constInt(e.l), b = constInt(e.r);
+    if (a == null || b == null) return null;
+    switch (e.op) {
+      case '+': return a + b;
+      case '-': return a - b;
+      case '*': return a * b;
+      case '/': return b ? Math.trunc(a / b) : null;
+      case '%': return b ? a % b : null;
+    }
+  }
+  return null;
+}
 
 function importSketch(source) {
   const src = String(source ?? '').replace(/\r\n?/g, '\n');
@@ -1100,6 +1388,54 @@ class Importer {
     return !this.vars.some(v => v.type === type && v.name !== name && v.name.toLowerCase() === name.toLowerCase());
   }
   anchor(node, target) { this.anchors.push({ line: this.realLine(node.line), target }); return target; }
+
+  // A global C array that can be a list: one dimension, a number/true-false/color item type,
+  // a constant size, and starting items (if any) that fit
+  listDecl(d) {
+    const t = d.type;
+    if (!t || t.k !== 'arr' || d.ctorArgs) return null;
+    const item = varTypeOf(t.of);
+    if (!item || item === 'Timer' || item === 'char' || !ALL_LIST_TYPES.includes(item + '[]')) return null;
+    const init = d.init ? stripParens(d.init) : null;
+    if (init && init.kind !== 'InitList') return null;
+    let size = null;
+    if (t.nExpr) {
+      size = constInt(t.nExpr);
+      if (size == null) return null;
+    }
+    const given = init ? init.items.length : 0;
+    if (size == null) size = given;
+    if (size < 1 || size > LIST_MAX || given > size) return null;
+    return { type: item + '[]', size, items: init ? init.items : null };
+  }
+
+  listSetup(v, list, d, decl) {
+    const kind = listKind(v.type);
+    let json;
+    if (!list.items) {
+      json = { type: 'bk_list_decl', fields: { LIST: { id: v.id }, COUNT: list.size } };
+    } else {
+      json = { type: 'bk_list_init', extraState: { items: list.size, kind }, fields: { LIST: { id: v.id } }, inputs: {} };
+      const ctx = { scopes: [], fn: { name: null } };
+      const fill = kind === 'color' ? 'OFF' : kind === 'bool' ? null : 0;
+      for (let i = 0; i < list.size; i++) {
+        json.inputs['ITEM' + i] = i < list.items.length
+          ? this.slot(list.items[i], KIND_CHECK[kind], ctx, fill)
+          : { shadow: kind === 'bool' ? { type: 'bk_bool', fields: { BOOL: 'FALSE' } } : shadowFor(KIND_CHECK[kind], fill) };
+      }
+    }
+    this.anchors.push({ line: this.realLine(d.line || decl.line), target: json });
+    return json;
+  }
+
+  // `list[i]` where list is a list variable: { v, index }
+  listItem(e, ctx) {
+    e = stripParens(e);
+    if (!e || e.kind !== 'Index') return null;
+    const obj = stripParens(e.obj);
+    const entry = obj.kind === 'Ident' ? this.lookup(obj.name, ctx) : null;
+    return entry && entry.kind === 'var' && isList(entry.v.type) ? { v: entry.v, index: e.index } : null;
+  }
   mark() { return [this.anchors.length, this.rawRanges.length, this.rawCount]; }
   rollback(m) { this.anchors.length = m[0]; this.rawRanges.length = m[1]; this.rawCount = m[2]; }
 
@@ -1140,17 +1476,21 @@ class Importer {
     items.forEach((it, i) => {
       const rawPiece = () => pieces.push({ lo: it.line, hi: ends[i], raw: true });
       if (it.kind === 'VarDecl') {
-        const types = it.decls.map(d => varTypeOf(d.type));
-        const ok = !it.isConst && !it.isExtern && it.decls.every((d, k) => types[k] && !d.ctorArgs && !(d.init && d.init.kind === 'InitList')
+        const lists = it.decls.map(d => this.listDecl(d));
+        const types = it.decls.map((d, k) => (lists[k] ? lists[k].type : varTypeOf(d.type)));
+        const ok = !it.isConst && !it.isExtern && it.decls.every((d, k) => types[k] && !d.ctorArgs
+          && (lists[k] || !(d.init && d.init.kind === 'InitList'))
           && !this.globals.has(d.name) && !this.procs.has(d.name) && !funcs.has(d.name) && this.canName(d.name, types[k])
           && !(types[k] === 'Timer' && d.init));
         if (!ok) return rawPiece();
+        const blocks = [];
         it.decls.forEach((d, k) => {
           const v = this.newVar(d.name, types[k]);
           this.globals.set(d.name, v);
-          if (d.init) globalInits.push({ v, d });
+          if (lists[k]) blocks.push(this.listSetup(v, lists[k], d, it));
+          else if (d.init) globalInits.push({ v, d });
         });
-        pieces.push({ lo: it.line, hi: ends[i], skip: true });
+        pieces.push(blocks.length ? { lo: it.line, hi: ends[i], blocks } : { lo: it.line, hi: ends[i], skip: true });
         return;
       }
       if (it.kind === 'FuncDef' && !it.body) {
@@ -1683,6 +2023,8 @@ class Importer {
       }
       throw new Unsupported('method');
     }
+    const li = this.listItem(e.kind === 'Assign' ? e.target : (e.kind === 'Postfix' || e.kind === 'Unary') ? e.arg : null, ctx);
+    if (li) return this.listStmt(node, e, li, ctx);
     if ((e.kind === 'Postfix' || e.kind === 'Unary') && (e.op === '++' || e.op === '--')) {
       const v = this.varTarget(e.arg, ctx, 'num');
       const json = this.anchor(node, { type: 'bk_change', fields: { VAR: { id: v.id } }, inputs: { DELTA: { shadow: numBlock(e.op === '++' ? 1 : -1) } } });
@@ -1713,6 +2055,30 @@ class Importer {
       return json;
     }
     throw new Unsupported(e.kind);
+  }
+
+  listStmt(node, e, { v, index }, ctx) {
+    const kind = listKind(v.type);
+    const at = { LIST: { id: v.id } };
+    if ((e.kind === 'Postfix' || e.kind === 'Unary') && (e.op === '++' || e.op === '--')) {
+      if (kind !== 'num') throw new Unsupported('list ++');
+      return this.anchor(node, { type: 'bk_list_change', fields: at, inputs: { INDEX: this.slot(index, N, ctx, 0), DELTA: { shadow: numBlock(e.op === '++' ? 1 : -1) } } });
+    }
+    if (e.kind !== 'Assign') throw new Unsupported('list');
+    if (e.op === '=') {
+      const json = this.anchor(node, { type: 'bk_list_set_' + kind, fields: at, inputs: {} });
+      json.inputs.INDEX = this.slot(index, N, ctx, 0);
+      json.inputs.VALUE = this.slot(e.value, KIND_CHECK[kind], ctx, kind === 'color' ? 'RED' : kind === 'num' ? 0 : null);
+      return json;
+    }
+    const val = stripParens(e.value);
+    if (kind === 'num' && (e.op === '+=' || (e.op === '-=' && val.kind === 'Num' && !val.isFloat && !val.unsigned && !val.long))) {
+      const json = this.anchor(node, { type: 'bk_list_change', fields: at, inputs: {} });
+      json.inputs.INDEX = this.slot(index, N, ctx, 0);
+      json.inputs.DELTA = e.op === '+=' ? this.slot(e.value, N, ctx, 1) : { shadow: numBlock(-val.value) };
+      return json;
+    }
+    throw new Unsupported('list compound');
   }
 
   varTarget(e, ctx, kind) {
@@ -1796,6 +2162,12 @@ class Importer {
         return { json: numBlock(e.value), out: N };
       }
       case 'Bool': return { json: { type: 'bk_bool', fields: { BOOL: e.value ? 'TRUE' : 'FALSE' } }, out: B };
+      case 'Index': {
+        const li = this.listItem(e, ctx);
+        if (!li) throw new Unsupported('index');
+        const kind = listKind(li.v.type);
+        return { json: { type: 'bk_list_get_' + kind, fields: { LIST: { id: li.v.id } }, inputs: { INDEX: this.slot(li.index, N, ctx, 0) } }, out: KIND_CHECK[kind] };
+      }
       case 'Ident': {
         const entry = this.lookup(e.name, ctx);
         if (!entry || entry.kind === 'raw') throw new Unsupported('name');
@@ -1847,6 +2219,11 @@ class Importer {
             return { json: { type: 'bk_random_color' }, out: C };
           }
         }
+        if (name === 'makeColorRGB' && e.args.length === 3) {
+          const lit = x => (x = stripParens(x), x.kind === 'Num' && !x.isFloat && !x.unsigned && !x.long && x.value <= 255 && x.raw === String(x.value) ? x.value : null);
+          const mix = e.args.map(lit);
+          if (mix.every(x => x !== null)) return { json: colorBlock(mix.join(',')), out: C };
+        }
         const def = CALL_BY_FN.get(name);
         if (def && def[5]) return { json: this.callBlock(null, def, e.args, ctx), out: def[5] };
         const p = this.procs.get(name);
@@ -1861,6 +2238,14 @@ class Importer {
   macroExpr(name, node, ctx) {
     if (COLOR_NAMES.has(name)) return { json: colorBlock(name), out: C };
     if (name === 'FACE_COUNT') return { json: numBlock(6), out: N };
+    if (name === 'COUNT_OF') {
+      // ((sizeof(x)/sizeof(x[0])))
+      const div = stripParens(node);
+      const arg = div && div.kind === 'Binary' && div.op === '/' && div.l.kind === 'SizeofExpr' ? stripParens(div.l.arg) : null;
+      const entry = arg && arg.kind === 'Ident' ? this.lookup(arg.name, ctx) : null;
+      if (entry && entry.kind === 'var' && isList(entry.v.type)) return { json: { type: 'bk_list_length', fields: { LIST: { id: entry.v.id } } }, out: N };
+      throw new Unsupported('COUNT_OF');
+    }
     const e = stripParens(node);
     const arg = x => stripParens(x);
     if ((name === 'min' || name === 'max') && e.kind === 'Cond' && e.test.kind === 'Binary') {
@@ -1992,6 +2377,7 @@ function toolbox() {
         block('bk_and_or'), block('bk_not'), block('bk_bool'),
       ]),
       { kind: 'category', name: 'Variables', categorystyle: 'bk_variables', custom: 'BK_VARIABLES' },
+      { kind: 'category', name: 'Lists', categorystyle: 'bk_lists', custom: 'BK_LISTS' },
       { kind: 'category', name: 'Functions', categorystyle: 'bk_functions', custom: 'BK_FUNCTIONS' },
       cat('C code', 'code', [block('bk_c_stmt'), block('bk_c_expr'), block('bk_c_wrap'), block('bk_c_top')]),
     ],
@@ -2029,6 +2415,59 @@ function variablesFlyout(ws) {
     items.push({ kind: 'block', type: 'bk_timer_done', fields: { TIMER: { id: timers[0].getId() } } });
   }
   return items;
+}
+
+function listsFlyout(ws) {
+  const lists = ws.getVariableMap().getAllVariables().filter(v => isList(v.type)).sort((a, b) => a.name.localeCompare(b.name));
+  const items = [
+    heading('Lists'),
+    { kind: 'button', text: 'Make a number list', callbackkey: 'BK_LIST_int[]' },
+    { kind: 'button', text: 'Make a true/false list', callbackkey: 'BK_LIST_bool[]' },
+    { kind: 'button', text: 'Make a color list', callbackkey: 'BK_LIST_Color[]' },
+  ];
+  if (!lists.length) return items;
+  const ref = v => ({ LIST: { id: v.getId() } });
+  const index = { INDEX: { shadow: numBlock(0) } };
+  items.push({ kind: 'sep', gap: 24 });
+  items.push({ kind: 'block', type: 'bk_list_decl', fields: { ...ref(lists[0]), COUNT: LIST_SIZE } });
+  items.push({ kind: 'block', type: 'bk_list_init', fields: ref(lists[0]), extraState: { items: 3, kind: listKind(lists[0].type) } });
+  for (const kind of ['num', 'bool', 'color']) {
+    const of = lists.filter(v => listKind(v.type) === kind);
+    if (!of.length) continue;
+    items.push({ kind: 'sep', gap: 24 });
+    for (const v of of) items.push({ kind: 'block', type: 'bk_list_get_' + kind, fields: ref(v), inputs: index, gap: 8 });
+    items.push({ kind: 'sep', gap: 16 });
+    const value = kind === 'num' ? { VALUE: { shadow: numBlock(0) } } : kind === 'color' ? { VALUE: { shadow: colorBlock('RED') } } : {};
+    items.push({ kind: 'block', type: 'bk_list_set_' + kind, fields: ref(of[0]), inputs: { ...index, ...value } });
+    if (kind === 'num') items.push({ kind: 'block', type: 'bk_list_change', fields: ref(of[0]), inputs: { ...index, DELTA: { shadow: numBlock(1) } } });
+  }
+  items.push({ kind: 'sep', gap: 24 }, { kind: 'block', type: 'bk_list_length', fields: ref(lists[0]) });
+  return items;
+}
+
+// "Make a … list": name it, then put a block that sets it up on the workspace
+function makeList(Blockly, ws, type) {
+  const title = Blockly.Msg.NEW_VARIABLE_TITLE;
+  Blockly.Msg.NEW_VARIABLE_TITLE = 'New list name:';
+  try {
+    Blockly.Variables.createVariableButtonHandler(ws, name => placeListSetup(Blockly, ws, name && ws.getVariableMap().getVariable(name, type)), type);
+  } finally {
+    Blockly.Msg.NEW_VARIABLE_TITLE = title;
+  }
+}
+function placeListSetup(Blockly, ws, v) {
+  if (!v) return;
+  Blockly.Events.setGroup(true);
+  try {
+    // made from JSON with the list already chosen, so no default variable gets created
+    const b = Blockly.serialization.blocks.append({ type: 'bk_list_decl', fields: { LIST: { id: v.getId() }, COUNT: LIST_SIZE } }, ws);
+    const view = ws.getMetricsManager().getViewMetrics(true);
+    const flyout = ws.getFlyout && ws.getFlyout();
+    const left = flyout && flyout.isVisible() ? flyout.getWidth() / ws.scale : 0;
+    b.moveBy(view.left + left + 32, view.top + 32);
+  } finally {
+    Blockly.Events.setGroup(false);
+  }
 }
 
 function functionsFlyout(Blockly, ws) {
@@ -2072,9 +2511,55 @@ function openCodeDialog(host, title, value, onSave) {
   ta.focus();
 }
 
+// Blockly's prompts (naming a variable, renaming, "delete 3 uses?") as in-page dialogs: the browser's
+// own prompt() and confirm() are blocked in some embedded browsers
+function openAsk(message, value, done) {
+  const B = globalThis.Blockly;
+  const ws = B && B.getMainWorkspace && B.getMainWorkspace();
+  const host = (ws && ws.getInjectionDiv && ws.getInjectionDiv().parentElement) || document.body;
+  const wrap = document.createElement('div');
+  wrap.className = 'bk-dialog';
+  const asking = typeof value === 'string';
+  const cancel = done.length > 0;
+  wrap.innerHTML = `<div class="bk-dialog-card bk-dialog-small" role="dialog">
+    <div class="bk-dialog-title bk-dialog-message"></div>
+    ${asking ? '<input class="bk-dialog-input" spellcheck="false" autocapitalize="off" autocomplete="off">' : ''}
+    <div class="bk-dialog-actions"><span class="bk-dialog-hint"></span>
+      ${cancel ? '<button type="button" class="bk-btn" data-act="cancel">Cancel</button>' : ''}
+      <button type="button" class="bk-btn bk-btn-primary" data-act="ok">OK</button></div></div>`;
+  wrap.querySelector('.bk-dialog-message').textContent = message;
+  const input = wrap.querySelector('input');
+  if (input) input.value = value;
+  let finished = false;
+  const finish = ok => {
+    if (finished) return;
+    finished = true;
+    wrap.remove();
+    done(ok ? (input ? input.value : true) : null);
+  };
+  wrap.addEventListener('click', e => {
+    const act = e.target.dataset && e.target.dataset.act;
+    if (act === 'ok') finish(true);
+    else if (act === 'cancel' || (e.target === wrap && cancel)) finish(false);
+  });
+  wrap.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+    else if (e.key === 'Escape') { e.preventDefault(); finish(!cancel); }
+  });
+  host.appendChild(wrap);
+  (input || wrap.querySelector('.bk-btn-primary')).focus();
+  if (input) input.select();
+}
+
 function installUi(Blockly) {
   if (installUi.done) return;
   installUi.done = true;
+
+  if (Blockly.dialog && Blockly.dialog.setPrompt) {
+    Blockly.dialog.setPrompt((message, value, callback) => openAsk(message, String(value ?? ''), v => callback(v)));
+    Blockly.dialog.setConfirm((message, callback) => openAsk(message, null, v => callback(v === true)));
+    Blockly.dialog.setAlert((message, callback) => openAsk(message, null, () => callback && callback()));
+  }
 
   // Toolbox rows: a colored dot and the name, instead of a colored stripe
   class Category extends Blockly.ToolboxCategory {
@@ -2145,6 +2630,10 @@ export async function createBlocksEditor(container, { onChange } = {}) {
     animateFlyout(ws.getToolbox()?.getFlyout());
     ws.registerToolboxCategoryCallback('BK_VARIABLES', variablesFlyout);
     ws.registerToolboxCategoryCallback('BK_FUNCTIONS', w => functionsFlyout(Blockly, w));
+    ws.registerToolboxCategoryCallback('BK_LISTS', listsFlyout);
+    for (const type of ['int[]', 'bool[]', 'Color[]']) {
+      ws.registerButtonCallback('BK_LIST_' + type, btn => makeList(Blockly, btn.getTargetWorkspace(), type));
+    }
     for (const type of ['int', 'bool', 'Color', 'Timer']) {
       ws.registerButtonCallback('BK_MAKE_' + type, btn => Blockly.Variables.createVariableButtonHandler(btn.getTargetWorkspace(), null, type));
     }
