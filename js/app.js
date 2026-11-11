@@ -315,6 +315,7 @@ function buildExamples() {
       b.innerHTML = `<span class="t"></span><span class="b"></span>`;
       b.querySelector('.t').textContent = ex.title;
       b.querySelector('.b').textContent = ex.blurb || ex.file.split('/').pop();
+      if (ex.about) b.title = `${ex.about}\n\n${ex.players} ${ex.players === '1' ? 'player' : 'players'} · ${ex.time}`;
       b.addEventListener('click', () => { closePopovers(); openExample(ex); });
       sec.append(b);
     }
