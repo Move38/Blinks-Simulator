@@ -83,12 +83,28 @@
 .bk-host .blocklyScrollbarBackground { fill: none; }
 .bk-host .blocklyZoom > image, .bk-host .blocklyZoom > svg > image { opacity: .5; filter: invert(1); }
 .bk-host .blocklyZoom > image:hover, .bk-host .blocklyZoom > svg > image:hover { opacity: .85; }
-.bk-host .blocklyTrash image { filter: invert(1); opacity: .45; }
+/* the trash can is our own drawing (trashCanArt): Blockly's pictures and fading are hidden */
+.bk-host .blocklyTrash image { display: none; }
+.bk-host .blocklyTrash.bkCan { opacity: 1 !important; cursor: pointer; }
+.bk-host .bkCanArt * { transition: fill .15s, stroke .15s; vector-effect: non-scaling-stroke; }
+.bk-host .bkCanShell, .bk-host .bkCanLidShape { fill: rgba(238, 233, 245, .16); stroke: transparent; stroke-width: 1.6px; stroke-linejoin: round; }
+.bk-host .bkCanRibs { fill: none; stroke: rgba(20, 17, 27, .35); stroke-width: 1.6px; stroke-linecap: round; }
+.bk-host .bkCanBody { transform-box: fill-box; transform-origin: 50% 100%; }
+.bk-host .bkCanFlames { fill: #ff8a3d; stroke: none; opacity: 0; transform-box: fill-box; transform-origin: 50% 100%; }
+.bk-host .bkCanLidPop { transform-box: fill-box; transform-origin: 0% 100%; }
+/* pointed at, or a block dragged over it: outlined */
+.bk-host .bkCan:hover .bkCanShell, .bk-host .bkCan:hover .bkCanLidShape,
+.bk-host .bkCanOpen .bkCanShell, .bk-host .bkCanOpen .bkCanLidShape { fill: rgba(238, 233, 245, .06); stroke: rgba(238, 233, 245, .85); }
+.bk-host .bkCan:hover .bkCanRibs, .bk-host .bkCanOpen .bkCanRibs { stroke: rgba(238, 233, 245, .55); }
+.bk-host .bkCanOpen .bkCanShell, .bk-host .bkCanOpen .bkCanLidShape { stroke: var(--bk-accent); }
 
 /* Code text */
 .bk-host .bkMono.blocklyText,
 .bk-host text.bkMono { font-family: var(--bk-mono); font-weight: 500; }
 .bk-host .bkCodeTitle.blocklyText { fill-opacity: .7; font-size: 11px; }
+/* Typing in a block's text box keeps it the white box it was (the page's dark color scheme would
+   otherwise make it dark) */
+.blocklyWidgetDiv .blocklyHtmlInput { color-scheme: light; background: #fff; color: #575e75; }
 .blocklyWidgetDiv .blocklyHtmlInput.bkMono { font-family: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace; }
 
 /* Comments on blocks and on the workspace */
@@ -99,11 +115,79 @@
   color: var(--bk-text);
   font: 13px/1.4 Figtree, system-ui, sans-serif;
 }
-.bk-host .blocklyComment .blocklyCommentTopbarBackground { fill: #3a3150; }
-.bk-host .blocklyComment .blocklyCommentHighlight { fill: #2f2742; stroke: #4a4060; }
+
+/* The comment icon on blocks: white on a see-through circle, like the + and − buttons */
+.bk-host .blocklyIconGroup .blocklyIconShape { fill: rgba(255, 255, 255, .22); stroke: none; }
+.bk-host .blocklyIconGroup .blocklyIconSymbol { fill: #fff; }
+.bk-host .blocklyIconGroup:hover .blocklyIconShape { fill: rgba(255, 255, 255, .36); }
+.bk-host .blocklyIconGroup { opacity: 1; }
+
+/* A function input's − sits on the corner of its name while the name is being edited, in the
+   orange-red of the selected block's outline (the WidgetDiv is outside .bk-host, so no --bk-accent) */
+.blocklyWidgetDiv .bkInputRemove {
+  position: absolute; top: -9px; right: -9px; width: 20px; height: 20px; padding: 0; box-sizing: border-box;
+  display: grid; place-items: center; border: 0; border-radius: 50%;
+  background: #FA4616; cursor: pointer; box-shadow: 0 2px 6px rgba(0, 0, 0, .35);
+  transition: transform .15s cubic-bezier(.34, 1.56, .64, 1);
+  animation: bkInputRemoveIn .22s cubic-bezier(.34, 1.56, .64, 1);
+}
+.blocklyWidgetDiv .bkInputRemove::before { content: ''; width: 8px; height: 2px; border-radius: 1px; background: #fff; }
+.blocklyWidgetDiv .bkInputRemove:hover { transform: scale(1.2); }
+@keyframes bkInputRemoveIn { from { transform: scale(.4); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .blocklyWidgetDiv .bkInputRemove { animation: none; transition: none; } }
+
+/* A comment's pop-up: a dark panel like the menus and tooltips, instead of the block's color */
+.bk-host .blocklyBubble .blocklyEmboss { filter: drop-shadow(0 8px 18px rgba(0, 0, 0, .4)); }
+.bk-host .blocklyBubble .blocklyDraggable { fill: #2a2337; stroke: #3a3149; stroke-width: 1px; rx: 10px; ry: 10px; }
+.bk-host .blocklyBubble .blocklyBubbleTail { fill: #2a2337; stroke: #3a3149; stroke-width: 1px; }
+/* the text's corners nest inside the panel's: 10px less the 6px border */
+.bk-host .blocklyTextInputBubble .blocklyTextarea {
+  border: 0;
+  border-radius: 4px;
+  outline: none;
+  padding: 4px 6px;
+  resize: none;
+}
+.bk-host .blocklyTextInputBubble .blocklyTextarea::placeholder { color: var(--bk-muted); }
+/* the page's body style would paint square corners behind the text area */
+.bk-host .blocklyBubble .blocklyMinimalBody { background: transparent; }
+/* the resize corner sits inside the text area, not on the border */
+.bk-host .blocklyBubble .blocklyResizeHandle { filter: invert(1); opacity: .35; transform: translate(-8px, -8px); }
+.bk-host .blocklyBubble .blocklyResizeHandle:hover { opacity: .6; }
+/* a grip tab on the top edge, shown on hover, to drag the comment by */
+.bk-host .bkBubbleGrip { opacity: 0; transition: opacity .15s; cursor: grab; }
+.bk-host .blocklyTextInputBubble:hover .bkBubbleGrip,
+.bk-host .blocklyTextInputBubble.bkHeld .bkBubbleGrip { opacity: 1; }
+.bk-host .bkBubbleGrip rect:first-child { fill: #3a3149; stroke: #4a4060; stroke-width: 1px; }
+.bk-host .bkBubbleGrip circle { fill: var(--bk-muted); pointer-events: none; }
+/* Workspace comments (the notes at the top of a sketch) are windows like a block's comment: a dark
+   panel with the text in a rounded inset. The collapse and delete buttons show on hover. */
+.bk-host .blocklyComment .blocklyCommentHighlight { fill: #2a2337; stroke: #3a3149; stroke-width: 1px; rx: 10px; ry: 10px; filter: drop-shadow(0 8px 18px rgba(0, 0, 0, .4)); }
+.bk-host .blocklyComment.blocklySelected .blocklyCommentHighlight { stroke: var(--bk-accent); stroke-width: 2px; }
+.bk-host .blocklyComment .blocklyCommentTopbarBackground { fill: transparent; }
+/* collapsed, the window is just its top bar */
+.bk-host .blocklyComment.blocklyCollapsed .blocklyCommentHighlight { display: none; }
+.bk-host .blocklyComment.blocklyCollapsed .blocklyCommentTopbarBackground { fill: #2a2337; stroke: #3a3149; stroke-width: 1px; rx: 10px; ry: 10px; filter: drop-shadow(0 8px 18px rgba(0, 0, 0, .4)); }
+.bk-host .blocklyComment.blocklyCollapsed.blocklySelected .blocklyCommentTopbarBackground { stroke: var(--bk-accent); stroke-width: 2px; }
+/* with room around the title: a taller bar (Blockly centers the arrow, title and buttons in it) */
+.bk-host .blocklyComment.blocklyCollapsed .blocklyCommentTopbarBackground { height: 36px; }
+.bk-host .blocklyComment.blocklyCollapsed .blocklyFoldoutIcon { transform-origin: 18px 18px; }
+.bk-host .blocklyComment.blocklyCollapsed .blocklyCommentPreview { fill: var(--bk-text); font-weight: 600; }
+/* the grip sits out the collapse and expand slide */
+.bk-host .blocklyComment.bkSliding > .bkBubbleGrip { display: none; }
+.bk-host .bkCommentPage { display: none; fill: none; stroke: var(--bk-muted); stroke-width: 1.2px; stroke-linejoin: round; stroke-linecap: round; }
+.bk-host .blocklyComment.blocklyCollapsed .bkCommentPage { display: inline; }
 .bk-host .blocklyComment .blocklyCommentPreview { fill: var(--bk-muted); }
 .bk-host .blocklyComment .blocklyFoldoutIcon,
-.bk-host .blocklyComment .blocklyDeleteIcon { filter: invert(1); opacity: .6; }
+.bk-host .blocklyComment .blocklyDeleteIcon { filter: invert(1); opacity: 0; transition: opacity .15s; }
+.bk-host .blocklyComment:hover .blocklyFoldoutIcon,
+.bk-host .blocklyComment:hover .blocklyDeleteIcon,
+.bk-host .blocklyComment.blocklyCollapsed .blocklyFoldoutIcon { opacity: .6; }
+.bk-host .blocklyComment .blocklyMinimalBody { background: transparent; padding: 0 6px 6px; box-sizing: border-box; }
+.bk-host .blocklyComment .blocklyTextarea { border: 0; border-radius: 4px; padding: 6px 8px; overflow: hidden; resize: none; }
+.bk-host .blocklyComment .blocklyResizeHandle { filter: invert(1); opacity: .35; transform: translate(-8px, -8px); }
+.bk-host .blocklyComment:hover .bkBubbleGrip,
+.bk-host .blocklyComment.bkHeld .bkBubbleGrip { opacity: 1; }
 
 /* Menus, tooltips and dropdowns live outside the host */
 .blocklyTooltipDiv {
@@ -115,6 +199,9 @@
   font: 13px/1.4 Figtree, system-ui, sans-serif !important;
   padding: 6px 10px !important;
   max-width: 280px;
+  /* the text wraps here, at the box's width (registerIcons keeps Blockly from breaking it into
+     50-letter lines first); line breaks a tooltip asks for stay */
+  white-space: pre-line;
 }
 .blocklyWidgetDiv .blocklyMenu,
 .blocklyDropDownDiv .blocklyMenu {
@@ -259,6 +346,8 @@
 .bk-btn:hover { background: rgba(255, 255, 255, .06); }
 .bk-btn-primary { background: var(--bk-accent); border-color: var(--bk-accent); color: #fff; }
 .bk-btn-primary:hover { background: #ff5a2e; }
+.bk-btn-danger { color: #ff8a95; border-color: rgba(255, 93, 108, .35); }
+.bk-btn-danger:hover { background: rgba(255, 93, 108, .15); }
 
 @media (max-width: 600px) {
   .bk-host .blocklyToolbox { min-width: 0; padding: 8px 4px; }
@@ -266,3 +355,66 @@
   .bk-host .blocklyToolboxCategoryLabel { font-size: 12px; }
   .bk-dialog-hint { display: none; }
 }
+
+/* the line between an enum's name and its names */
+.bk-host .bkDivider { fill: rgba(255, 255, 255, .35); }
+
+/* the minimap in the top right corner of the block editor */
+.bk-host .bk-minimap {
+  position: absolute; top: 12px; right: 14px; z-index: 5;
+  padding: 0; border-radius: 10px; overflow: hidden;
+  background: rgba(29, 24, 39, .88); border: 1px solid #3a3149;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, .35);
+  opacity: .8; transition: opacity .15s;
+}
+.bk-host .bk-minimap:hover, .bk-host .bk-minimap.dragging { opacity: 1; }
+.bk-host .bk-minimap canvas { display: block; cursor: pointer; touch-action: none; }
+.bk-host .bk-minimap.dragging canvas { cursor: grabbing; }
+
+/* zoom in, zoom out and home, in a row under the minimap and as wide (or in the corner without it) */
+.bk-host .bk-nav {
+  position: absolute; right: 14px; top: 12px; z-index: 5;
+  display: flex; justify-content: space-around; gap: 2px; padding: 4px;
+  border-radius: 13px; background: rgba(29, 24, 39, .88); border: 1px solid #3a3149;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, .35);
+}
+.bk-host.bk-has-minimap .bk-nav { top: 190px; width: 130px; box-sizing: border-box; }   /* below the minimap's 170px and a gap */
+.bk-host .bk-nav button {
+  width: 32px; height: 32px; display: grid; place-items: center; border: 0; padding: 0;
+  background: transparent; border-radius: 9px; color: var(--bk-muted); cursor: pointer;
+}
+.bk-host .bk-nav button:hover { background: #2a2337; color: var(--bk-text); }
+.bk-host .bk-nav svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+/* a disabled block is ghostly too (the blocks inside it are disabled with it: they don't fade twice) */
+.bk-host .blocklyDisabled { opacity: .3; }
+.bk-host .blocklyDisabled .blocklyDisabled { opacity: 1; }
+
+/* the trash drawer along the bottom: what's in it is ghostly */
+/* (Blockly sets the theme's flyout color as an inline style) */
+.bk-host .bkTrashDrawer .blocklyFlyoutBackground { fill: #2a2337 !important; fill-opacity: .98 !important; stroke: #3a3149; stroke-width: 1px; }
+.bk-host .bkTrashDrawer .blocklyBlockCanvas > g:not(.blocklyFlyoutLabel) { opacity: .3; }
+.bk-host .bkTrashLabel .blocklyFlyoutLabelText { fill: var(--bk-muted); font-weight: 600; }
+.bk-host .bkTrashEmpty { cursor: pointer; }
+.bk-host .bkTrashEmpty rect { fill: rgba(255, 255, 255, .08); }
+.bk-host .bkTrashEmpty text { fill: var(--bk-muted); font: 600 12px Figtree, system-ui, sans-serif; }
+.bk-host .bkTrashEmpty:hover rect { fill: rgba(255, 93, 108, .2); }
+.bk-host .bkTrashEmpty:hover text { fill: #ff8a95; }
+.bk-host .bkTrashFire path { stroke-width: 1.4px; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.bk-host .bkFireCan { fill: rgba(238, 233, 245, .5); stroke: none; }
+.bk-host .bkFireFlames { fill: #ff8a3d; stroke: none; }
+.bk-host .bkTrashEmpty:hover .bkFireCan { fill: #ff8a95; }
+.bk-host .bkTrashClose { cursor: pointer; }
+.bk-host .bkTrashClose circle { fill: rgba(255, 255, 255, .08); }
+.bk-host .bkTrashClose path { fill: none; stroke: var(--bk-muted); stroke-width: 1.8px; stroke-linecap: round; }
+.bk-host .bkTrashClose:hover circle { fill: rgba(255, 255, 255, .16); }
+.bk-host .bkTrashClose:hover path { stroke: var(--bk-text); }
+
+/* the pencil beside a variable in a drawer, shown on hover */
+.bk-host .bkVarPencil { opacity: 0; transition: opacity .12s; cursor: pointer; }
+.bk-host g:hover > .bkVarPencil, .bk-host .bkVarPencil:focus { opacity: 1; }
+.bk-host .bkPencilBridge { fill: transparent; }
+.bk-host .bkPencilDot { fill: rgba(255, 255, 255, .1); }
+.bk-host .bkVarPencil path { fill: none; stroke: var(--bk-muted); stroke-width: 1.5px; stroke-linecap: round; stroke-linejoin: round; }
+.bk-host .bkVarPencil:hover .bkPencilDot { fill: rgba(255, 255, 255, .2); }
+.bk-host .bkVarPencil:hover path { stroke: var(--bk-text); }

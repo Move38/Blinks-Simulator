@@ -250,6 +250,16 @@ function showNote(text) {
   close.onclick = () => { note.hidden = true; };
   note.append(span, close);
   note.hidden = false;
+  // along the bottom of the editor, clear of the block categories on the left and the trash can on
+  // the right
+  requestAnimationFrame(() => {
+    const blocks = $('#blocks');
+    const box = note.parentElement.getBoundingClientRect();
+    const at = sel => (!blocks.hidden && blocks.querySelector(sel)?.getBoundingClientRect()) || null;
+    const toolbox = at('.blocklyToolbox'), controls = [at('.blocklyTrash')].filter(r => r && r.width);
+    note.style.left = 12 + (toolbox ? toolbox.right - box.left : 0) + 'px';
+    note.style.right = 12 + (controls.length ? box.right - Math.min(...controls.map(r => r.left)) : 0) + 'px';
+  });
 }
 
 document.querySelectorAll('.seg [data-view]').forEach(b => b.addEventListener('click', () => setView(b.dataset.view)));
@@ -679,11 +689,42 @@ $('#splitter').addEventListener('pointerdown', e => {
 
 // ---------------- inspector (hover a Blink) ----------------
 const insp = $('#inspector');
-let inspAt = 0, inspFor = null;
+let inspAt = 0, inspFor = null, inspLeaving = null;
+const calm = () => matchMedia('(prefers-reduced-motion: reduce)').matches || !insp.animate;
+// it grows out of the Blink with a little bounce, and shrinks back into it
+const inspOrigin = () => `var(--caret, 50%) ${insp.classList.contains('below') ? 'top' : 'bottom'}`;
+function inspectorIn() {
+  if (calm()) return;
+  insp.style.transformOrigin = inspOrigin();
+  insp.animate([{ opacity: 0, transform: 'scale(.6)' }, { opacity: 1, offset: 0.4 }, { opacity: 1, transform: 'scale(1)' }],
+    { duration: 300, easing: 'cubic-bezier(.34, 1.56, .64, 1)' });
+}
+function inspectorOut() {
+  if (insp.hidden || inspLeaving) return;
+  if (calm()) { insp.hidden = true; inspFor = null; return; }
+  insp.style.transformOrigin = inspOrigin();
+  const anim = inspLeaving = insp.animate([{ opacity: 1, transform: 'scale(1)' }, { opacity: 0, transform: 'scale(.7)' }],
+    { duration: 140, easing: 'cubic-bezier(.4, 0, 1, 1)', fill: 'forwards' });
+  anim.finished.then(() => {
+    if (inspLeaving !== anim) return;   // shown again before it finished
+    inspLeaving = null;
+    insp.hidden = true;
+    inspFor = null;
+    anim.cancel();
+  }, () => {});
+}
 function updateInspector(now) {
   const b = state.debug === 'tooltip' ? board.hover : null;
-  if (!b || board.dragging || !world.blinks.includes(b)) { insp.hidden = true; inspFor = null; return; }
-  if (b === inspFor && now - inspAt < 120) { placeInspector(b); return; }
+  if (!b || board.dragging || !world.blinks.includes(b)) {
+    inspectorOut();
+    // it follows its Blink while it shrinks away
+    if (inspLeaving && inspFor && world.blinks.includes(inspFor)) placeInspector(inspFor);
+    return;
+  }
+  // a new Blink, or the same one again while the card was leaving: it bounces in
+  const fresh = b !== inspFor || insp.hidden || inspLeaving;
+  if (inspLeaving) { inspLeaving.cancel(); inspLeaving = null; }
+  if (!fresh && now - inspAt < 120) { placeInspector(b); return; }
   inspAt = now;
   inspFor = b;
   const quiet = isQuiet(b);
@@ -699,6 +740,7 @@ function updateInspector(now) {
     ${b.error ? `<div class="err">${b.error.message.replace(/[<>&]/g, '')}</div>` : ''}`;
   insp.hidden = false;
   placeInspector(b);
+  if (fresh) inspectorIn();
 }
 // Float the card above the Blink with its caret pointing down at it (below, if there's no room above)
 function placeInspector(b) {
