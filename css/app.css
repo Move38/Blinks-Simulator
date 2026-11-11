@@ -231,6 +231,20 @@ li.CodeMirror-hint-active .sig { color: rgba(255,255,255,.8); }
 .ex-group button:hover, .ex-group button:focus-visible { background: var(--panel-2); }
 .ex-group .t { display: block; font-weight: 600; font-size: 13.5px; }
 .ex-group .b { display: block; color: var(--muted); font-size: 12px; }
+.ex-note { margin: -2px 0 6px; color: var(--muted); font-size: 12px; line-height: 1.4; }
+.ex-foot { grid-column: 1 / -1; display: flex; justify-content: flex-end; border-top: 1px solid var(--line); margin-top: 8px; padding-top: 10px; }
+dialog.github { max-width: 560px; }
+.gh-hint { margin: 0 0 14px; }
+.gh-row { display: flex; gap: 8px; }
+.gh-url { flex: 1; min-width: 0; height: 36px; padding: 0 12px; background: var(--bg); color: var(--text); border: 1px solid var(--line-2); border-radius: 10px; font: 13px var(--f-mono); }
+.gh-url:focus { outline: none; border-color: var(--blinks); }
+.gh-status { min-height: 18px; margin: 12px 0 6px; color: var(--muted); font-size: 13px; }
+.gh-status.err { color: #ffc2c8; }
+.gh-list { max-height: min(320px, 45vh); overflow-y: auto; display: grid; gap: 2px; margin: 0 -8px; scrollbar-width: thin; }
+.gh-list button { text-align: left; border: 0; background: none; padding: 7px 10px; border-radius: 8px; cursor: pointer; }
+.gh-list button:hover, .gh-list button:focus-visible { background: var(--panel-2); }
+.gh-list .t { display: block; font-weight: 600; font-size: 13.5px; }
+.gh-list .b { display: block; color: var(--muted); font: 11.5px var(--f-mono); }
 
 .toast { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%); z-index: 200; background: var(--panel-3); border: 1px solid var(--line-2); padding: 9px 16px; border-radius: 99px; font-weight: 600; font-size: 13px; box-shadow: 0 12px 30px rgba(0,0,0,.5); }
 

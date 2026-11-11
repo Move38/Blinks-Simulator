@@ -9,6 +9,7 @@ import { Board, LAYOUTS, nextCell } from './ui/board.js';
 import { createCodeEditor } from './ui/editor.js';
 import { Console } from './ui/console.js';
 import { EXAMPLES, STARTER } from './examples.js';
+import { parseGitHub, repoFiles, sketchesIn, loadSketch as loadFromGitHub, GitHubError } from './github.js';
 
 const $ = s => document.querySelector(s);
 const STORE = 'blinks.playground.v2';
@@ -302,6 +303,12 @@ function buildExamples() {
     const h = document.createElement('h3');
     h.textContent = g.group;
     sec.append(h);
+    if (g.note) {
+      const note = document.createElement('p');
+      note.className = 'ex-note';
+      note.textContent = g.note;
+      sec.append(note);
+    }
     for (const ex of g.items) {
       const b = document.createElement('button');
       b.type = 'button';
@@ -313,6 +320,11 @@ function buildExamples() {
     }
     pop.append(sec);
   }
+  const foot = document.createElement('div');
+  foot.className = 'ex-foot';
+  foot.innerHTML = '<button type="button" class="btn ghost">Open from GitHub…</button>';
+  foot.querySelector('button').addEventListener('click', openGitHub);
+  pop.append(foot);
 }
 buildExamples();
 $('#examplesBtn').addEventListener('click', e => {
@@ -393,6 +405,8 @@ $('#menuPop').addEventListener('click', async e => {
     loadSketch(STARTER, 'My sketch', null);
   } else if (a === 'open') {
     $('#fileInput').click();
+  } else if (a === 'github') {
+    openGitHub();
   } else if (a === 'download') {
     const blob = new Blob([state.code], { type: 'text/plain' });
     const link = document.createElement('a');
@@ -426,6 +440,74 @@ document.addEventListener('drop', async e => {
   if (!await replaceOk(f.name)) return;
   loadSketch(text, f.name.replace(/\.\w+$/, ''), null);
 });
+
+// ---------------- open from GitHub ----------------
+const GH_KEY = 'blinks.playground.github';
+function openGitHub() {
+  closePopovers();
+  const d = $('#githubDialog');
+  d.innerHTML = `<form class="gh" autocomplete="off">
+    <button type="button" class="btn icon ghost close" aria-label="Close"><svg viewBox="0 0 20 20"><path d="M5 5l10 10M15 5 5 15" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg></button>
+    <h2>Open from GitHub</h2>
+    <p class="gh-hint">Paste a link to a public repository, a folder in one, or a .ino file.</p>
+    <div class="gh-row"><input class="gh-url" type="text" spellcheck="false" autocapitalize="off" placeholder="github.com/owner/repository" aria-label="GitHub link"><button class="btn primary gh-go" type="submit">Open</button></div>
+    <div class="gh-status" role="status"></div>
+    <div class="gh-list"></div>
+  </form>`;
+  const input = d.querySelector('.gh-url'), status = d.querySelector('.gh-status'), list = d.querySelector('.gh-list');
+  try { input.value = localStorage.getItem(GH_KEY) || ''; } catch (e) { /* storage blocked: fine */ }
+  const say = (text, err) => { status.textContent = text; status.classList.toggle('err', !!err); };
+  d.querySelector('.close').onclick = () => d.close();
+  d.onclick = e => { if (e.target === d) d.close(); };
+  let latest = 0;
+  const open = async (g, path, paths) => {
+    say(`Loading ${path}…`);
+    const s = await loadFromGitHub(g, path, paths);
+    d.close();
+    if (!await replaceOk(`“${s.name}” from GitHub`)) return;
+    loadSketch(s.code, s.name, null);
+    con.add('info', `Opened ${s.url}`);
+    if (s.combined.length) con.add('info', `Combined with ${s.combined.join(', ')} into one sketch, the way Arduino builds a sketch folder.`);
+    toast(`Opened ${s.name} from GitHub`);
+  };
+  d.querySelector('form').onsubmit = async e => {
+    e.preventDefault();
+    list.replaceChildren();
+    const g = parseGitHub(input.value);
+    if (!g) { say('That doesn’t look like a GitHub link. Try github.com/owner/repository.', true); return; }
+    try { localStorage.setItem(GH_KEY, input.value.trim()); } catch (err) { /* fine */ }
+    const run = ++latest;
+    say('Looking on GitHub…');
+    try {
+      // the whole file list lets a sketch bring its other tabs and headers along
+      let files = null;
+      try { files = await repoFiles(g); } catch (err) { if (!g.file) throw err; }
+      if (run !== latest) return;
+      const at = { ...g, ref: (files && files.ref) || g.ref };
+      if (g.file) { await open(at, g.path, files && files.paths); return; }
+      const found = sketchesIn(files.paths, g.path, g.repo);
+      if (!found.length) { say(`No .ino sketches ${g.path ? 'in that folder' : 'in that repository'}.`, true); return; }
+      if (found.length === 1) { await open(at, found[0], files.paths); return; }
+      say(`${found.length} sketches${files.truncated ? ' (the repository is large, so some may be missing)' : ''}. Pick one:`);
+      for (const path of found) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.innerHTML = '<span class="t"></span><span class="b"></span>';
+        b.querySelector('.t').textContent = path.split('/').pop().replace(/\.ino$/i, '');
+        b.querySelector('.b').textContent = path;
+        b.onclick = () => open(at, path, files.paths).catch(err => say(err instanceof GitHubError ? err.message : 'Couldn’t open that sketch.', true));
+        list.append(b);
+      }
+    } catch (err) {
+      if (run !== latest) return;
+      if (!(err instanceof GitHubError)) console.error(err);
+      say(err instanceof GitHubError ? err.message : 'Couldn’t open that from GitHub.', true);
+    }
+  };
+  d.showModal();
+  input.focus();
+  input.select();
+}
 
 // ---------------- share links ----------------
 async function shareLink() {

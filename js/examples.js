@@ -1,6 +1,6 @@
 /*
  * The example sketches shown in the Examples menu.
- * layout: which arrangement of Blinks to set up when the example opens.
+ * note: a line under the group's heading. layout: which arrangement of Blinks to set up when the example opens.
  */
 
 export const EXAMPLES = [
@@ -19,12 +19,12 @@ export const EXAMPLES = [
     ],
   },
   {
-    group: 'Blinks Arcade', items: [
-      { file: 'arcade/OrbitLock.ino', title: 'Orbit Lock', blurb: 'Press when the comet hits gold', layout: 'pair' },
-      { file: 'arcade/Parrot.ino', title: 'Parrot', blurb: 'Repeat a growing sequence', layout: 'pair' },
-      { file: 'arcade/HexBrew.ino', title: 'Hex Brew', blurb: 'Mix the potion', layout: 'trio' },
-      { file: 'arcade/HighNoon.ino', title: 'High Noon', blurb: 'Fastest draw wins', layout: 'pair' },
-      { file: 'arcade/Ricochet.ino', title: 'Ricochet', blurb: 'Return the ball', layout: 'pair' },
+    group: 'One-Blink games', note: 'Each plays on a single Blink. Touch more together to play with friends.', items: [
+      { file: 'arcade/OrbitLock.ino', title: 'Orbit Lock', blurb: 'Press when the comet hits gold', layout: 'solo' },
+      { file: 'arcade/Parrot.ino', title: 'Parrot', blurb: 'Repeat a growing sequence', layout: 'solo' },
+      { file: 'arcade/HexBrew.ino', title: 'Hex Brew', blurb: 'Mix the potion', layout: 'solo' },
+      { file: 'arcade/HighNoon.ino', title: 'High Noon', blurb: 'Fastest draw wins', layout: 'solo' },
+      { file: 'arcade/Ricochet.ino', title: 'Ricochet', blurb: 'Return the ball', layout: 'solo' },
       { file: 'arcade/Spill.ino', title: 'Spill', blurb: 'Flood all six faces', layout: 'solo' },
       { file: 'arcade/Safecracker.ino', title: 'Safecracker', blurb: 'Find the hidden color', layout: 'solo' },
       { file: 'arcade/Fireflies.ino', title: 'Fireflies', blurb: 'Lights Out on a ring of six', layout: 'solo' },
