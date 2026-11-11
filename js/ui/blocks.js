@@ -95,6 +95,12 @@ const TYPE_EXAMPLES = {
   Color: [['RED', null, '#ff3b30'], ['GREEN', null, '#30d158'], ['BLUE', null, '#2f6bff'], ['OFF', null, '#1a1622']],
   Timer: [['1000 ms'], ['600 ms'], ['200 ms'], ['0', 'done!']],
 };
+// How much memory a value of each type takes on a Blink (bytes)
+const TYPE_BYTES = { byte: 1, char: 1, int8_t: 1, bool: 1, int: 2, word: 2, '': 2, Color: 2, long: 4, 'unsigned long': 4, float: 4, Timer: 4 };
+const typeInfo = type => {
+  const n = TYPE_BYTES[type];
+  return (TYPE_INFO[type] || 'a value') + (n ? `, in ${n} byte${n === 1 ? '' : 's'}` : '');
+};
 const aType = type => (/^[aeiou]/i.test(type) ? 'An ' : 'A ') + type;
 const FLOAT_WARNING = 'Floats use a lot of memory on a Blink: float math adds a big chunk of code to your game, and each float takes 4 bytes. It\'s slow too. Use whole numbers when you can.';
 const LOCAL_TYPES = { num: NUM_TYPES.filter(Boolean).map(localType), bool: ['bool' + LOCAL_TAG], color: ['Color' + LOCAL_TAG] };
@@ -462,7 +468,7 @@ function defineFields(Blockly) {
       if (!this.pill_) return;
       const v = this.getVariable();
       const local = !!(v && isLocalType(v.type));
-      if (v) this.setTooltip(`${v.name}: a ${local ? 'local' : 'global'} ${cType(v.type)}${cType(v.type) === 'bool' ? ' (boolean)' : ''}, holding ${TYPE_INFO[baseType(v.type)] || 'a value'}.`);
+      if (v) this.setTooltip(`${v.name}: a ${local ? 'local' : 'global'} ${cType(v.type)}${cType(v.type) === 'bool' ? ' (boolean)' : ''}, holding ${typeInfo(baseType(v.type))}.`);
       this.pill_.style.display = local ? '' : 'none';
       if (!local) return;
       // make room for the pill between the box's edge and the name
@@ -531,7 +537,7 @@ function changeVariableType(Blockly, ws, v) {
   const form = wrap.querySelector('form');
   form.querySelector('.bk-dialog-message').textContent = `What kind of number is ${v.name}?`;
   const hint = wrap.querySelector('.bk-type-hint');
-  const sync = () => { hint.textContent = `${aType(form.elements.numtype.value)} holds ${TYPE_INFO[form.elements.numtype.value]}.`; };
+  const sync = () => { hint.textContent = `${aType(form.elements.numtype.value)} holds ${typeInfo(form.elements.numtype.value)}.`; };
   sync();
   form.addEventListener('change', sync);
   const stop = typeExamples(form, () => form.elements.numtype.value);
@@ -588,12 +594,12 @@ function typeExamples(form, chosen) {
     label.textContent = type === 'bool' ? 'bool (boolean)' : type;
     let i = 0, shown = '';
     note.textContent = '';
-    // as wide as its widest value or note, so it holds still while they change; it grows taller
-    // (upward, above the choice) when a note shows
+    // as wide as its widest value, so it holds still while they change; a note wraps under the
+    // number, and the tooltip grows taller (upward, above the choice) while one shows
     tip.hidden = false;
     tip.style.width = '';
-    const widest = Math.max(measure(label, label.textContent), ...frames.map(f => measure(value, f[0]) + (f[2] ? 18 : 0)), ...frames.map(f => (f[1] ? measure(note, f[1]) : 0)));
-    tip.style.width = Math.ceil(widest + 24) + 'px';
+    const widest = Math.max(measure(label, label.textContent), ...frames.map(f => measure(value, f[0]) + (f[2] ? 18 : 0)));
+    tip.style.width = Math.max(110, Math.ceil(widest + 24)) + 'px';
     const place = () => {
       const card = form.getBoundingClientRect(), at = anchor.getBoundingClientRect(), w = tip.offsetWidth, h = tip.offsetHeight;
       const left = Math.max(8, Math.min(card.width - w - 8, at.left - card.left + at.width / 2 - w / 2));
@@ -671,7 +677,7 @@ function rollDigits(from, to, still) {
 // The number types as a segmented choice
 function numberTypeChoices(selected) {
   return `<div class="bk-seg bk-seg-wrap" role="radiogroup" aria-label="Number type">${NUMBER_TYPES.map(t =>
-    `<label title="${TYPE_INFO[t]}"><input type="radio" name="numtype" value="${t}"${t === selected ? ' checked' : ''}><span>${t}</span></label>`).join('')}</div>`;
+    `<label><input type="radio" name="numtype" value="${t}"${t === selected ? ' checked' : ''}><span>${t}</span></label>`).join('')}</div>`;
 }
 
 // The names enum blocks (kind 'enum') or define blocks (kind 'define') make, for a name dropdown
@@ -3351,7 +3357,7 @@ function makeVariable(Blockly, ws) {
     if (timer) form.elements.scope.value = 'global';
     form.querySelector('.bk-number-types').hidden = kind !== 'num';
     const type = kind === 'num' ? form.elements.numtype.value : kind;
-    const holds = `${aType(type)}${type === 'bool' ? ' (boolean)' : ''} holds ${TYPE_INFO[type]}. `;
+    const holds = `${aType(type)}${type === 'bool' ? ' (boolean)' : ''} holds ${typeInfo(type)}. `;
     hint.textContent = holds + (form.elements.scope.value === 'local'
       ? 'Local: belongs to the event or function where it\'s set, and starts fresh each time it runs.'
       : 'Global: every event and function shares it, and it keeps its value.');

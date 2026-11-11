@@ -237,7 +237,7 @@
 .bk-dig-out { position: absolute; left: 0; top: 0; animation: bk-dig-out .5s cubic-bezier(.4, 0, .2, 1) both; }
 @keyframes bk-dig-in { from { transform: translateY(100%); opacity: 0; } }
 @keyframes bk-dig-out { to { transform: translateY(-100%); opacity: 0; } }
-.bk-ex-note { font: 600 11.5px/16px Figtree, system-ui, sans-serif; color: var(--bk-accent); white-space: nowrap; }
+.bk-ex-note { font: 600 11.5px/15px Figtree, system-ui, sans-serif; color: var(--bk-accent); text-align: right; text-wrap: balance; }
 .bk-ex-note:empty { display: none; }
 .bk-ex-note.in { animation: bk-note .35s ease-out; }
 @keyframes bk-note { from { opacity: 0; transform: translateX(-4px); } }
