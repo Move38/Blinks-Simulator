@@ -74,6 +74,29 @@ const localType = type => baseType(type) + LOCAL_TAG;
 const kindOf = type => { type = baseType(type); return isList(type) ? 'list' : type === 'bool' ? 'bool' : type === 'Color' ? 'color' : type === 'Timer' ? 'timer' : type === 'face' ? 'face' : 'num'; };
 // the global and local variable types of each kind of variable block
 const KIND_TYPES = { num: NUM_TYPES, bool: ['bool'], color: ['Color'] };
+// The number types a variable can have, in the order they're offered, and what each one holds
+const NUMBER_TYPES = ['byte', 'int', 'word', 'long', 'unsigned long', 'float'];
+const TYPE_INFO = {
+  byte: 'whole numbers from 0 to 255', int: 'whole numbers from -32,768 to 32,767', word: 'whole numbers from 0 to 65,535 (unsigned int)',
+  long: 'whole numbers from about -2.1 to 2.1 billion', 'unsigned long': 'whole numbers from 0 to about 4.3 billion, like millis()',
+  float: 'numbers with decimals, like 0.5', char: 'whole numbers from -128 to 127', int8_t: 'whole numbers from -128 to 127',
+  '': 'whole numbers (int)', bool: 'true or false', Color: 'a color, like RED', Timer: 'a countdown in milliseconds',
+};
+// Example values each type plays in the variable dialogs: [value, note, swatch color]. A note stays
+// for the values after it while it's still true, until another note replaces it or the loop restarts.
+const TYPE_EXAMPLES = {
+  byte: [['253'], ['254'], ['255'], ['0', 'wrapped around to 0'], ['1']],
+  int: [['32,766'], ['32,767'], ['-32,768', 'wrapped around to negative'], ['-32,767']],
+  word: [['65,534'], ['65,535'], ['0', 'wrapped around to 0'], ['1']],
+  long: [['30,000'], ['40,000', 'too big for an int'], ['1,000,000'], ['2,000,000,000']],
+  'unsigned long': [['0'], ['1,000', 'a second of millis()'], ['60,000', 'a minute'], ['3,600,000', 'an hour']],
+  float: [['0.25'], ['0.5'], ['0.75'], ['1.5'], ['3.14']],
+  bool: [['true'], ['false']],
+  Color: [['RED', null, '#ff3b30'], ['GREEN', null, '#30d158'], ['BLUE', null, '#2f6bff'], ['OFF', null, '#1a1622']],
+  Timer: [['1000 ms'], ['600 ms'], ['200 ms'], ['0', 'done!']],
+};
+const aType = type => (/^[aeiou]/i.test(type) ? 'An ' : 'A ') + type;
+const FLOAT_WARNING = 'Floats use a lot of memory on a Blink: float math adds a big chunk of code to your game, and each float takes 4 bytes. It\'s slow too. Use whole numbers when you can.';
 const LOCAL_TYPES = { num: NUM_TYPES.filter(Boolean).map(localType), bool: ['bool' + LOCAL_TAG], color: ['Color' + LOCAL_TAG] };
 const listKind = type => kindOf(itemType(type));
 const LIST_TYPES = { num: NUM_TYPES.filter(Boolean).map(t => t + '[]'), bool: ['bool[]'], color: ['Color[]'] };
@@ -401,7 +424,7 @@ function defineFields(Blockly) {
 
   // A variable dropdown that marks a local variable with a "local" pill just before its name, inside
   // the box, and in its menu, where local variables come first
-  const PILL_W = 34, PILL_H = 15, PILL_GAP = 5;
+  const PILL_W = 34, PILL_H = 15, PILL_GAP = 5, CHANGE_TYPE = 'BK_CHANGE_TYPE';
   class FieldScopedVariable extends Blockly.FieldVariable {
     constructor(name, validator, types, defaultType, config) {
       super(name, validator, types, defaultType, config);
@@ -414,8 +437,16 @@ function defineFields(Blockly) {
           (v ? vars : rest).push(v ? [o, v] : o);
         }
         vars.sort((x, y) => isLocalType(y[1].type) - isLocalType(x[1].type) || x[1].name.localeCompare(y[1].name));
-        return [...vars.map(([o, v]) => (isLocalType(v.type) ? [localLabel(v.name), o[1]] : o)), ...rest];
+        // a number variable can change its type: before Blockly's rename and delete
+        const v = this.getVariable();
+        if (v && kindOf(v.type) === 'num' && baseType(v.type) !== '') rest.unshift(['Change type…', CHANGE_TYPE]);
+        return [...vars.map(([o, v]) => [varLabel(v), o[1]]), ...rest];
       };
+    }
+    onItemSelected_(menu, item) {
+      if (item.getValue() !== CHANGE_TYPE) return super.onItemSelected_(menu, item);
+      const v = this.getVariable();
+      if (v) changeVariableType(Blockly, this.getSourceBlock().workspace, v);
     }
     static fromJson(o) { return new FieldScopedVariable(o.variable, undefined, o.variableTypes, o.defaultType, o); }
     getText_() { const v = this.getVariable(); return v ? v.name : super.getText_(); }
@@ -431,6 +462,7 @@ function defineFields(Blockly) {
       if (!this.pill_) return;
       const v = this.getVariable();
       const local = !!(v && isLocalType(v.type));
+      if (v) this.setTooltip(`${v.name}: a ${local ? 'local' : 'global'} ${cType(v.type)}${cType(v.type) === 'bool' ? ' (boolean)' : ''}, holding ${TYPE_INFO[baseType(v.type)] || 'a value'}.`);
       this.pill_.style.display = local ? '' : 'none';
       if (!local) return;
       // make room for the pill between the box's edge and the name
@@ -460,18 +492,186 @@ function defineFields(Blockly) {
   defineFields.FieldCodeLines = FieldCodeLines;
 }
 
-// A menu label for a local variable: a "local" pill and its name (the menu sits outside the editor,
-// so it's styled here)
-function localLabel(name) {
+// A variable's menu label: a "local" pill for a local one, its name, and its C type for a number
+// (the menu sits outside the editor, so it's styled here)
+function varLabel(v) {
   const el = document.createElement('span');
   el.className = 'bkMenuVar';
   el.style.cssText = 'display:inline-flex;align-items:center;gap:6px';
-  const pill = document.createElement('span');
-  pill.textContent = 'local';
-  pill.style.cssText = 'font:700 10px Figtree,system-ui,sans-serif;padding:1px 6px;border-radius:8px;background:rgba(0,0,0,.28);color:#fff';
-  el.append(pill, document.createTextNode(name));
-  el.setAttribute('aria-label', name + ' (local)');
+  if (isLocalType(v.type)) {
+    const pill = document.createElement('span');
+    pill.textContent = 'local';
+    pill.style.cssText = 'font:700 10px Figtree,system-ui,sans-serif;padding:1px 6px;border-radius:8px;background:rgba(0,0,0,.28);color:#fff';
+    el.append(pill);
+  }
+  el.append(document.createTextNode(v.name));
+  {
+    const type = document.createElement('span');
+    type.textContent = cType(v.type);
+    type.style.cssText = 'opacity:.55;font:500 11px "JetBrains Mono",monospace';
+    el.append(type);
+  }
+  el.setAttribute('aria-label', `${v.name}, ${isLocalType(v.type) ? 'local' : 'global'} ${cType(v.type)}`);
   return el;
+}
+
+// "Change type…": pick another number type for a variable (it keeps its scope)
+function changeVariableType(Blockly, ws, v) {
+  const host = ws.getInjectionDiv().parentElement;
+  const wrap = document.createElement('div');
+  wrap.className = 'bk-dialog';
+  wrap.innerHTML = `<form class="bk-dialog-card bk-dialog-small bk-make-var" role="dialog" autocomplete="off">
+    <div class="bk-dialog-title bk-dialog-message"></div>
+    ${numberTypeChoices(baseType(v.type))}
+    ${exampleRow}
+    <div class="bk-dialog-hint bk-type-hint"></div>
+    <div class="bk-dialog-actions"><span class="bk-dialog-hint"></span>
+      <button type="button" class="bk-btn" data-act="cancel">Cancel</button>
+      <button type="submit" class="bk-btn bk-btn-primary">Change</button></div></form>`;
+  const form = wrap.querySelector('form');
+  form.querySelector('.bk-dialog-message').textContent = `What kind of number is ${v.name}?`;
+  const hint = wrap.querySelector('.bk-type-hint');
+  const sync = () => { hint.textContent = `${aType(form.elements.numtype.value)} holds ${TYPE_INFO[form.elements.numtype.value]}.`; };
+  sync();
+  form.addEventListener('change', sync);
+  const stop = typeExamples(form, () => form.elements.numtype.value);
+  const close = () => { stop(); wrap.remove(); };
+  wrap.addEventListener('click', e => { if (e.target === wrap || e.target.dataset.act === 'cancel') close(); });
+  wrap.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); close(); } });
+  form.addEventListener('submit', e => {
+    e.preventDefault();
+    const type = isLocalType(v.type) ? localType(form.elements.numtype.value) : form.elements.numtype.value;
+    close();
+    if (type === v.type) return;
+    Blockly.Events.setGroup(true);
+    try { ws.getVariableMap().changeVariableType(v, type); } finally { Blockly.Events.setGroup(false); }
+    // redraw the blocks that show it (their tooltips and menus)
+    for (const b of ws.getAllBlocks(false)) for (const input of b.inputList) for (const f of input.fieldRow) if (f.getValue && f.getValue() === v.getId() && f.forceRerender) f.forceRerender();
+  });
+  host.appendChild(wrap);
+  setTimeout(() => form.querySelector('input:checked').focus(), 0);
+}
+
+// The examples tooltip and float warning of a variable dialog. Hovering a choice (or moving to it with
+// the keyboard) pops up a tooltip over it with example values that change; `chosen()` names the type
+// picked now, for the float warning. Returns a function that stops it.
+function typeExamples(form, chosen) {
+  const warn = form.querySelector('.bk-warn');
+  const tip = document.createElement('div');
+  tip.className = 'bk-tip';
+  tip.setAttribute('role', 'tooltip');
+  tip.innerHTML = '<div class="bk-tip-type"></div><div class="bk-ex-val"></div><div class="bk-ex-note"></div>';
+  tip.hidden = true;
+  form.append(tip);
+  const [label, value, note] = ['.bk-tip-type', '.bk-ex-val', '.bk-ex-note'].map(q => tip.querySelector(q));
+  // the width of a text set in one of the tooltip's parts
+  const measure = (part, text) => {
+    const m = document.createElement('span');
+    m.className = part.className;
+    m.style.cssText = 'position:absolute;visibility:hidden;display:inline-block;white-space:nowrap;width:auto;animation:none';
+    m.textContent = text;
+    tip.append(m);
+    const w = m.getBoundingClientRect().width;
+    m.remove();
+    return w;
+  };
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let timer = 0, over = null;
+  const show = (type, anchor) => {
+    clearInterval(timer);
+    over = anchor;
+    // numbers sit at the right; with decimals, their points line up (figure spaces are digit-wide blanks)
+    const numeric = x => /^[-\d,.]+$/.test(x);
+    const places = x => (x.includes('.') ? x.length - x.indexOf('.') : 0);
+    const decimals = Math.max(0, ...(TYPE_EXAMPLES[type] || []).filter(f => numeric(f[0])).map(f => places(f[0])));
+    const frames = (TYPE_EXAMPLES[type] || []).map(([v, ...rest]) => [numeric(v) && decimals ? v + '\u2007'.repeat(decimals - places(v)) : v, ...rest]);
+    label.textContent = type === 'bool' ? 'bool (boolean)' : type;
+    let i = 0, shown = '';
+    note.textContent = '';
+    // as wide as its widest value or note, so it holds still while they change; it grows taller
+    // (upward, above the choice) when a note shows
+    tip.hidden = false;
+    tip.style.width = '';
+    const widest = Math.max(measure(label, label.textContent), ...frames.map(f => measure(value, f[0]) + (f[2] ? 18 : 0)), ...frames.map(f => (f[1] ? measure(note, f[1]) : 0)));
+    tip.style.width = Math.ceil(widest + 24) + 'px';
+    const place = () => {
+      const card = form.getBoundingClientRect(), at = anchor.getBoundingClientRect(), w = tip.offsetWidth, h = tip.offsetHeight;
+      const left = Math.max(8, Math.min(card.width - w - 8, at.left - card.left + at.width / 2 - w / 2));
+      tip.style.left = left + 'px';
+      tip.style.top = (at.top - card.top - h - 8) + 'px';
+      tip.style.setProperty('--arrow', (at.left - card.left + at.width / 2 - left) + 'px');
+    };
+    const step = () => {
+      const [v, n, color] = frames[i % frames.length] || [''];
+      value.replaceChildren();
+      if (color) { const dot = document.createElement('i'); dot.style.background = color; value.append(dot); }
+      value.append(rollDigits(shown, v, still));
+      shown = v;
+      const text = n || (i % frames.length ? note.textContent : '');
+      if (text !== note.textContent) {
+        note.textContent = text;
+        note.classList.remove('in'); void note.offsetWidth; note.classList.add('in');
+      }
+      i++;
+      if (!tip.hidden) place();
+    };
+    tip.hidden = true;
+    step();
+    if (!still && frames.length > 1) timer = setInterval(step, 1300);
+    tip.hidden = false;
+    place();
+    tip.classList.remove('in'); void tip.offsetWidth; tip.classList.add('in');
+  };
+  const hide = anchor => {
+    if (anchor && anchor !== over) return;
+    clearInterval(timer);
+    over = null;
+    tip.hidden = true;
+  };
+  const typeOf = input => (input.name === 'kind' ? (input.value === 'num' ? form.elements.numtype.value : input.value) : input.value);
+  for (const l of form.querySelectorAll('label')) {
+    const input = l.querySelector('input[name="numtype"], input[name="kind"]');
+    if (!input) continue;
+    l.addEventListener('mouseenter', () => show(typeOf(input), l));
+    l.addEventListener('mouseleave', () => hide(l));
+    input.addEventListener('focus', () => { if (input.matches(':focus-visible')) show(typeOf(input), l); });
+    input.addEventListener('blur', () => hide(l));
+  }
+  const warning = () => { warn.hidden = chosen() !== 'float'; };
+  form.addEventListener('change', warning);
+  warning();
+  return () => clearInterval(timer);
+}
+const exampleRow = `<div class="bk-warn" hidden>${FLOAT_WARNING}</div>`;
+
+// A value whose changed characters roll like an odometer: each old digit slides up and out as the new
+// one rises in (rightmost first). Numbers line up from the right; a word changes as a whole.
+function rollDigits(from, to, still) {
+  const out = document.createElement('span');
+  out.className = 'bk-digits';
+  const numeric = x => /^[-\d,.\u2007]+$/.test(x);
+  const cell = (a, b, delay) => {
+    const c = document.createElement('span');
+    c.className = 'bk-dig';
+    if (a === b || still || !from) { c.textContent = b; return c; }
+    if (a) { const o = document.createElement('span'); o.className = 'bk-dig-out'; o.textContent = a; o.style.animationDelay = delay + 'ms'; c.append(o); }
+    const n = document.createElement('span');
+    n.className = 'bk-dig-in';
+    n.textContent = b || '\u200b';
+    n.style.animationDelay = delay + 'ms';
+    c.append(n);
+    return c;
+  };
+  if (!(numeric(from) && numeric(to))) { out.append(cell(from, to, 0)); return out; }
+  const w = Math.max(from.length, to.length), a = from.padStart(w), b = to.padStart(w);
+  for (let k = 0; k < w; k++) if (a[k] !== ' ' || b[k] !== ' ') out.append(cell(a[k].replace(' ', ''), b[k].replace(' ', ''), (w - 1 - k) * 45));
+  return out;
+}
+
+// The number types as a segmented choice
+function numberTypeChoices(selected) {
+  return `<div class="bk-seg bk-seg-wrap" role="radiogroup" aria-label="Number type">${NUMBER_TYPES.map(t =>
+    `<label title="${TYPE_INFO[t]}"><input type="radio" name="numtype" value="${t}"${t === selected ? ' checked' : ''}><span>${t}</span></label>`).join('')}</div>`;
 }
 
 // The names enum blocks (kind 'enum') or define blocks (kind 'define') make, for a name dropdown
@@ -3129,11 +3329,13 @@ function makeVariable(Blockly, ws) {
     <div class="bk-dialog-title bk-dialog-message">Make a variable</div>
     <input class="bk-dialog-input" name="name" placeholder="name" spellcheck="false" autocapitalize="off">
     <div class="bk-seg" role="radiogroup" aria-label="It holds">
-      <label><input type="radio" name="kind" value="int" checked><span>number</span></label>
+      <label><input type="radio" name="kind" value="num" checked><span>number</span></label>
       <label><input type="radio" name="kind" value="bool"><span>true/false</span></label>
       <label><input type="radio" name="kind" value="Color"><span>color</span></label>
       <label><input type="radio" name="kind" value="Timer"><span>timer</span></label>
     </div>
+    <div class="bk-number-types">${numberTypeChoices('int')}</div>
+    ${exampleRow}
     <div class="bk-seg" role="radiogroup" aria-label="Scope">
       <label><input type="radio" name="scope" value="global" checked><span>global</span></label>
       <label><input type="radio" name="scope" value="local"><span>local</span></label>
@@ -3144,22 +3346,26 @@ function makeVariable(Blockly, ws) {
       <button type="submit" class="bk-btn bk-btn-primary">Make</button></div></form>`;
   const form = wrap.querySelector('form'), name = form.elements.name, err = wrap.querySelector('.bk-make-err'), hint = wrap.querySelector('.bk-scope-hint');
   const sync = () => {
-    const timer = form.elements.kind.value === 'Timer';
+    const kind = form.elements.kind.value, timer = kind === 'Timer';
     form.querySelector('input[value="local"]').disabled = timer;
     if (timer) form.elements.scope.value = 'global';
-    hint.textContent = form.elements.scope.value === 'local'
+    form.querySelector('.bk-number-types').hidden = kind !== 'num';
+    const type = kind === 'num' ? form.elements.numtype.value : kind;
+    const holds = `${aType(type)}${type === 'bool' ? ' (boolean)' : ''} holds ${TYPE_INFO[type]}. `;
+    hint.textContent = holds + (form.elements.scope.value === 'local'
       ? 'Local: belongs to the event or function where it\'s set, and starts fresh each time it runs.'
-      : 'Global: every event and function shares it, and it keeps its value.';
+      : 'Global: every event and function shares it, and it keeps its value.');
   };
   sync();
   form.addEventListener('change', sync);
-  const close = () => wrap.remove();
+  const stop = typeExamples(form, () => (form.elements.kind.value === 'num' ? form.elements.numtype.value : form.elements.kind.value));
+  const close = () => { stop(); wrap.remove(); };
   wrap.addEventListener('click', e => { if (e.target === wrap || e.target.dataset.act === 'cancel') close(); });
   wrap.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); close(); } });
   form.addEventListener('submit', e => {
     e.preventDefault();
     const text = name.value.trim();
-    const kind = form.elements.kind.value;
+    const kind = form.elements.kind.value === 'num' ? form.elements.numtype.value : form.elements.kind.value;
     const type = form.elements.scope.value === 'local' ? localType(kind) : kind;
     if (!text) { err.textContent = 'Give it a name.'; return; }
     // names are unique among the global variables and among the local ones (a local may share a global's name)
