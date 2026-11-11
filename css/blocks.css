@@ -70,6 +70,11 @@
   font: 600 13px Figtree, system-ui, sans-serif;
 }
 .bk-host .blocklyFlyoutLabelText { fill: var(--bk-muted); font: 600 12px Figtree, system-ui, sans-serif; }
+.bk-host .bkFlyoutSub .blocklyFlyoutLabelText { fill: var(--bk-muted); font-family: Figtree, system-ui, sans-serif !important; font-size: 11px !important; font-weight: 700 !important; letter-spacing: .12em; }
+/* The "local" pill on a local variable's name */
+.bk-host .bkLocalPill rect { fill: rgba(0, 0, 0, .28); }
+.bk-host .bkLocalPill text { fill: #fff !important; font: 700 10px Figtree, system-ui, sans-serif; text-anchor: middle; letter-spacing: .02em; }
+.bk-host .bkRuleLine { fill: rgba(255, 255, 255, .24); }
 .bk-host .bkFlyoutHeading .blocklyFlyoutLabelText { fill: var(--bk-text); font-family: Figtree, system-ui, sans-serif !important; font-size: 15px !important; font-weight: 700 !important; }
 
 /* Scrollbars, zoom, trash */
@@ -124,6 +129,11 @@
 .blocklyWidgetDiv .blocklyContextMenu .blocklyMenuItem { color: #eee9f5; border-radius: 6px; }
 .blocklyWidgetDiv .blocklyContextMenu .blocklyMenuItemHighlight { background: #3a3149; }
 .blocklyWidgetDiv .blocklyContextMenu .blocklyMenuItemDisabled { color: #6e6582; }
+
+/* Bit strips on the Bits blocks */
+.bk-host .bkBitArrow { fill: #fff; font: 700 15px Figtree, system-ui, sans-serif; }
+.bk-host .bkBitZero { fill: rgba(255, 255, 255, .7); font: 700 9px "JetBrains Mono", monospace; text-anchor: middle; }
+.bk-host .bkBitValue { fill: #fff; font: 600 11px "JetBrains Mono", monospace; }
 
 /* Color picker (lives in Blockly's drop-down div, outside .bk-host) */
 .bkPicker { width: 216px; padding: 6px 4px 4px; font: 600 12px Figtree, system-ui, sans-serif; color: #eee9f5; }
@@ -196,6 +206,17 @@
   font: 14px Figtree, system-ui, sans-serif;
 }
 .bk-dialog-input:focus { border-color: var(--bk-accent); }
+/* Make a variable: segmented choices */
+.bk-seg { display: flex; gap: 2px; padding: 3px; background: var(--bk-bg); border: 1px solid var(--bk-line); border-radius: 10px; }
+.bk-seg label { flex: 1; position: relative; }
+.bk-seg input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.bk-seg span { display: block; padding: 6px 4px; border-radius: 7px; text-align: center; font: 600 12.5px Figtree, system-ui, sans-serif; color: var(--bk-muted); }
+.bk-seg input:checked + span { background: var(--bk-panel-2); color: var(--bk-text); box-shadow: 0 1px 3px rgba(0, 0, 0, .3); }
+.bk-seg input:focus-visible + span { outline: 2px solid var(--bk-accent); outline-offset: -2px; }
+.bk-seg input:disabled + span { opacity: .35; }
+.bk-seg input:disabled { cursor: default; }
+.bk-scope-hint { flex: none; min-height: 16px; line-height: 1.4; }
+.bk-make-err { color: #ffb4bd; }
 .bk-dialog-actions { display: flex; align-items: center; gap: 8px; }
 .bk-dialog-hint { flex: 1; font: 12px Figtree, system-ui, sans-serif; color: #6e6582; }
 .bk-btn {

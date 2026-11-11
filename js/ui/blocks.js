@@ -26,7 +26,7 @@ const HEADER = 'Made with blocks in the Blinks Playground';
 // Category colors: bright, evenly spaced hues that sit well on the dark panel
 const PALETTE = {
   events: '#E3A21F', light: '#F25A1F', button: '#E0559B', neighbors: '#1EAE9B', time: '#8A63E6',
-  control: '#3C89EA', math: '#3BAA63', logic: '#6E9F2E', variables: '#E2524C', lists: '#2FA8D8', functions: '#B65BD0',
+  control: '#3C89EA', math: '#3BAA63', logic: '#6E9F2E', bits: '#5E77D8', variables: '#E2524C', lists: '#2FA8D8', constants: '#B07A57', functions: '#B65BD0',
   code: '#5D5670',
 };
 
@@ -66,15 +66,25 @@ const VAR_TYPE_ORDER = ['bool', 'byte', 'char', 'int8_t', 'int', 'word', 'long',
 // Lists (C arrays) are variables whose type is the item type plus "[]": byte[] is a list of bytes
 const isList = type => typeof type === 'string' && type.endsWith('[]');
 const itemType = type => type.slice(0, -2);
-const kindOf = type => isList(type) ? 'list' : type === 'bool' ? 'bool' : type === 'Color' ? 'color' : type === 'Timer' ? 'timer' : type === 'face' ? 'face' : 'num';
+// A local variable (made inside an event or function) has its C type plus "@local": int@local
+const LOCAL_TAG = '@local';
+const isLocalType = type => typeof type === 'string' && type.endsWith(LOCAL_TAG);
+const baseType = type => (isLocalType(type) ? type.slice(0, -LOCAL_TAG.length) : type);
+const localType = type => baseType(type) + LOCAL_TAG;
+const kindOf = type => { type = baseType(type); return isList(type) ? 'list' : type === 'bool' ? 'bool' : type === 'Color' ? 'color' : type === 'Timer' ? 'timer' : type === 'face' ? 'face' : 'num'; };
+// the global and local variable types of each kind of variable block
+const KIND_TYPES = { num: NUM_TYPES, bool: ['bool'], color: ['Color'] };
+const LOCAL_TYPES = { num: NUM_TYPES.filter(Boolean).map(localType), bool: ['bool' + LOCAL_TAG], color: ['Color' + LOCAL_TAG] };
 const listKind = type => kindOf(itemType(type));
 const LIST_TYPES = { num: NUM_TYPES.filter(Boolean).map(t => t + '[]'), bool: ['bool[]'], color: ['Color[]'] };
 const ALL_LIST_TYPES = [...LIST_TYPES.num, ...LIST_TYPES.bool, ...LIST_TYPES.color];
 const LIST_SIZE = 6;   // a list without a "list … with N items" block gets one item per face
 const LIST_MAX = 64;
-const cType = type => type === '' ? 'int' : type;
+const cType = type => (type === '' ? 'int' : baseType(type));
 const GETTER = { num: 'bk_get_num', bool: 'bk_get_bool', color: 'bk_get_color' };
-const SETTER = { num: 'bk_set_num', bool: 'bk_set_bool', color: 'bk_set_color_var' };
+// One set block for every variable: its value slot follows the kind of variable chosen
+const SETTER = { num: 'bk_set', bool: 'bk_set', color: 'bk_set' };
+const SET_DEFAULT = { num: 0, bool: null, color: 'RED' };
 const KIND_CHECK = { num: 'Number', bool: 'Boolean', color: 'Color' };
 
 // C operator precedence, doubled so the left operand of a left-associative operator can ask for
@@ -134,7 +144,7 @@ const CALL_BY_TYPE = new Map(CALL_BLOCKS.map(d => [d[0], d]));
 const CALL_BY_FN = new Map(CALL_BLOCKS.map(d => [d[3], d]));
 
 // Default shadow values for the inputs the importer fills
-const SHADOW_DEFAULTS = { bk_set_num: 0, bk_set_bool: null, bk_set_color_var: 'RED', bk_change: 1, bk_timer_set: 1000, bk_timer_add: 1000, bk_neighbor: 0, controls_repeat_ext: 10 };
+const SHADOW_DEFAULTS = { bk_change: 1, bk_timer_set: 1000, bk_timer_add: 1000, bk_neighbor: 0, controls_repeat_ext: 10 };
 
 const numBlock = n => ({ type: 'math_number', fields: { NUM: n } });
 const colorBlock = name => ({ type: 'bk_color', fields: { COLOR: name } });
@@ -191,11 +201,29 @@ let installed = null;
 
 function install(Blockly) {
   if (installed) return installed;
+  registerRenderer(Blockly);
   setMessages(Blockly);
   defineFields(Blockly);
   defineBlocks(Blockly);
   installed = { generator: makeGenerator(Blockly) };
   return installed;
+}
+
+// Zelos, with room above each case of a switch after the first: a case row right after the blocks
+// of the case above sits tight against them, and the smallest spacer row would be far too tall
+function registerRenderer(Blockly) {
+  if (!Blockly.zelos || Blockly.registry.hasItem(Blockly.registry.Type.RENDERER, 'bk_zelos')) return;
+  class Info extends Blockly.zelos.RenderInfo {
+    getSpacerRowHeight_(prev, next) {
+      const h = super.getSpacerRowHeight_(prev, next);
+      const laterCase = this.block_.type === 'bk_switch' && next.elements && next.elements.some(e => e.input && /^CASE[1-9]/.test(e.input.name));
+      return laterCase ? h + SWITCH_GAP : h;
+    }
+  }
+  class Renderer extends Blockly.zelos.Renderer {
+    makeRenderInfo_(block) { return new Info(this, block); }
+  }
+  Blockly.blockRendering.register('bk_zelos', Renderer);
 }
 
 function setMessages(Blockly) {
@@ -305,14 +333,167 @@ function defineFields(Blockly) {
     showEditor_() { openColorPicker(Blockly, this); }
   }
 
+  // A dropdown of the names made by enum or define blocks on the workspace. It keeps any name it's
+  // given, so a block can name something that is set up in C code or not made yet.
+  class FieldNameRef extends Blockly.FieldDropdown {
+    constructor(value, kind, config) {
+      super(function () { return nameOptions(this, kind); }, undefined, config);
+      if (value) this.setValue(value);
+    }
+    static fromJson(o) { return new FieldNameRef(o.value, o.kind, o); }
+    getOptions() { return super.getOptions(false); }
+    doClassValidation_(v) { return /^[A-Za-z_]\w*$/.test(String(v)) ? String(v) : null; }
+  }
+
+  // Eight bit cells, bit 7 on the left. `cells(block)` says how each looks: 'on' (a 1 or a bit of
+  // the value), 'off' (a 0), 'fill' (a 0 that a shift moved in), 'skip' (not used here). Shows
+  // where a shift moves bits, or which bits are taken. `editable` makes the cells clickable (a
+  // literal you set bit by bit).
+  class FieldBitStrip extends Blockly.Field {
+    constructor(value, cells, arrow, editable) {
+      super(value ?? 0);
+      this.cells_ = cells;
+      this.arrow_ = arrow;
+      this.SERIALIZABLE = !!editable;
+      this.EDITABLE = !!editable;
+      this.CURSOR = editable ? 'pointer' : 'default';
+    }
+    doClassValidation_(v) { const n = Math.floor(Number(v)); return Number.isFinite(n) ? Math.max(0, Math.min(255, n)) : null; }
+    initView() { this.group_ = Blockly.utils.dom.createSvgElement('g', {}, this.fieldGroup_); }
+    key_() {
+      const b = this.getSourceBlock();
+      return JSON.stringify([b ? this.cells_(b, this.getValue()) : [], this.arrow_ ? this.arrow_(b) : '', this.EDITABLE && this.getValue()]);
+    }
+    render_() {
+      const g = this.group_;
+      if (!g) return;
+      const b = this.getSourceBlock();
+      const cells = b ? this.cells_(b, this.getValue()) : new Array(8).fill('on');
+      const arrow = this.arrow_ && b ? this.arrow_(b) : '';
+      this.lastKey_ = this.key_();
+      while (g.firstChild) g.removeChild(g.firstChild);
+      const W = 10, H = 16, GAP = 2, Y = 3, el = (name, attrs) => Blockly.utils.dom.createSvgElement(name, attrs, g);
+      const fill = { on: '#ffffff', off: 'rgba(255,255,255,.22)', fill: 'rgba(0,0,0,.25)', skip: 'rgba(255,255,255,.1)' };
+      let x = 0;
+      if (arrow === 'left') { el('text', { x: 0, y: Y + 12, class: 'bkBitArrow' }).textContent = '«'; x = 13; }
+      cells.forEach((c, i) => {
+        el('rect', { x, y: Y, width: W, height: H, rx: 2.5, fill: fill[c] || fill.off, stroke: c === 'fill' ? 'rgba(255,255,255,.45)' : 'none', 'stroke-dasharray': c === 'fill' ? '2 1.5' : '' });
+        if (c === 'fill') el('text', { x: x + W / 2, y: Y + 11.5, class: 'bkBitZero' }).textContent = '0';
+        x += W + (i === 3 ? GAP + 3 : GAP);   // a wider gap between the two halves
+      });
+      x -= GAP;
+      if (arrow === 'right') { el('text', { x: x + 3, y: Y + 12, class: 'bkBitArrow' }).textContent = '»'; x += 13; }
+      if (this.EDITABLE) { el('text', { x: x + 6, y: Y + 12, class: 'bkBitValue' }).textContent = '= ' + this.getValue(); x += 6 + 8 * String(this.getValue()).length + 14; }
+      this.size_ = new Blockly.utils.Size(x, H + 2 * Y);
+    }
+    // re-draw when what the cells show has changed
+    refresh_() { if (this.group_ && this.key_() !== this.lastKey_) { this.render_(); const b = this.getSourceBlock(); if (b && b.rendered) b.queueRender(); } }
+    showEditor_(e) {
+      if (!this.EDITABLE || !e) return;
+      const rects = [...this.group_.querySelectorAll('rect')];
+      const hit = rects.findIndex(r => { const bb = r.getBoundingClientRect(); return e.clientX >= bb.left - 1 && e.clientX <= bb.right + 1; });
+      if (hit < 0) return;
+      this.setValue(this.getValue() ^ (1 << (7 - hit)));
+    }
+    getText_() { return (this.getValue() >>> 0).toString(2).padStart(8, '0'); }
+  }
+  defineFields.FieldBitStrip = FieldBitStrip;
+
+  // A variable dropdown that marks a local variable with a "local" pill just before its name, inside
+  // the box, and in its menu, where local variables come first
+  const PILL_W = 34, PILL_H = 15, PILL_GAP = 5;
+  class FieldScopedVariable extends Blockly.FieldVariable {
+    constructor(name, validator, types, defaultType, config) {
+      super(name, validator, types, defaultType, config);
+      this.menuGenerator_ = function () {
+        const options = Blockly.FieldVariable.dropdownCreate.call(this);
+        const map = this.getSourceBlock() && this.getSourceBlock().workspace.getVariableMap();
+        const vars = [], rest = [];
+        for (const o of options) {
+          const v = map && Array.isArray(o) && map.getVariableById(o[1]);
+          (v ? vars : rest).push(v ? [o, v] : o);
+        }
+        vars.sort((x, y) => isLocalType(y[1].type) - isLocalType(x[1].type) || x[1].name.localeCompare(y[1].name));
+        return [...vars.map(([o, v]) => (isLocalType(v.type) ? [localLabel(v.name), o[1]] : o)), ...rest];
+      };
+    }
+    static fromJson(o) { return new FieldScopedVariable(o.variable, undefined, o.variableTypes, o.defaultType, o); }
+    getText_() { const v = this.getVariable(); return v ? v.name : super.getText_(); }
+    initView() {
+      super.initView();
+      this.pill_ = Blockly.utils.dom.createSvgElement('g', { class: 'bkLocalPill' }, this.fieldGroup_);
+      this.pillRect_ = Blockly.utils.dom.createSvgElement('rect', { rx: PILL_H / 2, width: PILL_W, height: PILL_H }, this.pill_);
+      this.pillText_ = Blockly.utils.dom.createSvgElement('text', { x: PILL_W / 2 }, this.pill_);
+      this.pillText_.textContent = 'local';
+    }
+    renderSelectedText() {
+      super.renderSelectedText();
+      if (!this.pill_) return;
+      const v = this.getVariable();
+      const local = !!(v && isLocalType(v.type));
+      this.pill_.style.display = local ? '' : 'none';
+      if (!local) return;
+      // make room for the pill between the box's edge and the name
+      const pad = this.borderRect_ ? this.getConstants().FIELD_BORDER_RECT_X_PADDING : 0, shift = PILL_W + PILL_GAP;
+      const text = this.getTextElement();
+      text.setAttribute('x', Number(text.getAttribute('x') || 0) + shift);
+      const m = this.svgArrow && /translate\(([-\d.]+),\s*([-\d.]+)\)/.exec(this.svgArrow.getAttribute('transform') || '');
+      if (m) this.svgArrow.setAttribute('transform', `translate(${Number(m[1]) + shift},${m[2]})`);
+      const h = this.size_.height;
+      this.pill_.setAttribute('transform', `translate(${pad},${(h - PILL_H) / 2})`);
+      this.pillText_.setAttribute('y', PILL_H / 2 + 3.5);
+      this.size_ = new Blockly.utils.Size(this.size_.width + shift, h);
+    }
+  }
+  defineFields.FieldScopedVariable = FieldScopedVariable;
+
   if (Blockly.registry.hasItem(Blockly.registry.Type.FIELD, 'field_code')) Blockly.fieldRegistry.unregister('field_code');
   Blockly.fieldRegistry.register('field_code', FieldCode);
   if (Blockly.registry.hasItem(Blockly.registry.Type.FIELD, 'field_blink_color')) Blockly.fieldRegistry.unregister('field_blink_color');
   Blockly.fieldRegistry.register('field_blink_color', FieldBlinkColor);
+  if (Blockly.registry.hasItem(Blockly.registry.Type.FIELD, 'field_name_ref')) Blockly.fieldRegistry.unregister('field_name_ref');
+  Blockly.fieldRegistry.register('field_name_ref', FieldNameRef);
+  if (Blockly.registry.hasItem(Blockly.registry.Type.FIELD, 'field_scoped_variable')) Blockly.fieldRegistry.unregister('field_scoped_variable');
+  Blockly.fieldRegistry.register('field_scoped_variable', FieldScopedVariable);
   defineFields.FieldCode = FieldCode;
   defineFields.FieldCodeLine = FieldCodeLine;
   defineFields.FieldCodeLines = FieldCodeLines;
 }
+
+// A menu label for a local variable: a "local" pill and its name (the menu sits outside the editor,
+// so it's styled here)
+function localLabel(name) {
+  const el = document.createElement('span');
+  el.className = 'bkMenuVar';
+  el.style.cssText = 'display:inline-flex;align-items:center;gap:6px';
+  const pill = document.createElement('span');
+  pill.textContent = 'local';
+  pill.style.cssText = 'font:700 10px Figtree,system-ui,sans-serif;padding:1px 6px;border-radius:8px;background:rgba(0,0,0,.28);color:#fff';
+  el.append(pill, document.createTextNode(name));
+  el.setAttribute('aria-label', name + ' (local)');
+  return el;
+}
+
+// The names enum blocks (kind 'enum') or define blocks (kind 'define') make, for a name dropdown
+function nameOptions(field, kind) {
+  const block = field.getSourceBlock();
+  let ws = block && block.workspace;
+  if (ws && ws.targetWorkspace) ws = ws.targetWorkspace;   // in the flyout, list the workspace's names
+  const names = new Set();
+  if (ws) {
+    for (const b of ws.getAllBlocks(false)) {
+      if (kind === 'enum' && b.type === 'bk_enum') b.itemNames_().forEach(n => names.add(n));
+      if (kind === 'define' && b.type === 'bk_define') names.add(b.getFieldValue('NAME'));
+    }
+  }
+  const v = field.getValue && field.getValue();
+  if (v) names.add(v);
+  if (!names.size) names.add(kind === 'enum' ? 'READY' : 'SPEED');
+  return [...names].filter(Boolean).sort().map(n => [n, n]);
+}
+
+// A C name from what someone typed: letters, digits and _ only, not starting with a digit
+const cName = (text, fallback = 'NAME') => String(text ?? '').trim().replace(/\s+/g, '_').replace(/[^A-Za-z0-9_]/g, '').replace(/^(?=\d)/, '_') || fallback;
 
 // The color picker: the named colors, then sliders to mix any color from red, green and blue
 function openColorPicker(Blockly, field) {
@@ -378,8 +559,8 @@ function defineBlocks(Blockly) {
   const timerField = { type: 'field_variable', name: 'TIMER', variable: 'myTimer', variableTypes: ['Timer'], defaultType: 'Timer' };
   const faceField = { type: 'field_variable', name: 'VAR', variable: 'f', variableTypes: ['face'], defaultType: 'face' };
   const varField = kind => ({
-    type: 'field_variable', name: 'VAR', variable: null,
-    variableTypes: kind === 'num' ? NUM_TYPES : kind === 'bool' ? ['bool'] : ['Color'],
+    type: 'field_scoped_variable', name: 'VAR', variable: null,
+    variableTypes: [...KIND_TYPES[kind], ...LOCAL_TYPES[kind]],
     defaultType: kind === 'num' ? 'int' : kind === 'bool' ? 'bool' : 'Color',
   });
   const stmt = { previousStatement: null, nextStatement: null };
@@ -404,6 +585,9 @@ function defineBlocks(Blockly) {
     // Button
     { type: 'bk_button', message0: 'button %1 ?', args0: [{ type: 'field_dropdown', name: 'EVENT', options: BUTTON_STATES }],
       output: B, style: 'bk_button', tooltip: 'Did the button do this since the last time you asked? (Asking clears it, except "held down".)' },
+    { type: 'bk_button_clear', message0: 'clear button %1', args0: [{ type: 'field_dropdown', name: 'EVENT', options: BUTTON_EVENTS }],
+      ...stmt, style: 'bk_button',
+      tooltip: 'Forget this button action if it happened and hasn\'t been asked about yet, so an old click doesn\'t count later (it asks and ignores the answer).' },
 
     // Neighbors
     { type: 'bk_neighbor', message0: 'neighbor on face %1 ?', args0: [val('FACE', N)], output: B, style: 'bk_neighbors',
@@ -431,9 +615,28 @@ function defineBlocks(Blockly) {
       ...stmt, style: 'bk_control', extensions: ['bk_flow_warning'],
       tooltip: 'Leave the loop now, or jump to its next turn.' },
 
+    { type: 'bk_case_or', message0: '%1 or %2', args0: [val('A', [N, 'CaseValues']), val('B', [N, 'CaseValues'])], inputsInline: true,
+      output: 'CaseValues', style: 'bk_control', tooltip: 'Use in a switch case: the case runs for either value.' },
+
+    // Bits
+    { type: 'bk_bitwise', message0: '%1 %2 %3', args0: [val('A', N), { type: 'field_dropdown', name: 'OP',
+      options: [['& (and)', 'AND'], ['| (or)', 'OR'], ['^ (xor)', 'XOR']] }, val('B', N)], inputsInline: true, output: null, style: 'bk_bits',
+      tooltip: 'Works bit by bit: & keeps a 1 where both have a 1, | where either does, ^ where just one does. Use & to test or clear bits and | to set them.' },
+    { type: 'bk_bitnot', message0: '~ %1', args0: [val('A', N)], inputsInline: true, output: N, style: 'bk_bits',
+      tooltip: 'Flips every bit: 1s become 0s and 0s become 1s.' },
+
+    // Constants
+    { type: 'bk_define', message0: 'define %1 as %2', args0: [{ type: 'field_input', name: 'NAME', text: 'SPEED' }, val('VALUE')],
+      inputsInline: true, style: 'bk_constants', extensions: ['bk_c_name'],
+      tooltip: 'A name for a value that never changes (#define). Use the name anywhere the value goes.' },
+    { type: 'bk_define_value', message0: '%1', args0: [{ type: 'field_name_ref', name: 'NAME', kind: 'define', value: 'SPEED' }],
+      output: null, style: 'bk_constants', tooltip: 'The value of a name made with "define".' },
+    { type: 'bk_enum_value', message0: '%1', args0: [{ type: 'field_name_ref', name: 'NAME', kind: 'enum', value: 'READY' }],
+      output: N, style: 'bk_constants', tooltip: 'One of the names in an enum. Each name stands for a different number.' },
+
     // Math
     { type: 'bk_arith', message0: '%1 %2 %3', args0: [val('A', N), { type: 'field_dropdown', name: 'OP',
-      options: [['+', 'ADD'], ['−', 'SUB'], ['×', 'MUL'], ['÷', 'DIV'], ['mod', 'MOD']] }, val('B', N)],
+      options: [['+', 'ADD'], ['−', 'SUB'], ['×', 'MUL'], ['÷', 'DIV'], ['% (mod)', 'MOD']] }, val('B', N)],
       inputsInline: true, output: N, style: 'bk_math',
       tooltip: 'Add, subtract, multiply, divide or take the remainder. Whole numbers give a whole-number answer.' },
     { type: 'bk_minmax', message0: '%1 of %2 and %3', args0: [{ type: 'field_dropdown', name: 'OP', options: [['min', 'min'], ['max', 'max']] },
@@ -441,8 +644,8 @@ function defineBlocks(Blockly) {
 
     // Logic
     { type: 'bk_compare', message0: '%1 %2 %3', args0: [val('A'), { type: 'field_dropdown', name: 'OP',
-      options: [['=', 'EQ'], ['≠', 'NEQ'], ['<', 'LT'], ['≤', 'LTE'], ['>', 'GT'], ['≥', 'GTE']] }, val('B')],
-      inputsInline: true, output: B, style: 'bk_logic', tooltip: 'Compare two values.' },
+      options: [['==', 'EQ'], ['!=', 'NEQ'], ['<', 'LT'], ['<=', 'LTE'], ['>', 'GT'], ['>=', 'GTE']] }, val('B')],
+      inputsInline: true, output: B, style: 'bk_logic', tooltip: 'Compare two values. == asks "are they equal?" and != asks "are they different?" (in C, a single = stores a value instead).' },
     { type: 'bk_and_or', message0: '%1 %2 %3', args0: [val('A', B), { type: 'field_dropdown', name: 'OP', options: [['and', 'AND'], ['or', 'OR']] }, val('B', B)],
       inputsInline: true, output: B, style: 'bk_logic', tooltip: '"and" is true when both are true; "or" when at least one is.' },
     { type: 'bk_not', message0: 'not %1', args0: [val('BOOL', B)], output: B, style: 'bk_logic', tooltip: 'True when the input is false.' },
@@ -450,12 +653,9 @@ function defineBlocks(Blockly) {
       output: B, style: 'bk_logic', tooltip: 'True or false.' },
 
     // Variables
-    ...['num', 'bool', 'color'].flatMap(kind => [
+    ...['num', 'bool', 'color'].map(kind => (
       { type: GETTER[kind], message0: '%1', args0: [varField(kind)], output: KIND_CHECK[kind], style: 'bk_variables',
-        tooltip: 'The value of this variable.' },
-      { type: SETTER[kind], message0: 'set %1 to %2', args0: [varField(kind), val('VALUE', KIND_CHECK[kind])], ...stmt,
-        inputsInline: true, style: 'bk_variables', tooltip: 'Store a value in the variable.' },
-    ]),
+        tooltip: 'The value of this variable. A local one (marked local) belongs to its event or function.' })),
     { type: 'bk_change', message0: 'change %1 by %2', args0: [varField('num'), val('DELTA', N)], ...stmt, inputsInline: true,
       style: 'bk_variables', tooltip: 'Add to the variable (use a negative number to subtract).' },
 
@@ -500,6 +700,218 @@ function defineBlocks(Blockly) {
   Blockly.common.defineBlocksWithJsonArray(defs);
   defineCodeBlocks(Blockly);
   defineListBlocks(Blockly);
+  defineSwitchAndEnum(Blockly);
+  defineBitBlocks(Blockly);
+  defineSetBlock(Blockly);
+}
+
+// switch: a value, cases (each ends by itself, as if with break), and "default" for the rest
+const SWITCH_GAP = 12;  // extra room above each case after the first (see registerRenderer)
+function defineSwitchAndEnum(Blockly) {
+  const fire = (block, before) => Blockly.Events.fire(new (Blockly.Events.get(Blockly.Events.BLOCK_CHANGE))(block, 'mutation', null, before, JSON.stringify(block.saveExtraState())));
+  const buttons = (block, label, onMinus, onPlus) => block.appendDummyInput('TAIL')
+    .appendField(new Blockly.FieldImage(PLUS_MINUS('-'), 18, 18, 'remove the last ' + label, onMinus))
+    .appendField(new Blockly.FieldImage(PLUS_MINUS('+'), 18, 18, 'add a ' + label, onPlus));
+
+  Blockly.Blocks.bk_switch = {
+    init() {
+      this.cases_ = 2;
+      this.appendValueInput('SWITCH').setCheck(N).appendField('switch');
+      this.appendStatementInput('DEFAULT').appendField('default');
+      buttons(this, 'case', () => this.resize_(-1), () => this.resize_(1));
+      this.setPreviousStatement(true);
+      this.setNextStatement(true);
+      this.setStyle('bk_control');
+      this.setTooltip('Runs the blocks of the case that matches the value, or "default" when none does. Each case ends by itself. Use "or" for a case with more than one value.');
+      this.updateShape_();
+    },
+    saveExtraState() { return { cases: this.cases_ }; },
+    loadExtraState(state) {
+      this.cases_ = Math.max(1, Math.min(32, Number(state && state.cases) || 1));
+      this.updateShape_();
+    },
+    resize_(delta) {
+      if (this.isInFlyout) return;
+      const n = Math.max(1, Math.min(32, this.cases_ + delta));
+      if (n === this.cases_) return;
+      const before = JSON.stringify(this.saveExtraState());
+      Blockly.Events.setGroup(true);
+      try {
+        for (let i = n; i < this.cases_; i++) {
+          for (const name of ['CASE' + i, 'DO' + i]) {
+            const t = this.getInputTargetBlock(name);
+            if (t && !t.isShadow()) t.dispose(false);
+          }
+        }
+        this.cases_ = n;
+        this.updateShape_();
+        fire(this, before);
+      } finally {
+        Blockly.Events.setGroup(false);
+      }
+    },
+    updateShape_() {
+      for (let i = this.cases_; this.getInput('CASE' + i); i++) { this.removeInput('CASE' + i); this.removeInput('DO' + i); }
+      for (let i = 0; i < this.cases_; i++) {
+        if (this.getInput('CASE' + i)) continue;
+        const input = this.appendValueInput('CASE' + i).setCheck([N, 'CaseValues']).appendField('case');
+        this.appendStatementInput('DO' + i);
+        this.moveInputBefore('CASE' + i, 'DEFAULT');
+        this.moveInputBefore('DO' + i, 'DEFAULT');
+        input.connection.setShadowState(numBlock(i));
+      }
+    },
+  };
+
+  // enum: names that stand for 0, 1, 2…
+  Blockly.Blocks.bk_enum = {
+    init() {
+      this.items_ = 3;
+      this.appendDummyInput('HEAD').appendField('enum').appendField(new Blockly.FieldTextInput('mode', v => cName(v, '').replace(/^$/, '')), 'NAME');
+      buttons(this, 'name', () => this.resize_(-1), () => this.resize_(1));
+      this.setInputsInline(true);
+      this.setStyle('bk_constants');
+      this.setTooltip('A set of names that stand for 0, 1, 2… Use them with the enum name blocks, in comparisons and switch cases. The enum\'s own name is optional.');
+      this.updateShape_();
+    },
+    itemNames_() {
+      const out = [];
+      for (let i = 0; i < this.items_; i++) { const v = this.getFieldValue('ITEM' + i); if (v) out.push(v); }
+      return out;
+    },
+    saveExtraState() { return { items: this.items_ }; },
+    loadExtraState(state) {
+      this.items_ = Math.max(1, Math.min(32, Number(state && state.items) || 1));
+      this.updateShape_();
+    },
+    resize_(delta) {
+      if (this.isInFlyout) return;
+      const n = Math.max(1, Math.min(32, this.items_ + delta));
+      if (n === this.items_) return;
+      const before = JSON.stringify(this.saveExtraState());
+      Blockly.Events.setGroup(true);
+      try {
+        const names = new Set(this.itemNames_());
+        const old = this.items_;
+        this.items_ = n;
+        this.updateShape_();
+        // each added name is one that isn't taken yet
+        for (let i = old; i < n; i++) {
+          let k = i + 1, name = 'ITEM' + k;
+          while (names.has(name)) name = 'ITEM' + ++k;
+          names.add(name);
+          this.setFieldValue(name, 'ITEM' + i);
+        }
+        fire(this, before);
+      } finally {
+        Blockly.Events.setGroup(false);
+      }
+    },
+    updateShape_() {
+      for (let i = this.items_; this.getInput('ITEM' + i); i++) this.removeInput('ITEM' + i);
+      for (let i = 0; i < this.items_; i++) {
+        if (this.getInput('ITEM' + i)) continue;
+        const f = new Blockly.FieldTextInput(['READY', 'PLAYING', 'DONE'][i] || 'ITEM' + (i + 1), v => cName(v, 'ITEM' + (i + 1)));
+        this.appendDummyInput('ITEM' + i).appendField(f, 'ITEM' + i);
+        this.moveInputBefore('ITEM' + i, 'TAIL');
+      }
+    },
+  };
+}
+
+// set: one block for every variable, global or local. Its value slot takes the kind of value the
+// chosen variable holds (a number, true/false or a color).
+function defineSetBlock(Blockly) {
+  const shadows = { num: numBlock(0), bool: null, color: colorBlock('RED') };
+  Blockly.Blocks.bk_set = {
+    init() {
+      this.kind_ = null;
+      this.appendValueInput('VALUE')
+        .appendField('set')
+        .appendField(new defineFields.FieldScopedVariable(null, id => { this.fit_(id); return id; },
+          [...KIND_TYPES.num, ...LOCAL_TYPES.num, ...KIND_TYPES.bool, ...LOCAL_TYPES.bool, ...KIND_TYPES.color, ...LOCAL_TYPES.color], 'int'), 'VAR')
+        .appendField('to');
+      this.setInputsInline(true);
+      this.setPreviousStatement(true);
+      this.setNextStatement(true);
+      this.setStyle('bk_variables');
+      this.setTooltip('Store a value in the variable. A local variable (marked local) belongs to its event or function: the first time it\'s set there, it\'s made, fresh each time they run.');
+    },
+    fit_(id) {
+      const v = id && this.workspace && this.workspace.getVariableMap().getVariableById(id);
+      const kind = v ? kindOf(v.type) : 'num';
+      if (kind === this.kind_ || !KIND_CHECK[kind]) return;
+      this.kind_ = kind;
+      const input = this.getInput('VALUE'), conn = input.connection;
+      // swap the default before the check, or the old one would be pushed out onto the workspace
+      if (conn.getShadowState()) conn.setShadowState(null);
+      input.setCheck(KIND_CHECK[kind]);
+      if (shadows[kind]) conn.setShadowState(shadows[kind]);
+    },
+  };
+}
+
+// Bits: shifting, taking some bits of a number, and a number set bit by bit
+function defineBitBlocks(Blockly) {
+  const { FieldBitStrip } = defineFields;
+  // the number in an input, if it's a plain number block
+  const known = (block, name) => {
+    const t = block.getInputTargetBlock(name);
+    if (t && t.type === 'math_number') return Math.floor(Number(t.getFieldValue('NUM')));
+    if (t && t.type === 'bk_bits') return t.getFieldValue('BITS');
+    return null;
+  };
+  const watch = function () { this.setOnChange(function () { for (const n of ['STRIP', 'BITS']) { const f = this.getField(n); if (f && f.refresh_) f.refresh_(); } }); };
+
+  Blockly.Blocks.bk_shift = {
+    init() {
+      this.appendValueInput('A').setCheck(N);
+      this.appendValueInput('B').setCheck(N).appendField(new Blockly.FieldDropdown([['<<', 'LEFT'], ['>>', 'RIGHT']]), 'DIR');
+      this.appendDummyInput().appendField(new FieldBitStrip(0, b => {
+        // where the bits end up: the value's bits (exactly, if it's a plain number), and the 0s moved in
+        const n = known(b, 'B'), x = known(b, 'A'), left = b.getFieldValue('DIR') === 'LEFT';
+        return Array.from({ length: 8 }, (_, k) => {
+          const bit = 7 - k;
+          if (n == null || n < 0) return x == null ? 'on' : (x >> bit) & 1 ? 'on' : 'off';
+          const from = left ? bit - n : bit + n;
+          if (from < 0 || from > 7) return 'fill';   // a byte: 0s move in at the ends
+          return x == null ? 'on' : (x >> from) & 1 ? 'on' : 'off';
+        });
+      }, b => (b.getFieldValue('DIR') === 'LEFT' ? 'left' : 'right')), 'STRIP');
+      this.setInputsInline(true);
+      this.setOutput(true, N);
+      this.setStyle('bk_bits');
+      this.setTooltip('Shifts the bits of a number: << moves them left (each step doubles it), >> moves them right (each step halves it). 0s move in at the other end. The strip shows the result.');
+      watch.call(this);
+    },
+  };
+
+  Blockly.Blocks.bk_get_bits = {
+    init() {
+      this.appendValueInput('A').setCheck(N)
+        .appendField('bits').appendField(new Blockly.FieldNumber(0, 0, 15, 1), 'LO')
+        .appendField('to').appendField(new Blockly.FieldNumber(1, 0, 15, 1), 'HI')
+        .appendField('of');
+      this.appendDummyInput().appendField(new FieldBitStrip(0, b => {
+        const lo = Number(b.getFieldValue('LO')), hi = Number(b.getFieldValue('HI'));
+        return Array.from({ length: 8 }, (_, k) => (7 - k >= Math.min(lo, hi) && 7 - k <= Math.max(lo, hi) ? 'on' : 'skip'));
+      }), 'STRIP');
+      this.setInputsInline(true);
+      this.setOutput(true, N);
+      this.setStyle('bk_bits');
+      this.setTooltip('Takes some of the bits of a number (bit 0 is the rightmost) and gives them as a number of their own, like reading one part of a value that packs several together.');
+      watch.call(this);
+    },
+  };
+
+  Blockly.Blocks.bk_bits = {
+    init() {
+      this.appendDummyInput().appendField(new FieldBitStrip(0, (b, v) => Array.from({ length: 8 }, (_, k) => ((v >> (7 - k)) & 1 ? 'on' : 'off')), null, true), 'BITS');
+      this.setOutput(true, N);
+      this.setStyle('bk_bits');
+      this.setTooltip('A number set bit by bit: click a square to turn that bit on or off. Bit 0 is the rightmost (worth 1), bit 7 the leftmost (worth 128).');
+    },
+  };
 }
 
 const PLUS_MINUS = sign => 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(
@@ -644,7 +1056,7 @@ function defineListBlocks(Blockly) {
 
 function registerExtensions(Blockly) {
   const reg = (name, fn) => { if (!Blockly.Extensions.isRegistered(name)) Blockly.Extensions.register(name, fn); };
-  const LOOPS = new Set(['controls_repeat_ext', 'controls_whileUntil', 'bk_for_each_face', 'bk_c_wrap']);
+  const LOOPS = new Set(['controls_repeat_ext', 'controls_whileUntil', 'bk_for_each_face', 'bk_c_wrap', 'bk_switch']);
   const warn = (test, msg) => function () {
     this.setOnChange(function () {
       if (!this.workspace || this.isInFlyout || !this.rendered) return;
@@ -652,6 +1064,11 @@ function registerExtensions(Blockly) {
     });
   };
   const ancestors = function* (b) { for (let p = b.getSurroundParent(); p; p = p.getSurroundParent()) yield p; };
+  // names typed into define blocks stay valid C names
+  reg('bk_c_name', function () {
+    const f = this.getField('NAME');
+    if (f) f.setValidator(v => cName(v, 'SPEED'));
+  });
   reg('bk_flow_warning', warn(b => [...ancestors(b)].some(p => LOOPS.has(p.type)), 'Put this inside a loop.'));
   reg('bk_return_warning', warn(b => [...ancestors(b)].some(p => p.type === 'procedures_defreturn'), 'Use this inside a function that returns a value.'));
   reg('bk_face_warning', warn(b => {
@@ -765,8 +1182,18 @@ function makeGenerator(Blockly) {
   G.orderOverrides = [];
   G.prefixLines = (text, prefix) => text.replace(/^(?=.)/gm, prefix);
 
+  // Locals made so far, one set per C block ({ … }) being generated: the first set of a local
+  // variable in a block makes it there
+  G.scopes_ = [new Set()];
+  const statementToCode = G.statementToCode.bind(G);
+  G.statementToCode = function (block, name) {
+    this.scopes_.push(new Set());
+    try { return statementToCode(block, name); } finally { this.scopes_.pop(); }
+  };
+
   G.init = function (ws) {
     this.isInitialized = true;
+    this.scopes_ = [new Set()];
     this.ws_ = ws;
     // Names that are already good C stay exactly as they are (C code blocks may use them);
     // block-made names like "my score" become myScore, numbered if that clashes
@@ -844,6 +1271,7 @@ function makeGenerator(Blockly) {
   };
   F.bk_random_color = () => ['makeColorHSB(random(255), 255, 255)', ORDER.POSTFIX];
   F.bk_button = block => [block.getFieldValue('EVENT') + '()', ORDER.POSTFIX];
+  F.bk_button_clear = block => block.getFieldValue('EVENT') + '();\n';
   F.bk_neighbor = block => ['!isValueReceivedOnFaceExpired(' + v(block, 'FACE', ORDER.COMMA, '0') + ')', ORDER.UNARY];
   F.bk_timer_set = block => `${fieldVar(block, 'TIMER')}.set(${v(block, 'MS', ORDER.COMMA, '0')});\n`;
   F.bk_timer_add = block => `${fieldVar(block, 'TIMER')}.add(${v(block, 'MS', ORDER.COMMA, '0')});\n`;
@@ -897,8 +1325,15 @@ function makeGenerator(Blockly) {
 
   for (const kind of ['num', 'bool', 'color']) {
     F[GETTER[kind]] = block => [fieldVar(block, 'VAR'), ORDER.ATOMIC];
-    F[SETTER[kind]] = block => `${fieldVar(block, 'VAR')} = ${v(block, 'VALUE', ORDER.COMMA, def[KIND_CHECK[kind]])};\n`;
   }
+  F.bk_set = block => {
+    const m = block.getField('VAR').getVariable();
+    const kind = m ? kindOf(m.type) : 'num';
+    const code = `${fieldVar(block, 'VAR')} = ${v(block, 'VALUE', ORDER.COMMA, def[KIND_CHECK[kind]] || '0')};\n`;
+    if (!m || !isLocalType(m.type) || G.scopes_.some(sc => sc.has(m.getId()))) return code;
+    G.scopes_[G.scopes_.length - 1].add(m.getId());
+    return `${cType(m.type)} ${code}`;
+  };
   F.bk_change = block => {
     const name = fieldVar(block, 'VAR');
     const by = block.getInputTargetBlock('DELTA');
@@ -945,6 +1380,50 @@ function makeGenerator(Blockly) {
     return `${it} += ${v(block, 'DELTA', ORDER.COMMA, '1')};\n`;
   };
   F.bk_list_length = block => [`COUNT_OF(${listVar(block).name})`, ORDER.POSTFIX];
+
+  // switch: each case ends with break; "or" values become stacked case labels
+  const caseLabels = (block, name) => {
+    const t = block.getInputTargetBlock(name);
+    if (!t || !t.isEnabled()) return [];
+    if (t.type === 'bk_case_or') return [...caseLabels(t, 'A'), ...caseLabels(t, 'B')];
+    return [G.valueToCode(block, name, ORDER.NONE)].filter(Boolean);
+  };
+  F.bk_switch = block => {
+    const I = G.INDENT;
+    let code = `switch (${v(block, 'SWITCH', ORDER.NONE, '0')}) {\n`;
+    for (let i = 0; block.getInput('CASE' + i); i++) {
+      const labels = caseLabels(block, 'CASE' + i);
+      if (!labels.length) continue;
+      code += labels.map(l => `${I}case ${l}:\n`).join('') + G.prefixLines(body(block, 'DO' + i), I) + `${I}${I}break;\n`;
+    }
+    const other = body(block, 'DEFAULT');
+    if (other) code += `${I}default:\n` + G.prefixLines(other, I) + `${I}${I}break;\n`;
+    return code + '}\n';
+  };
+  // outside a switch case, "or" means either is true
+  F.bk_case_or = block => [`${v(block, 'A', ORDER.OR + 1, '0')} || ${v(block, 'B', ORDER.OR, '0')}`, ORDER.OR];
+
+  // Bits
+  F.bk_shift = block => binary(block, block.getFieldValue('DIR') === 'LEFT' ? '<<' : '>>', ORDER.SHIFT, '0');
+  const BITWISE = { AND: ['&', ORDER.BAND], OR: ['|', ORDER.BOR], XOR: ['^', ORDER.BXOR] };
+  F.bk_bitwise = block => { const [op, order] = BITWISE[block.getFieldValue('OP')]; return binary(block, op, order, '0'); };
+  F.bk_bitnot = block => ['~' + v(block, 'A', ORDER.UNARY, '0'), ORDER.UNARY];
+  F.bk_get_bits = block => {
+    const a = Number(block.getFieldValue('LO')), b = Number(block.getFieldValue('HI'));
+    const lo = Math.min(a, b), mask = 2 ** (Math.abs(b - a) + 1) - 1;
+    if (!lo) return [`${v(block, 'A', ORDER.BAND + 1, '0')} & ${mask}`, ORDER.BAND];
+    return [`(${v(block, 'A', ORDER.SHIFT + 1, '0')} >> ${lo}) & ${mask}`, ORDER.BAND];
+  };
+  F.bk_bits = block => ['0b' + (block.getFieldValue('BITS') >>> 0).toString(2).padStart(8, '0'), ORDER.ATOMIC];
+
+  // Constants
+  F.bk_define = block => `#define ${cName(block.getFieldValue('NAME'), 'SPEED')} ${v(block, 'VALUE', ORDER.ATOMIC, '0')}\n`;
+  F.bk_define_value = block => [block.getFieldValue('NAME'), ORDER.ATOMIC];
+  F.bk_enum = block => {
+    const name = cName(block.getFieldValue('NAME'), '');
+    return `enum ${name ? name + ' ' : ''}{ ${block.itemNames_().join(', ')} };\n`;
+  };
+  F.bk_enum_value = block => [block.getFieldValue('NAME'), ORDER.ATOMIC];
 
   F.procedures_callnoreturn = block => procCall(block) + ';\n';
   F.procedures_callreturn = block => [procCall(block), ORDER.POSTFIX];
@@ -1056,6 +1535,7 @@ function generateProgram(ws, G) {
   const tops = ws.getTopBlocks(true).filter(b => b.isEnabled());
   const of = (...types) => tops.filter(b => types.includes(b.type));
   const hatBody = hat => G.prefixLines(G.blockToCode(hat.getNextBlock()) || '', G.INDENT);
+  const fresh = () => { G.scopes_ = [new Set()]; };   // a new C function or block
   const hatComment = hat => { const c = hat.getCommentText(); return c ? commentLines(c) : ''; };
 
   // Variables: params of functions are not globals unless something outside the function uses them too
@@ -1104,19 +1584,29 @@ function generateProgram(ws, G) {
   }
   if (globals.length) parts.push(globals.join('\n'));
   const raws = of('bk_c_top');
-  let lists = [];
-  for (const b of of('bk_c_top', 'bk_list_decl', 'bk_list_init')) {
-    if (listSetups.has(b)) { lists.push(G.blockToCode(b).trimEnd()); continue; }
-    if (b.type !== 'bk_c_top') continue;
-    if (lists.length) { parts.push(lists.join('\n')); lists = []; }
-    const text = String(b.getFieldValue('CODE') ?? '').trimEnd();
-    if (text) parts.push(hatComment(b) + text);
+  // list setups, defines and enums sit in workspace order with the C code blocks, since each may
+  // use names another one makes; neighbors of one kind share a paragraph
+  let run = [], runType = null;
+  const flush = () => { if (run.length) parts.push(run.join('\n')); run = []; runType = null; };
+  for (const b of of('bk_c_top', 'bk_list_decl', 'bk_list_init', 'bk_define', 'bk_enum')) {
+    if (b.type === 'bk_c_top') {
+      flush();
+      const text = String(b.getFieldValue('CODE') ?? '').trimEnd();
+      if (text) parts.push(hatComment(b) + text);
+      continue;
+    }
+    if (b.type.startsWith('bk_list') && !listSetups.has(b)) continue;
+    const kind = b.type.startsWith('bk_list') ? 'list' : b.type;
+    if (runType && runType !== kind) flush();
+    runType = kind;
+    run.push(G.blockToCode(b).trimEnd());
   }
-  if (lists.length) parts.push(lists.join('\n'));
+  flush();
   const rawText = raws.map(r => r.getFieldValue('CODE')).join('\n');
 
   const setups = of('bk_setup'), loops = of('bk_loop');
   if (setups.length || !DEFINES_SETUP.test(rawText)) {
+    fresh();
     parts.push(setups.map(hatComment).join('') + 'void setup() {\n' + setups.map(hatBody).join('') + '}');
   }
 
@@ -1129,13 +1619,16 @@ function generateProgram(ws, G) {
   }
   let eventCode = '';
   for (const [cond, hats] of events) {
+    fresh();
     eventCode += hats.map(hatComment).join('') + `if (${cond}) {\n` + hats.map(hatBody).join('') + '}\n';
   }
   if (loops.length || events.size || !DEFINES_LOOP.test(rawText)) {
+    fresh();
     parts.push(loops.map(hatComment).join('') + 'void loop() {\n' + G.prefixLines(eventCode, G.INDENT) + loops.map(hatBody).join('') + '}');
   }
 
   for (const d of defs) {
+    fresh();
     const name = G.procName(d.getFieldValue('NAME'));
     const info = procInfo(d);
     const params = d.getVarModels().map(m => `${(m.type === '' && info.params[m.name]) || cType(m.type)} ${G.varName(m.getId())}`).join(', ');
@@ -1186,6 +1679,7 @@ function varTypeOf(t) {
     if (t.size === 4) return t.signed ? 'long' : 'unsigned long';
   }
   if (t.k === 'float') return 'float';
+  if (t.k === 'enum' && t.base && t.base.k === 'int' && t.base.size === 2 && t.base.signed) return 'int';   // enums are ints
   if (t.k === 'color') return 'Color';
   if (t.k === 'struct' && t.def && t.def.builtin === 'timer') return 'Timer';
   return null;
@@ -1329,6 +1823,13 @@ class Importer {
     this.prologue = [];         // global starting values, run first in setup
     this.notesOnWorkspace = []; // file comments shown as workspace comments
     this.nextId = 1;
+    // names the sketch makes with enum, and its own #defines of values (not function-like ones)
+    this.enumNames = new Set(ast.items.filter(it => it.kind === 'TypeDecl' && it.type && it.type.k === 'enum' && it.type.def).flatMap(it => it.type.def.items.map(x => x.name)));
+    this.userDefines = new Set();
+    this.orig.forEach((t, i) => {
+      const d = this.orig[i + 1], n = this.orig[i + 2], after = this.orig[i + 3];
+      if (t.t === 'op' && t.v === '#' && t.bol && d && d.v === 'define' && n && n.t === 'id' && !(after && after.v === '(' && !after.space && after.line === n.line)) this.userDefines.add(n.v);
+    });
   }
 
   offAt(line, col) { return this.lineStarts[line - 1] + col - 1; }
@@ -1440,6 +1941,27 @@ class Importer {
   }
   anchor(node, target) { this.anchors.push({ line: this.realLine(node.line), target }); return target; }
 
+  // `#define NAME value` where the value is a number or a named color: a define block. The tokens
+  // after the name, on the directive's line (a comment there becomes the block's comment).
+  defineBlock(hash, a, b) {
+    const i = this.orig.indexOf(hash);
+    const d = this.orig[i + 1], n = this.orig[i + 2];
+    if (!d || d.v !== 'define' || !n || n.t !== 'id' || !this.userDefines.has(n.v)) return null;
+    const body = [];
+    for (let k = i + 3; this.orig[k] && this.orig[k].t !== 'eof' && this.orig[k].line === hash.line; k++) body.push(this.orig[k]);
+    let toks = body;
+    while (toks.length >= 3 && toks[0].v === '(' && toks[toks.length - 1].v === ')') toks = toks.slice(1, -1);
+    let value = null;
+    const num = t => (t && t.t === 'num' && /^(\d+(\.\d+)?|0[xX][0-9a-fA-F]+)$/.test(t.v) ? Number(t.v) : null);
+    if (toks.length === 1 && num(toks[0]) !== null) value = numBlock(num(toks[0]));
+    else if (toks.length === 2 && toks[0].v === '-' && num(toks[1]) !== null) value = numBlock(-num(toks[1]));
+    else if (toks.length === 1 && COLOR_NAMES.has(toks[0].v)) value = colorBlock(toks[0].v);
+    if (!value || Math.abs(value.fields ? Number(value.fields.NUM ?? 0) : 0) > 2147483647) return null;
+    const json = { type: 'bk_define', fields: { NAME: n.v }, inputs: { VALUE: { shadow: value.type === 'math_number' ? value : numBlock(0), ...(value.type === 'math_number' ? {} : { block: value }) } } };
+    this.anchors.push({ line: hash.line, target: json });
+    return { json, end: b };
+  }
+
   // A global C array that can be a list: one dimension, a number/true-false/color item type,
   // a constant size, and starting items (if any) that fit
   listDecl(d) {
@@ -1523,8 +2045,19 @@ class Importer {
     }
     const pieces = [];   // top-level parts in source order: { lo, hi (tokens), a, b (offsets), raw | fn | skip }
     const globalInits = [];
+    const hasWord = (i, word) => { for (let k = items[i].line; k <= ends[i]; k++) if (this.toks[k].v === word && this.toks[k].t === 'id') return true; return false; };
     items.forEach((it, i) => {
       const rawPiece = () => pieces.push({ lo: it.line, hi: ends[i], raw: true });
+      if (it.kind === 'TypeDecl' && it.type && it.type.k === 'enum' && it.type.def && !it.type.def.scoped && !hasWord(i, 'typedef')
+          && it.type.def.items.length && it.type.def.items.length <= 32 && it.type.def.items.every(x => !x.value)) {
+        const names = it.type.def.items.map(x => x.name);
+        const json = { type: 'bk_enum', extraState: { items: names.length }, fields: { NAME: it.type.def.tag || '' } };
+        names.forEach((n, k) => { json.fields['ITEM' + k] = n; });
+        this.anchors.push({ line: this.realLine(it.line), target: json });
+        pieces.push({ lo: it.line, hi: ends[i], blocks: [json] });
+        return;
+      }
+      if (it.kind === 'VarDecl' && hasWord(i, 'enum')) return rawPiece();
       if (it.kind === 'VarDecl') {
         const lists = it.decls.map(d => this.listDecl(d));
         const types = it.decls.map((d, k) => (lists[k] ? lists[k].type : varTypeOf(d.type)));
@@ -1575,7 +2108,7 @@ class Importer {
       const kind = kindOf(v.type);
       const json = { type: SETTER[kind], fields: { VAR: { id: v.id } }, inputs: {} };
       this.anchors.push({ line: this.realLine(d.line), target: json });
-      json.inputs.VALUE = this.slot(d.init, KIND_CHECK[kind], { scopes: [], fn: { name: null } }, SHADOW_DEFAULTS[SETTER[kind]]);
+      json.inputs.VALUE = this.slot(d.init, KIND_CHECK[kind], { scopes: [], fn: { name: null } }, SET_DEFAULT[kind]);
       this.prologue.push(json);
     }
     if (this.prologue.length) this.notes.add(`Starting values of global variables moved into "when Blink starts" (${this.prologue.length}).`);
@@ -1626,6 +2159,8 @@ class Importer {
       if (rawSpans.some(([x, y]) => a >= x && a < y)) continue;
       let b = a;
       while (b < this.src.length && !(this.src[b] === '\n' && this.src[b - 1] !== '\\')) b++;
+      const def = this.defineBlock(t, a, b);
+      if (def) { pieces.push({ a, b: def.end, blocks: [def.json] }); continue; }
       pieces.push({ a, b, directive: true, raw: true });
     }
 
@@ -1945,6 +2480,13 @@ class Importer {
       }
       case 'Switch': {
         if (node.body.kind !== 'Block') throw new Unsupported('switch');
+        const m = this.mark();
+        try {
+          return [this.switchStmt(node, ctx)];
+        } catch (e) {
+          if (!(e instanceof Unsupported)) throw e;
+          this.rollback(m);
+        }
         return [this.wrap(node, this.slice(node.line, node.body.line - 1, { expr: true }), node.body, '', ctx)];
       }
       case 'Block': return [this.wrap(node, '', node, '', ctx)];
@@ -1963,6 +2505,51 @@ class Importer {
     }
   }
 
+  // A switch block: every case ends with break (or leaves with return/continue), except maybe the
+  // last; labels stacked on one body become "or"; default goes last
+  switchStmt(node, ctx) {
+    const list = node.body.body.filter(x => x.kind !== 'Empty');
+    const groups = [];
+    for (const x of list) {
+      if (x.kind === 'Case' || x.kind === 'Default') {
+        const g = groups[groups.length - 1];
+        if (g && !g.stmts.length) g.labels.push(x); else groups.push({ labels: [x], stmts: [] });
+      } else {
+        if (!groups.length) throw new Unsupported('code before the first case');
+        groups[groups.length - 1].stmts.push(x);
+      }
+    }
+    if (!groups.length) throw new Unsupported('empty switch');
+    groups.forEach((g, i) => {
+      const last = g.stmts[g.stmts.length - 1];
+      g.end = i + 1 < groups.length ? groups[i + 1].labels[0].line : node.body.endLine;
+      if (last && last.kind === 'Break') { g.end = last.line; g.stmts.pop(); }
+      else if (i + 1 < groups.length && !(last && (last.kind === 'Return' || last.kind === 'Continue'))) throw new Unsupported('falls through');
+      if (g.labels.some(l => l.kind === 'Default') && g.labels.length > 1) throw new Unsupported('default shares a case');
+    });
+    if (groups.filter(g => g.labels[0].kind === 'Default').length > 1) throw new Unsupported('two defaults');
+    const json = this.anchor(node, { type: 'bk_switch', inputs: {} });
+    json.inputs.SWITCH = this.slot(node.disc, N, ctx, 0);
+    const bodyOf = g => {
+      ctx.scopes.push(new Map());
+      try { return chain(this.convertGroups(this.groups(g.stmts, g.end), ctx)); } finally { ctx.scopes.pop(); }
+    };
+    let n = 0;
+    for (const g of groups) {
+      const b = bodyOf(g);
+      if (g.labels[0].kind === 'Default') { if (b) json.inputs.DEFAULT = { block: b }; continue; }
+      const values = g.labels.map(l => this.slot(l.test, N, ctx, 0));
+      let value = values[values.length - 1];
+      for (let k = values.length - 2; k >= 0; k--) value = { block: { type: 'bk_case_or', inputs: { A: values[k], B: value } } };
+      json.inputs['CASE' + n] = value;
+      if (b) json.inputs['DO' + n] = { block: b };
+      n++;
+    }
+    if (!n) throw new Unsupported('only default');
+    json.extraState = { cases: n };
+    return json;
+  }
+
   wrap(node, head, block, tail, ctx) {
     const json = this.anchor(node, { type: 'bk_c_wrap', fields: { HEAD: head, TAIL: tail }, inputs: {} });
     this.rawCount++;
@@ -1972,7 +2559,28 @@ class Importer {
     return json;
   }
 
+  // A local: a local block for each variable (a static one keeps its value between runs, so it
+  // becomes a global whose starting value is set when the Blink starts)
   localDecl(node, ctx) {
+    if (!node.isStatic) {
+      if (node.isConst) throw new Unsupported('const local');
+      const out = [];
+      for (const d of node.decls) {
+        const type = varTypeOf(d.type);
+        if (!type || type === 'Timer' || d.ctorArgs || (d.init && d.init.kind === 'InitList') || this.procs.has(d.name)) throw new Unsupported('local');
+        const lt = localType(type);
+        const v = this.findVar(d.name, lt) || (this.canName(d.name, lt) ? this.newVar(d.name, lt) : null);
+        if (!v) throw new Unsupported('local name');
+        const kind = kindOf(v.type);
+        const json = this.anchor(d.line != null ? d : node, { type: SETTER[kind], fields: { VAR: { id: v.id } }, inputs: {} });
+        // a local with no starting value starts at 0, false or OFF
+        json.inputs.VALUE = d.init ? this.slot(d.init, KIND_CHECK[kind], ctx, SET_DEFAULT[kind])
+          : { shadow: kind === 'bool' ? { type: 'bk_bool', fields: { BOOL: 'FALSE' } } : kind === 'color' ? colorBlock('OFF') : numBlock(0) };
+        ctx.scopes[ctx.scopes.length - 1].set(d.name, { kind: 'var', v });
+        out.push(json);
+      }
+      return out;
+    }
     const vs = node.decls.map(d => this.localGlobals.get(d.name) ? this.localVar(d.name) : null);
     if (vs.some(v => !v)) throw new Unsupported('local');
     const out = [];
@@ -1983,7 +2591,7 @@ class Importer {
       const kind = kindOf(v.type);
       const json = { type: SETTER[kind], fields: { VAR: { id: v.id } }, inputs: {} };
       this.anchors.push({ line: this.realLine(d.line || node.line), target: json });
-      json.inputs.VALUE = this.slot(d.init, KIND_CHECK[kind], ctx, SHADOW_DEFAULTS[SETTER[kind]]);
+      json.inputs.VALUE = this.slot(d.init, KIND_CHECK[kind], ctx, SET_DEFAULT[kind]);
       if (node.isStatic) this.prologue.push(json); else out.push(json);
     });
     return out;
@@ -2055,6 +2663,7 @@ class Importer {
     if (this.isExactRun(lo, hi) && !COLOR_NAMES.has(this.macroName(lo))) throw new Unsupported('macro statement');
     if (e.kind === 'Call' && e.callee.kind === 'Ident' && !this.lookup(e.callee.name, ctx)) {
       const name = e.callee.name;
+      if (BUTTON_FNS.has(name) && name !== 'buttonDown' && !e.args.length) return this.anchor(node, { type: 'bk_button_clear', fields: { EVENT: name } });
       const def = CALL_BY_FN.get(name);
       if (def && !def[5]) return this.callBlock(node, def, e.args, ctx);
       const p = this.procs.get(name);
@@ -2088,7 +2697,7 @@ class Importer {
       if (!SETTER[kind]) throw new Unsupported('assign');
       if (e.op === '=') {
         const json = this.anchor(node, { type: SETTER[kind], fields: { VAR: { id: v.id } }, inputs: {} });
-        json.inputs.VALUE = this.slot(e.value, KIND_CHECK[kind], ctx, SHADOW_DEFAULTS[SETTER[kind]]);
+        json.inputs.VALUE = this.slot(e.value, KIND_CHECK[kind], ctx, SET_DEFAULT[kind]);
         return json;
       }
       if (kind !== 'num') throw new Unsupported('compound');
@@ -2098,9 +2707,18 @@ class Importer {
         json.inputs.DELTA = e.op === '+=' ? this.slot(e.value, N, ctx, 1) : { shadow: numBlock(-val.value) };
         return json;
       }
+      const shiftOp = { '<<=': 'LEFT', '>>=': 'RIGHT' }[e.op], bitOp = { '&=': 'AND', '|=': 'OR', '^=': 'XOR' }[e.op];
+      if (shiftOp || bitOp) {
+        const json = this.anchor(node, { type: SETTER.num, fields: { VAR: { id: v.id } }, inputs: {} });
+        const self = { block: { type: 'bk_get_num', fields: { VAR: { id: v.id } } } };
+        json.inputs.VALUE = { block: shiftOp
+          ? { type: 'bk_shift', fields: { DIR: shiftOp }, inputs: { A: self, B: this.slot(e.value, N, ctx, 1) } }
+          : { type: 'bk_bitwise', fields: { OP: bitOp }, inputs: { A: self, B: this.slot(e.value, N, ctx, 0) } } };
+        return json;
+      }
       const op = { '-=': 'SUB', '*=': 'MUL', '/=': 'DIV', '%=': 'MOD' }[e.op];
       if (!op) throw new Unsupported('compound');
-      const json = this.anchor(node, { type: 'bk_set_num', fields: { VAR: { id: v.id } }, inputs: {} });
+      const json = this.anchor(node, { type: SETTER.num, fields: { VAR: { id: v.id } }, inputs: {} });
       json.inputs.VALUE = { block: { type: 'bk_arith', fields: { OP: op }, inputs: { A: { block: { type: 'bk_get_num', fields: { VAR: { id: v.id } } } }, B: this.slot(e.value, N, ctx, 1) } } };
       return json;
     }
@@ -2208,6 +2826,7 @@ class Importer {
     switch (e.kind) {
       case 'Paren': return this.expr(e.expr, ctx);
       case 'Num': {
+        if (/^0[bB]/.test(e.raw) && !e.unsigned && !e.long && e.value <= 255) return { json: { type: 'bk_bits', fields: { BITS: e.value } }, out: N };
         if (e.unsigned || e.long || (e.isFloat && (/[fF]$/.test(e.raw) || Number.isInteger(e.value))) || !Number.isFinite(e.value) || Math.abs(e.value) > 2147483647) throw new Unsupported('number');
         return { json: numBlock(e.value), out: N };
       }
@@ -2220,6 +2839,7 @@ class Importer {
       }
       case 'Ident': {
         const entry = this.lookup(e.name, ctx);
+        if (!entry && this.enumNames.has(e.name)) return { json: { type: 'bk_enum_value', fields: { NAME: e.name } }, out: N };
         if (!entry || entry.kind === 'raw') throw new Unsupported('name');
         if (entry.kind === 'face') return { json: { type: 'bk_face_var', fields: { VAR: { id: entry.v.id } } }, out: N };
         const kind = kindOf(entry.v.type);
@@ -2231,6 +2851,7 @@ class Importer {
         if (e.op === '-' && e.arg.kind === 'Num' && !arg.isFloat && !arg.unsigned && !arg.long && arg.value <= 2147483647) {
           return { json: numBlock(-arg.value), out: N };
         }
+        if (e.op === '~') return { json: { type: 'bk_bitnot', inputs: { A: this.slot(e.arg, N, ctx, 0) } }, out: N };
         if (e.op === '!') {
           if (arg.kind === 'Call' && arg.callee.kind === 'Ident' && arg.callee.name === 'isValueReceivedOnFaceExpired' && arg.args.length === 1 && !this.lookup(arg.callee.name, ctx)) {
             return { json: { type: 'bk_neighbor', inputs: { FACE: this.slot(arg.args[0], N, ctx, 0) } }, out: B };
@@ -2242,6 +2863,21 @@ class Importer {
       case 'Binary': {
         const arith = { '+': 'ADD', '-': 'SUB', '*': 'MUL', '/': 'DIV', '%': 'MOD' }[e.op];
         if (arith) return { json: { type: 'bk_arith', fields: { OP: arith }, inputs: { A: this.slot(e.l, N, ctx, 0), B: this.slot(e.r, N, ctx, 0) } }, out: N };
+        if (e.op === '<<' || e.op === '>>') {
+          return { json: { type: 'bk_shift', fields: { DIR: e.op === '<<' ? 'LEFT' : 'RIGHT' }, inputs: { A: this.slot(e.l, N, ctx, 0), B: this.slot(e.r, N, ctx, 1) } }, out: N };
+        }
+        if (e.op === '&') {
+          // (x >> lo) & 0b11 or x & 0b11: some bits of x
+          const mask = stripParens(e.r), l = stripParens(e.l);
+          const width = mask.kind === 'Num' && !mask.isFloat && mask.value > 0 && mask.value < 65536 && ((mask.value + 1) & mask.value) === 0 ? Math.log2(mask.value + 1) : 0;
+          const shifted = l.kind === 'Binary' && l.op === '>>' && stripParens(l.r).kind === 'Num' && !stripParens(l.r).isFloat ? stripParens(l.r).value : null;
+          const lo = shifted ?? 0;
+          if (width && lo >= 0 && lo + width <= 16) {
+            return { json: { type: 'bk_get_bits', fields: { LO: lo, HI: lo + width - 1 }, inputs: { A: this.slot(shifted == null ? e.l : l.l, N, ctx, 0) } }, out: N };
+          }
+        }
+        const bit = { '&': 'AND', '|': 'OR', '^': 'XOR' }[e.op];
+        if (bit) return { json: { type: 'bk_bitwise', fields: { OP: bit }, inputs: { A: this.slot(e.l, N, ctx, 0), B: this.slot(e.r, N, ctx, 0) } }, out: null };
         const cmp = { '==': 'EQ', '!=': 'NEQ', '<': 'LT', '<=': 'LTE', '>': 'GT', '>=': 'GTE' }[e.op];
         if (cmp) return { json: { type: 'bk_compare', fields: { OP: cmp }, inputs: { A: this.slot(e.l, null, ctx), B: this.slot(e.r, null, ctx) } }, out: B };
         throw new Unsupported('binary');
@@ -2288,6 +2924,8 @@ class Importer {
   macroExpr(name, node, ctx) {
     if (COLOR_NAMES.has(name)) return { json: colorBlock(name), out: C };
     if (name === 'FACE_COUNT') return { json: numBlock(6), out: N };
+    if (/^B[01]{1,8}$/.test(name)) return { json: { type: 'bk_bits', fields: { BITS: parseInt(name.slice(1), 2) } }, out: N };
+    if (this.userDefines.has(name)) return { json: { type: 'bk_define_value', fields: { NAME: name } }, out: null };
     if (name === 'COUNT_OF') {
       // ((sizeof(x)/sizeof(x[0])))
       const div = stripParens(node);
@@ -2395,6 +3033,7 @@ function toolbox() {
       ]),
       cat('Button', 'button', [
         block('bk_button'), block('bk_button', { fields: { EVENT: 'buttonDown' } }), call('bk_click_count'),
+        block('bk_button_clear'),
       ]),
       cat('Neighbors', 'neighbors', [
         call('bk_send_all'), call('bk_send_face'), call('bk_received'),
@@ -2411,6 +3050,8 @@ function toolbox() {
         block('controls_repeat_ext', { inputs: { TIMES: num(6) } }),
         block('controls_whileUntil'),
         block('bk_for_each_face'), block('bk_face_var'),
+        block('bk_switch', { extraState: { cases: 2 }, inputs: { SWITCH: num(0), CASE0: num(0), CASE1: num(1) } }),
+        block('bk_case_or', { inputs: { A: num(1), B: num(2) } }),
         block('bk_flow'),
       ]),
       cat('Math', 'math', [
@@ -2421,6 +3062,15 @@ function toolbox() {
         block('bk_minmax', { inputs: { A: num(3), B: num(5) } }),
         call('bk_abs'), call('bk_constrain'), call('bk_map'), call('bk_sin8'),
       ]),
+      cat('Bits', 'bits', [
+        block('bk_shift', { fields: { DIR: 'LEFT' }, inputs: { A: num(1), B: num(3) } }),
+        block('bk_shift', { fields: { DIR: 'RIGHT' }, inputs: { A: num(48), B: num(4) } }),
+        block('bk_get_bits', { fields: { LO: 4, HI: 5 }, inputs: { A: num(48) } }),
+        block('bk_bitwise', { fields: { OP: 'AND' }, inputs: { A: num(12), B: num(4) } }),
+        block('bk_bitwise', { fields: { OP: 'OR' }, inputs: { A: num(12), B: num(1) } }),
+        block('bk_bitnot', { inputs: { A: num(0) } }),
+        block('bk_bits', { fields: { BITS: 37 } }),
+      ]),
       cat('Logic', 'logic', [
         block('bk_compare', { fields: { OP: 'EQ' }, inputs: { A: num(0), B: num(0) } }),
         block('bk_compare', { fields: { OP: 'LT' }, inputs: { A: num(0), B: num(10) } }),
@@ -2428,6 +3078,7 @@ function toolbox() {
       ]),
       { kind: 'category', name: 'Variables', categorystyle: 'bk_variables', custom: 'BK_VARIABLES' },
       { kind: 'category', name: 'Lists', categorystyle: 'bk_lists', custom: 'BK_LISTS' },
+      { kind: 'category', name: 'Constants', categorystyle: 'bk_constants', custom: 'BK_CONSTANTS' },
       { kind: 'category', name: 'Functions', categorystyle: 'bk_functions', custom: 'BK_FUNCTIONS' },
       cat('C code', 'code', [block('bk_c_stmt'), block('bk_c_expr'), block('bk_c_wrap'), block('bk_c_top')]),
     ],
@@ -2436,34 +3087,110 @@ function toolbox() {
 
 const heading = text => ({ kind: 'label', text, 'web-class': 'bkFlyoutHeading' });
 
+// A thin line across the drawer (an empty label; decorateRules draws the line)
+const subheading = text => ({ kind: 'label', text: text.toUpperCase(), 'web-class': 'bkFlyoutSub' });
+const rule = () => [{ kind: 'sep', gap: 20 }, { kind: 'label', text: '\u00a0', 'web-class': 'bkFlyoutRule' }, { kind: 'sep', gap: 12 }];
+
+// Variables: making one, then set (its dropdown holds every variable; a local one shows a "local"
+// pill), an example of setting a local variable, change, and below a rule each variable, global
+// ones and then local ones, ready to drag
 function variablesFlyout(ws) {
   const vm = ws.getVariableMap();
   const of = types => vm.getAllVariables().filter(v => types.includes(v.type)).sort((a, b) => a.name.localeCompare(b.name));
-  const items = [
-    heading('Variables'),
-    { kind: 'button', text: 'Make a number', callbackkey: 'BK_MAKE_int' },
-    { kind: 'button', text: 'Make a true/false', callbackkey: 'BK_MAKE_bool' },
-    { kind: 'button', text: 'Make a color', callbackkey: 'BK_MAKE_Color' },
-    { kind: 'button', text: 'Make a timer', callbackkey: 'BK_MAKE_Timer' },
-  ];
+  const items = [heading('Variables'), { kind: 'button', text: 'Make a variable…', callbackkey: 'BK_MAKE_VAR' }, { kind: 'sep', gap: 24 }];
   const ref = v => ({ VAR: { id: v.getId() } });
-  const section = (vars, kind, value) => {
-    if (!vars.length) return;
-    items.push({ kind: 'sep', gap: 24 });
-    for (const v of vars) items.push({ kind: 'block', type: GETTER[kind], fields: ref(v), gap: 8 });
-    items.push({ kind: 'sep', gap: 16 });
-    items.push({ kind: 'block', type: SETTER[kind], fields: ref(vars[0]), inputs: value ? { VALUE: { shadow: value } } : {} });
-    if (kind === 'num') items.push({ kind: 'block', type: 'bk_change', fields: ref(vars[0]), inputs: { DELTA: { shadow: numBlock(1) } } });
-  };
-  section(of(NUM_TYPES), 'num', numBlock(0));
-  section(of(['bool']), 'bool', null);
-  section(of(['Color']), 'color', colorBlock('RED'));
+  const value = { num: numBlock(0), bool: null, color: colorBlock('RED') };
+  const kinds = ['num', 'bool', 'color'].map(kind => ({ kind, globals: of(KIND_TYPES[kind]), locals: of(LOCAL_TYPES[kind]) }));
+  const globals = kinds.flatMap(k => k.globals.map(v => [k.kind, v])), locals = kinds.flatMap(k => k.locals.map(v => [k.kind, v]));
+  const setOf = (fields, kind) => ({ kind: 'block', type: SETTER[kind], fields, inputs: value[kind] ? { VALUE: { shadow: value[kind] } } : {} });
+  if (globals.length) items.push(setOf(ref(globals[0][1]), globals[0][0]));
+  // an example local variable to drag out (it makes a local x if there isn't one)
+  items.push(locals.length ? setOf(ref(locals[0][1]), locals[0][0]) : setOf({ VAR: { name: 'x', type: localType('int') } }, 'num'));
+  const nums = [...kinds[0].globals, ...kinds[0].locals];
+  if (nums.length) items.push({ kind: 'block', type: 'bk_change', fields: ref(nums[0]), inputs: { DELTA: { shadow: numBlock(1) } } });
   const timers = of(['Timer']);
   if (timers.length) {
-    items.push({ kind: 'sep', gap: 24 });
     items.push({ kind: 'block', type: 'bk_timer_set', fields: { TIMER: { id: timers[0].getId() } }, inputs: { MS: { shadow: numBlock(1000) } } });
     items.push({ kind: 'block', type: 'bk_timer_done', fields: { TIMER: { id: timers[0].getId() } } });
   }
+  const getters = list => list.map(([kind, v]) => ({ kind: 'block', type: GETTER[kind], fields: ref(v), gap: 8 }));
+  if (globals.length || locals.length) items.push(...rule());
+  if (globals.length) items.push(subheading('Global'), ...getters(globals));
+  if (locals.length) items.push(...(globals.length ? [{ kind: 'sep', gap: 16 }] : []), subheading('Local'), ...getters(locals));
+  return items;
+}
+
+// "Make a variable…": a name, what it holds, and whether it's global or local to its event or function
+function makeVariable(Blockly, ws) {
+  const host = ws.getInjectionDiv().parentElement;
+  const wrap = document.createElement('div');
+  wrap.className = 'bk-dialog';
+  wrap.innerHTML = `<form class="bk-dialog-card bk-dialog-small bk-make-var" role="dialog" aria-label="Make a variable" autocomplete="off">
+    <div class="bk-dialog-title bk-dialog-message">Make a variable</div>
+    <input class="bk-dialog-input" name="name" placeholder="name" spellcheck="false" autocapitalize="off">
+    <div class="bk-seg" role="radiogroup" aria-label="It holds">
+      <label><input type="radio" name="kind" value="int" checked><span>number</span></label>
+      <label><input type="radio" name="kind" value="bool"><span>true/false</span></label>
+      <label><input type="radio" name="kind" value="Color"><span>color</span></label>
+      <label><input type="radio" name="kind" value="Timer"><span>timer</span></label>
+    </div>
+    <div class="bk-seg" role="radiogroup" aria-label="Scope">
+      <label><input type="radio" name="scope" value="global" checked><span>global</span></label>
+      <label><input type="radio" name="scope" value="local"><span>local</span></label>
+    </div>
+    <div class="bk-dialog-hint bk-scope-hint"></div>
+    <div class="bk-dialog-actions"><span class="bk-dialog-hint bk-make-err"></span>
+      <button type="button" class="bk-btn" data-act="cancel">Cancel</button>
+      <button type="submit" class="bk-btn bk-btn-primary">Make</button></div></form>`;
+  const form = wrap.querySelector('form'), name = form.elements.name, err = wrap.querySelector('.bk-make-err'), hint = wrap.querySelector('.bk-scope-hint');
+  const sync = () => {
+    const timer = form.elements.kind.value === 'Timer';
+    form.querySelector('input[value="local"]').disabled = timer;
+    if (timer) form.elements.scope.value = 'global';
+    hint.textContent = form.elements.scope.value === 'local'
+      ? 'Local: belongs to the event or function where it\'s set, and starts fresh each time it runs.'
+      : 'Global: every event and function shares it, and it keeps its value.';
+  };
+  sync();
+  form.addEventListener('change', sync);
+  const close = () => wrap.remove();
+  wrap.addEventListener('click', e => { if (e.target === wrap || e.target.dataset.act === 'cancel') close(); });
+  wrap.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); close(); } });
+  form.addEventListener('submit', e => {
+    e.preventDefault();
+    const text = name.value.trim();
+    const kind = form.elements.kind.value;
+    const type = form.elements.scope.value === 'local' ? localType(kind) : kind;
+    if (!text) { err.textContent = 'Give it a name.'; return; }
+    // names are unique among the global variables and among the local ones (a local may share a global's name)
+    const taken = ws.getVariableMap().getAllVariables().some(v => v.type !== 'face' && isLocalType(v.type) === isLocalType(type) && v.name.toLowerCase() === text.toLowerCase());
+    if (taken) { err.textContent = `There's already a ${isLocalType(type) ? 'local' : 'global'} variable called ${text}.`; return; }
+    Blockly.Events.setGroup(true);
+    try { ws.getVariableMap().createVariable(text, type); } finally { Blockly.Events.setGroup(false); }
+    close();
+    const tb = ws.getToolbox && ws.getToolbox();
+    if (tb && tb.refreshSelection) tb.refreshSelection();
+  });
+  host.appendChild(wrap);
+  // after Blockly has finished with the click that opened this (it takes focus back)
+  setTimeout(() => name.focus(), 0);
+}
+
+// Constants: the blocks that make a define or an enum, then below a rule each name they made
+function constantsFlyout(ws) {
+  const items = [
+    heading('Constants'),
+    { kind: 'block', type: 'bk_define', fields: { NAME: 'SPEED' }, inputs: { VALUE: { shadow: numBlock(100) } } },
+    { kind: 'block', type: 'bk_enum', extraState: { items: 3 }, fields: { NAME: 'mode', ITEM0: 'READY', ITEM1: 'PLAYING', ITEM2: 'DONE' } },
+  ];
+  const blocks = ws.getAllBlocks(false);
+  const defines = [...new Set(blocks.filter(b => b.type === 'bk_define').map(b => b.getFieldValue('NAME')))].sort();
+  const enumNames = [...new Set(blocks.filter(b => b.type === 'bk_enum').flatMap(b => b.itemNames_()))];
+  if (!defines.length && !enumNames.length) return items;
+  items.push(...rule());
+  for (const name of defines) items.push({ kind: 'block', type: 'bk_define_value', fields: { NAME: name }, gap: 8 });
+  if (defines.length && enumNames.length) items.push({ kind: 'sep', gap: 20 });
+  for (const name of enumNames) items.push({ kind: 'block', type: 'bk_enum_value', fields: { NAME: name }, gap: 8 });
   return items;
 }
 
@@ -2600,8 +3327,7 @@ function openAsk(message, value, done) {
     else if (e.key === 'Escape') { e.preventDefault(); finish(!cancel); }
   });
   host.appendChild(wrap);
-  (input || wrap.querySelector('.bk-btn-primary')).focus();
-  if (input) input.select();
+  setTimeout(() => { (input || wrap.querySelector('.bk-btn-primary')).focus(); if (input) input.select(); }, 0);
 }
 
 function installUi(Blockly) {
@@ -2670,7 +3396,7 @@ export async function createBlocksEditor(container, { onChange } = {}) {
     container.appendChild(host);
     const small = Math.min(container.clientWidth || innerWidth, innerWidth) < 640;
     ws = Blockly.inject(host, {
-      renderer: 'zelos',
+      renderer: Blockly.registry.hasItem(Blockly.registry.Type.RENDERER, 'bk_zelos') ? 'bk_zelos' : 'zelos',
       theme: makeTheme(Blockly),
       toolbox: toolbox(),
       media: CDN + 'media/',
@@ -2682,15 +3408,15 @@ export async function createBlocksEditor(container, { onChange } = {}) {
       oneBasedIndex: false,
     });
     animateFlyout(ws.getToolbox()?.getFlyout());
+    decorateRules(ws.getToolbox()?.getFlyout());
     ws.registerToolboxCategoryCallback('BK_VARIABLES', variablesFlyout);
     ws.registerToolboxCategoryCallback('BK_FUNCTIONS', w => functionsFlyout(Blockly, w));
     ws.registerToolboxCategoryCallback('BK_LISTS', listsFlyout);
+    ws.registerToolboxCategoryCallback('BK_CONSTANTS', constantsFlyout);
     for (const type of ['int[]', 'bool[]', 'Color[]']) {
       ws.registerButtonCallback('BK_LIST_' + type, btn => makeList(Blockly, btn.getTargetWorkspace(), type));
     }
-    for (const type of ['int', 'bool', 'Color', 'Timer']) {
-      ws.registerButtonCallback('BK_MAKE_' + type, btn => Blockly.Variables.createVariableButtonHandler(btn.getTargetWorkspace(), null, type));
-    }
+    ws.registerButtonCallback('BK_MAKE_VAR', btn => makeVariable(Blockly, btn.getTargetWorkspace()));
   } else {
     ws = new Blockly.Workspace();
   }
@@ -2937,6 +3663,21 @@ function findListGap(block, loc, open, layouts) {
     });
   }
   return best;
+}
+
+// Draw the line of each rule label in a drawer, across the drawer's width, each time it opens
+function decorateRules(flyout) {
+  if (!flyout) return;
+  const show = flyout.show.bind(flyout);
+  flyout.show = (...args) => {
+    const result = show(...args);
+    const width = flyout.getWidth() / flyout.getWorkspace().scale;
+    for (const g of flyout.getWorkspace().getCanvas().parentNode.querySelectorAll('.bkFlyoutRule')) {
+      g.querySelector('.bkRuleLine')?.remove();
+      globalThis.Blockly.utils.dom.createSvgElement('rect', { class: 'bkRuleLine', x: 0, y: 8, height: 1, width: Math.max(40, width - 32) }, g);
+    }
+    return result;
+  };
 }
 
 // Slide the block drawer in and out instead of popping it. Blockly shows and hides the

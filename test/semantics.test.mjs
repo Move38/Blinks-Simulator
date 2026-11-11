@@ -243,6 +243,12 @@ test('(x * C1) / C2 folds like avr-gcc -Os, so overflow in x * C1 matches a Blin
   ]);
 });
 
+test("Arduino's binary constants (B101) and 0b literals", () => {
+  const { w, log } = sim(prog('Serial.println(B101); Serial.println(B11111111); Serial.println(0b1010 | B1); byte x = B0; Serial.println(x);'));
+  w.advance(5);
+  assert.deepEqual(log.join('\n').split(/\s+/).filter(Boolean), ['5', '255', '11', '0']);
+});
+
 test('infinite loops and recursion are caught', () => {
   let r = sim(`void setup(){} void loop(){ while (true) { } }`);
   r.w.advance(5);

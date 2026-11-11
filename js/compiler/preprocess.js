@@ -288,6 +288,12 @@ class Preprocessor {
     let i = 0;
     while (i < toks.length) {
       const t = toks[i];
+      // Arduino's binary.h: B0 to B11111111 are the numbers they spell in binary (B101 is 5)
+      if (t.t === 'id' && /^B[01]{1,8}$/.test(t.v) && !this.defs.has(t.v) && !(t.hide && t.hide.has(t.v))) {
+        out.push({ ...t, t: 'num', v: String(parseInt(t.v.slice(1), 2)), hide: new Set([...(t.hide || []), t.v]), fromMacro: t.v });
+        i++;
+        continue;
+      }
       if (t.t !== 'id' || !this.defs.has(t.v) || (t.hide && t.hide.has(t.v))) { out.push(t); i++; continue; }
       const m = this.defs.get(t.v);
       const hide = new Set(t.hide || []); hide.add(m.name);
