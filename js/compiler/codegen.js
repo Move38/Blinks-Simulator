@@ -1230,6 +1230,7 @@ class Codegen {
 
   binary(n) {
     const op = n.op;
+    if (op === '/' || op === '%') { const f = this.mulDivFold(n); if (f) return f; }
     let a = this.decay(this.ex(n.l)), b = this.decay(this.ex(n.r));
     for (const x of [a, b]) {
       if (x.t.k === 'struct') throw this.error(`Can't use ${op} with ${typeName(x.t)}` + (x.t.def.builtin === 'timer' ? '. Use the Timer\'s methods like isExpired()' : ''), n.line);
@@ -1274,6 +1275,49 @@ class Codegen {
     const ac = this.conv(a, ct).c, bc = this.conv(b, ct).c;
     if ((op === '/' || op === '%') && b.cv === 0 && ct.k === 'int') this.warn('Division by zero', n.line);
     return this.fold({ c: arithCode(op, ct, ac, bc), t: ct }, [a, b]);
+  }
+
+  // Blinks are built with -Os, where avr-gcc's folder turns (x * C1) / C2 into x * (C1 / C2) or
+  // x / (C2 / C1), and (x * C1) % C2 into 0, for signed ints: signed overflow is undefined, so it
+  // may assume x * C1 doesn't overflow. Sketches that do overflow there work on a Blink (Darkball's
+  // trail: 2 * (100 - speed) * 500 / 100), so fold the same way. It also looks through a unary
+  // minus and a widening cast. Without overflow the result is the same either way.
+  mulDivFold(n) {
+    const c2 = this.ex(n.r);
+    if (!Number.isInteger(c2.cv) || c2.cv === 0) return null;
+    const dt = commonType(this.decay(this.ex(n.l)).t, c2.t);
+    if (!dt || dt.k !== 'int' || !dt.signed) return null;
+    let m = n.l, neg = 1, cast = null;
+    for (;;) {
+      if (m.kind === 'Paren') m = m.expr;
+      else if (m.kind === 'Unary' && m.op === '-') { neg = -neg; m = m.arg; }
+      else if (!cast && (m.kind === 'Cast' || (m.kind === 'Construct' && m.args.length === 1))) {
+        cast = this.resolveType(m.type);
+        m = m.kind === 'Cast' ? m.arg : m.args[0];
+      } else break;
+    }
+    if (m.kind !== 'Binary' || m.op !== '*') return null;
+    const mt = this.ex(m).t;
+    if (mt.k !== 'int' || !mt.signed || dt.size < mt.size) return null;
+    if (cast && (cast.k !== 'int' || !cast.signed || cast.size < mt.size)) return null;
+    for (const [xn, kn] of [[m.l, m.r], [m.r, m.l]]) {
+      let c1 = this.ex(kn).cv;
+      if (!Number.isInteger(c1) || c1 === 0) continue;
+      c1 *= neg;
+      const x = this.decay(this.ex(xn));
+      if (!isInt(x.t) && x.t.k !== 'bool') return null;
+      const xc = this.conv(x, mt).c;
+      if (n.op === '%') {
+        if (c1 % c2.cv !== 0) return null;
+        return x.cv !== undefined ? { c: '0', t: dt, cv: 0 } : { c: `((${xc}), 0)`, t: dt };
+      }
+      let r;
+      if (c1 % c2.cv === 0) r = arithCode('*', mt, xc, numLit(c1 / c2.cv));
+      else if (c2.cv % c1 === 0) r = arithCode('/', mt, xc, numLit(c2.cv / c1));
+      else continue;
+      return this.conv(this.fold({ c: r, t: mt }, [x]), dt);
+    }
+    return null;
   }
 
   warnSignedCompare(line) {

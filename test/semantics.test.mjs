@@ -212,6 +212,37 @@ test('each sent datagram records whether it was received, dropped or lost', () =
   assert.equal(a.faces[linked].lastDg.result, 'dropped');   // the first one is still unread
 });
 
+test('(x * C1) / C2 folds like avr-gcc -Os, so overflow in x * C1 matches a Blink', () => {
+  // Expected values are what avr-gcc 7.3 -Os computes (checked against its gimple output)
+  const src = `
+    int x = 100; int y = 0; long lx = 100000; char cx = 100; byte bx = 100; unsigned ux = 100; int sx = 4000;
+    byte ball[] = { 1, 0, 6, 3 };
+    void setup(){
+      Serial.println((x * 1000 + 500) / 100);      // not folded: wraps
+      Serial.println((x + 5) * 1000 / 100);        // (x + 5) * 10
+      Serial.println((x * 1000 - y * 200) / 100);  // not folded
+      Serial.println(lx * 100000L / 1000);         // lx * 100
+      Serial.println(x * 1000 / 300);              // neither divides the other: wraps
+      Serial.println(cx * 1000 / 100);             // cx * 10
+      Serial.println((x * 1000) % 100);            // 0
+      Serial.println(x * 1000 / -100);             // x * -10
+      Serial.println((bx * 1000) / 100 * 7);       // bx * 70
+      Serial.println((long)(x * 1000) / 100);      // (long)(x * 10)
+      Serial.println(-(x * 1000) / 100);           // x * -10
+      Serial.println((sx << 4) / 4);               // shifts aren't folded
+      Serial.println(ux * 1000 / 100);             // unsigned isn't folded
+      Serial.println(x * 100 / 1000);              // x / 10
+      word trail = 2 * (100 - ball[0]) * 500 / 100; // Darkball
+      Serial.println(trail);
+    }
+    void loop(){}`;
+  const { w, log } = sim(src);
+  w.advance(5);
+  assert.deepEqual(log.join('\n').split(/\s+/).filter(Boolean), [
+    '-305', '1050', '-310', '10000000', '-103', '1000', '0', '-1000', '7000', '1000', '-1000', '-384', '344', '10', '990',
+  ]);
+});
+
 test('infinite loops and recursion are caught', () => {
   let r = sim(`void setup(){} void loop(){ while (true) { } }`);
   r.w.advance(5);
