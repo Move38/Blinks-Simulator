@@ -76,6 +76,7 @@ kbd { font: 600 10.5px var(--f-mono); padding: 1px 5px; border-radius: 4px; back
 .sketch-name { flex: 1; min-width: 60px; background: transparent; border: 1px solid transparent; border-radius: 8px; color: var(--text); font: 600 14px var(--f-ui); padding: 6px 8px; text-overflow: ellipsis; }
 .sketch-name:hover { border-color: var(--line); }
 .sketch-name:focus { outline: none; border-color: var(--line-2); background: var(--bg); }
+.sketch-name::placeholder { color: var(--muted); font-style: italic; opacity: 1; }
 .status { display: inline-flex; align-items: center; gap: 7px; font: 500 12px var(--f-mono); color: var(--muted); padding: 5px 10px; border-radius: 99px; background: var(--bg); border: 1px solid var(--line); white-space: nowrap; max-width: 46%; overflow: hidden; cursor: default; }
 .status .txt { overflow: hidden; text-overflow: ellipsis; }
 .status .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); flex: none; }

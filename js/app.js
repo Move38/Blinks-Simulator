@@ -352,7 +352,8 @@ function ask(message, okLabel) {
     d.querySelector('.primary').focus();
   });
 }
-const replaceOk = what => !modified() || ask(`Replace your changes to “${state.name}” with ${what}? Download your sketch first if you want to keep it.`, 'Replace');
+const title = () => state.name.trim() || 'untitled';
+const replaceOk = what => !modified() || ask(`Replace your changes to “${title()}” with ${what}? Download your sketch first if you want to keep it.`, 'Replace');
 
 async function openExample(ex) {
   if (!await replaceOk(`the “${ex.title}” example`)) return;
@@ -396,7 +397,7 @@ $('#menuPop').addEventListener('click', async e => {
     const blob = new Blob([state.code], { type: 'text/plain' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = (state.name.trim().replace(/[^\w-]+/g, '') || 'sketch') + '.ino';
+    link.download = (title().replace(/[^\w-]+/g, '') || 'untitled') + '.ino';
     link.click();
     setTimeout(() => URL.revokeObjectURL(link.href), 1000);
   } else if (a === 'share') {
