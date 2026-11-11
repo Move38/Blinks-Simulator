@@ -659,7 +659,7 @@ function updateInspector(now) {
     const linked = !(f.expireTime < b.now);
     return `<tr><td>${i}</td><td>${f.outValue}</td><td class="${linked ? '' : 'off'}">${linked ? f.inValue : '—'}</td></tr>`;
   }).join('');
-  const mode = { run: '', sleep: ' · asleep', crashed: ' · stopped', seeding: ' · sharing', seedspin: ' · hold to share', idle: '' }[b.mode] || '';
+  const mode = { run: '', sleeping: ' · going to sleep', sleep: ' · asleep', waking: ' · waking up', crashed: ' · stopped', seeding: ' · sharing', seedspin: ' · hold to share', idle: '' }[b.mode] || '';
   insp.innerHTML = `<h4>Blink #${b.id}<span>${(b.millis / 1000).toFixed(1)} s${mode}</span></h4>
     <table><tr><th>face</th><th>sends</th><th>hears</th></tr>${rows}</table>
     ${b.error ? `<div class="err">${b.error.message.replace(/[<>&]/g, '')}</div>` : ''}`;

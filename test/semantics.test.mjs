@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { sim, compileErr, rgb, click } from './helpers.mjs';
+import { colorR, colorG, colorB } from '../js/compiler/rt.js';
 
 const prog = body => `void setup(){ ${body} } void loop(){}`;
 
@@ -310,10 +311,23 @@ test('holding for 6 s in a group puts everyone to sleep; a press wakes them', ()
   const { w, log } = sim(src, [[0, 0], [1, 0], [2, -1]]);
   w.advance(300);
   const [a, b, c] = w.blinks;
-  a.press(true); w.advance(6100); a.press(false); w.advance(100);
+  a.press(true); w.advance(6100); a.press(false);
+  // a fades out in blue, sending sleep packets face by face; its neighbors start fading later
+  assert.equal(a.mode, 'sleeping');
+  const blue = a.display[0];
+  assert.ok(colorB(blue) > 0 && colorR(blue) === 0 && colorG(blue) === 0, 'the sleep fade is blue');
+  w.advance(150);
+  assert.ok(colorB(a.display[0]) < colorB(blue), 'and it dims');
+  w.advance(800);
   assert.deepEqual(w.blinks.map(x => x.mode), ['sleep', 'sleep', 'sleep']);
+  assert.ok(w.blinks.every(x => x.display.every(v => v === 0)), 'asleep is dark');
   w.advance(2000);
-  c.press(true); w.advance(60); c.press(false); w.advance(200);
+  c.press(true); w.advance(60);
+  // c fades up in white, waking its neighbors in turn
+  assert.equal(c.mode, 'waking');
+  const white = c.display[0];
+  assert.ok(colorR(white) > 0 && colorR(white) === colorG(white) && colorG(white) === colorB(white), 'the wake fade is white');
+  c.press(false); w.advance(1000);
   assert.deepEqual(w.blinks.map(x => x.mode), ['run', 'run', 'run']);
   assert.ok(log.includes('woke'));
 });

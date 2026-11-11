@@ -19,6 +19,10 @@ export const BIOS = {
   VIRAL_LOCKOUT_MS: 2000,
   WARM_SLEEP_MS: 10 * 60 * 1000,
   RANDOMIZE_MS: 512,
+  // warm sleep animation: 5 rounds of a packet on each face, the LEDs fading a step per packet
+  SLEEP_FADE_MAX: 200,    // SLEEP_ANIMATION_MAX_BRIGHTNESS
+  SLEEP_FADE_STEPS: 30,   // SLEEP_PACKET_REPEAT_COUNT * FACE_COUNT
+  SLEEP_FADE_STEP_MS: 10, // ~300 ms for the whole fade (SLEEP_ANIMATION_DURATION_MS)
   BIOS_VERSION: 2,
 };
 
@@ -26,6 +30,7 @@ const F = {
   PRESSED: 1, LONGPRESSED: 2, RELEASED: 4, SINGLE: 8, DOUBLE: 16, MULTI: 32, SEC3: 64, SEC6: 128,
 };
 const NEVER = 0xffffffff;
+const BLUE = H.color5(0, 0, 31, 1), WHITE = H.color5(31, 31, 31, 1);
 const DATAGRAM_LEN = 16;
 const LOOP_BUDGET = 3e6;
 
@@ -68,7 +73,7 @@ export class Blink {
     this.viralLockout = 0;
     this.warmSleepAt = this.millis + BIOS.WARM_SLEEP_MS;
     this.warmWoken = 0;
-    this.mode = 'run';          // run | seedspin | seeding | sleep | crashed | idle
+    this.mode = 'run';          // run | seedspin | seeding | sleeping | sleep | waking | crashed | idle
     this.skipUntil = 0;
     this.serialBuf = '';
     this.serialIn = [];
@@ -163,6 +168,7 @@ export class Blink {
   pass() {
     if (this.mode === 'crashed' || this.mode === 'idle') { this.faces.forEach(f => { f.rx = null; }); return; }
     if (this.mode === 'sleep') return this.sleepPass();
+    if (this.mode === 'sleeping' || this.mode === 'waking') return this.fadePass();
     if (this.mode === 'seedspin') return this.seedSpinPass();
     if (this.mode === 'seeding') return;
     if (this.millis < this.skipUntil) return;   // still inside randomize()
@@ -261,40 +267,62 @@ export class Blink {
   }
 
   // ---------------- warm sleep ----------------
+  // blinklib's warm_sleep_cycle(): fade out in blue while sending a sleep packet on each face in
+  // turn, five times round. A neighbor starts its own fade when its face gets the first packet,
+  // so the fade spreads across the group like a wave. Waking is the same in white, with "nop"
+  // packets that wake the neighbors in turn.
   warmSleep() {
     this.savedPixels = this.pixels.slice();
-    this.sleepSaveTime = this.millis;
-    this.mode = 'sleep';
-    this.display.fill(0);
-    // spread the word: every neighbor goes to sleep too
-    for (let f = 0; f < 6; f++) this.outbox.push(f, { k: 'sleep' });
-    this.faces.forEach(f => { f.rx = null; });
+    this.mode = 'sleeping';
     this.btn.bitflags = 0;
-    this.sleepStart = this.world.time;
-    // the BIOS spends a while sending sleep packets (5 rounds on every face), then clears
-    // its receive buffers, so values neighbors sent meanwhile don't wake it again
-    this.sleepListenAt = this.world.time + 40;
+    this.startFade();
     this.world.onSleep(this);
+  }
+
+  startFade() {
+    this.fadeStep = 0;
+    this.fadeAt = this.world.time;
+    this.fadePass();
+  }
+
+  fadePass() {
+    const waking = this.mode === 'waking';
+    const step = Math.trunc(BIOS.SLEEP_FADE_MAX / BIOS.SLEEP_FADE_STEPS);   // 6
+    while (this.fadeStep < BIOS.SLEEP_FADE_STEPS && this.world.time >= this.fadeAt) {
+      const n = this.fadeStep++;
+      const level = waking ? (n + 1) * step : BIOS.SLEEP_FADE_MAX - n * step;
+      this.display.fill(H.dim(waking ? WHITE : BLUE, level));
+      this.outbox.push(n % 6, { k: waking ? 'nop' : 'sleep' });
+      this.fadeAt += BIOS.SLEEP_FADE_STEP_MS;
+    }
+    if (!waking) this.faces.forEach(f => { f.rx = null; });   // busy sending: nothing is read
+    if (this.fadeStep < BIOS.SLEEP_FADE_STEPS || this.world.time < this.fadeAt) return;
+    if (waking) {
+      this.pixels.set(this.savedPixels);
+      this.display.set(this.savedPixels);
+      this.mode = 'run';
+    } else {
+      this.display.fill(0);
+      this.sleepSaveTime = this.millis;   // time stands still while asleep
+      this.btn.bitflags = 0;
+      this.mode = 'sleep';
+    }
   }
 
   sleepPass() {
     let wake = false;
-    const listening = this.world.time >= this.sleepListenAt;
     for (const face of this.faces) {
-      if (face.rx) { if (face.rx.k !== 'sleep' && listening) wake = true; face.rx = null; }
+      if (face.rx) { if (face.rx.k !== 'sleep') wake = true; face.rx = null; }
     }
     if (this.btn.bitflags & F.PRESSED) wake = true;
     if (!wake) return;
-    this.millis = this.sleepSaveTime;   // time stands still while asleep
+    this.millis = this.sleepSaveTime;
     this.now = this.millis;
     this.warmWoken = 1;
     this.warmSleepAt = this.now + BIOS.WARM_SLEEP_MS;
     this.btn.bitflags = 0;
-    this.mode = 'run';
-    this.pixels.set(this.savedPixels);
-    this.display.set(this.savedPixels);
-    this.wakeFlash = this.world.time;
-    for (let f = 0; f < 6; f++) this.outbox.push(f, { k: 'nop' });
+    this.mode = 'waking';
+    this.startFade();
   }
 
   // ---------------- game sharing (seed mode) ----------------

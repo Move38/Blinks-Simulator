@@ -312,7 +312,7 @@ export class Board {
     const sleeping = b.mode === 'sleep';
     for (let f = 0; f < 6; f++) {
       const A = V[(f + 4) % 6], B = V[(f + 5) % 6];
-      const L = sleeping ? [0, 0, 0] : colorToRGB(b.display[f]);
+      const L = colorToRGB(b.display[f]);
       c.beginPath(); c.moveTo(x, y); c.lineTo(A[0], A[1]); c.lineTo(B[0], B[1]); c.closePath();
       c.fillStyle = `rgb(${ledFill(L)})`; c.fill();
       const mx = (A[0] + B[0]) / 2, my = (A[1] + B[1]) / 2, a = Math.min(1, Math.max(L[0], L[1], L[2]) / 255);
