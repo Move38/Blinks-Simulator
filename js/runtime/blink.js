@@ -23,6 +23,9 @@ export const BIOS = {
   SLEEP_FADE_MAX: 200,    // SLEEP_ANIMATION_MAX_BRIGHTNESS
   SLEEP_FADE_STEPS: 30,   // SLEEP_PACKET_REPEAT_COUNT * FACE_COUNT
   SLEEP_FADE_STEP_MS: 10, // ~300 ms for the whole fade (SLEEP_ANIMATION_DURATION_MS)
+  // Not in blinklib: a Blink woken or put to sleep by a neighbor waits this long before its own
+  // fade, so the wave is easy to see. On hardware the gap comes only from the time packets take.
+  SLEEP_RELAY_MS: 50,
   BIOS_VERSION: 2,
 };
 
@@ -48,6 +51,11 @@ export class Blink {
     this.pendingRelease = false;
     this.program = null;
     this.inst = null;
+    // its own clock: how fast it runs (-1 slowest .. 1 fastest, scaled by world.drift), and
+    // where it is in its loop cycle. Both belong to the chip, so they survive restarts.
+    this.clockSkew = Math.random() * 2 - 1;
+    this.clockAcc = Math.random();
+    this.loopTick = Math.floor(Math.random() * 2);
     this.powerUp(0, null);
   }
 
@@ -234,7 +242,7 @@ export class Blink {
           p.result = 'ok';
         } else p.result = 'dropped';   // the last one hasn't been read yet: dropped, as on hardware
       } else if (p.k === 'sleep') {
-        this.warmSleep();
+        this.warmSleep(true);
         return;
       }
     }
@@ -268,20 +276,21 @@ export class Blink {
 
   // ---------------- warm sleep ----------------
   // blinklib's warm_sleep_cycle(): fade out in blue while sending a sleep packet on each face in
-  // turn, five times round. A neighbor starts its own fade when its face gets the first packet,
+  // turn, five times round. A neighbor starts its own fade a moment after the first packet reaches it,
   // so the fade spreads across the group like a wave. Waking is the same in white, with "nop"
   // packets that wake the neighbors in turn.
-  warmSleep() {
+  // `relay`: put to sleep by a neighbor, so wait a moment first (see SLEEP_RELAY_MS)
+  warmSleep(relay = false) {
     this.savedPixels = this.pixels.slice();
     this.mode = 'sleeping';
     this.btn.bitflags = 0;
-    this.startFade();
+    this.startFade(relay);
     this.world.onSleep(this);
   }
 
-  startFade() {
+  startFade(relay) {
     this.fadeStep = 0;
-    this.fadeAt = this.world.time;
+    this.fadeAt = this.world.time + (relay ? BIOS.SLEEP_RELAY_MS : 0);
     this.fadePass();
   }
 
@@ -314,15 +323,15 @@ export class Blink {
     for (const face of this.faces) {
       if (face.rx) { if (face.rx.k !== 'sleep') wake = true; face.rx = null; }
     }
-    if (this.btn.bitflags & F.PRESSED) wake = true;
-    if (!wake) return;
+    const pressed = !!(this.btn.bitflags & F.PRESSED);
+    if (!wake && !pressed) return;
     this.millis = this.sleepSaveTime;
     this.now = this.millis;
     this.warmWoken = 1;
     this.warmSleepAt = this.now + BIOS.WARM_SLEEP_MS;
     this.btn.bitflags = 0;
     this.mode = 'waking';
-    this.startFade();
+    this.startFade(!pressed);
   }
 
   // ---------------- game sharing (seed mode) ----------------

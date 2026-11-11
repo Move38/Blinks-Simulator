@@ -4,8 +4,8 @@
  */
 
 import { compile } from './compiler/index.js';
-import { World } from './runtime/world.js';
-import { Board, LAYOUTS, nextCell } from './ui/board.js';
+import { World, DRIFT } from './runtime/world.js';
+import { Board, LAYOUTS, nextCell, isQuiet } from './ui/board.js';
 import { createCodeEditor } from './ui/editor.js';
 import { Console } from './ui/console.js';
 import { EXAMPLES, STARTER } from './examples.js';
@@ -13,7 +13,6 @@ import { parseGitHub, repoFiles, sketchesIn, loadSketch as loadFromGitHub, GitHu
 
 const $ = s => document.querySelector(s);
 const STORE = 'blinks.playground.v2';
-const SPEEDS = [1, 2, 4, 0.25, 0.5];
 
 // ---------------- state ----------------
 const DEBUG_MODES = ['none', 'tooltip', 'comms'];
@@ -24,10 +23,11 @@ const state = {
   view: saved.view === 'blocks' ? 'blocks' : 'code',
   live: saved.live ?? true,
   debug: DEBUG_MODES.includes(saved.debug) ? saved.debug : saved.faces ? 'comms' : 'tooltip',
+  drift: typeof saved.drift === 'number' && saved.drift >= DRIFT.min && saved.drift <= DRIFT.max ? saved.drift : DRIFT.typical,
   consoleOpen: saved.consoleOpen ?? true,
   split: saved.split ?? null,
   source: saved.source ?? null,     // the example (or starter) text this sketch started from
-  speedIdx: 0,
+  speed: 1,
   paused: false,
   compiled: null,                   // last successful compile
   running: null,                    // code currently loaded on the Blinks
@@ -43,7 +43,7 @@ function saveState() {
   saveTimer = setTimeout(() => {
     try {
       localStorage.setItem(STORE, JSON.stringify({
-        code: state.code, name: state.name, view: state.view, live: state.live, debug: state.debug,
+        code: state.code, name: state.name, view: state.view, live: state.live, debug: state.debug, drift: state.drift,
         consoleOpen: state.consoleOpen, split: state.split, source: state.source,
         cells: world.blinks.map(b => [b.q, b.r, b.rot]),
       }));
@@ -292,7 +292,7 @@ function closePopovers() {
   }
 }
 document.addEventListener('pointerdown', e => {
-  if (!e.target.closest('.popover') && !e.target.closest('#examplesBtn') && !e.target.closest('#menuBtn') && !e.target.closest('#debugBtn')) closePopovers();
+  if (!e.target.closest('.popover') && !e.target.closest('#examplesBtn') && !e.target.closest('#menuBtn') && !e.target.closest('#debugBtn') && !e.target.closest('#speedBtn')) closePopovers();
 });
 
 function buildExamples() {
@@ -599,11 +599,41 @@ function setPaused(p) {
   renderFlags();
 }
 $('#stepBtn').addEventListener('click', () => world.advance(16));
-$('#speedBtn').addEventListener('click', () => {
-  state.speedIdx = (state.speedIdx + 1) % SPEEDS.length;
-  const s = SPEEDS[state.speedIdx];
-  $('#speedBtn').textContent = (s === 0.25 ? '¼' : s === 0.5 ? '½' : s) + '×';
-  renderFlags();
+// time menu: the speed, and how far apart the Blinks' clocks drift
+const speedLabel = s => (s === 0.25 ? '¼' : s === 0.5 ? '½' : s) + '×';
+function setSpeed(s, init) {
+  state.speed = s;
+  $('#speedVal').textContent = speedLabel(s);
+  for (const b of document.querySelectorAll('#timePop [data-speed]')) b.setAttribute('aria-checked', +b.dataset.speed === s);
+  if (!init) renderFlags();
+}
+setSpeed(state.speed, true);
+$('#speedBtn').addEventListener('click', e => {
+  const pop = $('#timePop');
+  if (!pop.hidden) closePopovers(); else openPopover(pop, e.currentTarget);
+});
+$('#timePop').addEventListener('click', e => {
+  const b = e.target.closest('[data-speed]');
+  if (!b) return;
+  closePopovers();
+  setSpeed(+b.dataset.speed);
+});
+// drift never goes to zero: no two real Blinks keep the same time. It snaps to the typical amount.
+const driftRange = $('#driftRange');
+driftRange.min = DRIFT.min * 100; driftRange.max = DRIFT.max * 100;
+driftRange.parentElement.style.setProperty('--at', (DRIFT.typical - DRIFT.min) / (DRIFT.max - DRIFT.min));
+function setDrift(d) {
+  state.drift = d;
+  world.drift = d;
+  driftRange.value = (d * 100).toFixed(1);
+  $('#driftVal').textContent = `±${(d * 100).toFixed(1)}%`;
+  saveState();
+}
+setDrift(state.drift);
+driftRange.addEventListener('input', () => {
+  let pct = +driftRange.value;
+  if (Math.abs(pct - DRIFT.typical * 100) <= 0.35) pct = DRIFT.typical * 100;
+  setDrift(pct / 100);
 });
 
 // typing into the console sends bytes to the last Blink you touched, like the Arduino serial monitor
@@ -656,12 +686,15 @@ function updateInspector(now) {
   if (b === inspFor && now - inspAt < 120) { placeInspector(b); return; }
   inspAt = now;
   inspFor = b;
+  const quiet = isQuiet(b);
   const rows = b.faces.map((f, i) => {
-    const linked = !(f.expireTime < b.now);
-    return `<tr><td>${i}</td><td>${f.outValue}</td><td class="${linked ? '' : 'off'}">${linked ? f.inValue : '—'}</td></tr>`;
+    const linked = !quiet && !(f.expireTime < b.now);
+    return `<tr><td>${i}</td><td class="${quiet ? 'off' : ''}">${quiet ? '—' : f.outValue}</td><td class="${linked ? '' : 'off'}">${linked ? f.inValue : '—'}</td></tr>`;
   }).join('');
   const mode = { run: '', sleeping: ' · going to sleep', sleep: ' · asleep', waking: ' · waking up', crashed: ' · stopped', seeding: ' · sharing', seedspin: ' · hold to share', idle: '' }[b.mode] || '';
-  insp.innerHTML = `<h4>Blink #${b.id}<span>${(b.millis / 1000).toFixed(1)} s${mode}</span></h4>
+  const rate = (world.clockRate(b) - 1) * 100;
+  const clock = world.drift ? ` · clock ${rate >= 0 ? '+' : '−'}${Math.abs(rate).toFixed(1)}%` : '';
+  insp.innerHTML = `<h4>Blink #${b.id}<span>${(b.millis / 1000).toFixed(1)} s${clock}${mode}</span></h4>
     <table><tr><th>face</th><th>sends</th><th>hears</th></tr>${rows}</table>
     ${b.error ? `<div class="err">${b.error.message.replace(/[<>&]/g, '')}</div>` : ''}`;
   insp.hidden = false;
@@ -693,7 +726,7 @@ function renderFlags() {
   const f = $('#simFlags');
   const items = [];
   if (state.paused) items.push(['Paused', 'warn']);
-  const sp = SPEEDS[state.speedIdx];
+  const sp = state.speed;
   if (sp !== 1 && !state.paused) items.push([`${sp}× speed`, '']);
   if (slowFactor < 0.95 && !state.paused) items.push([`Running at ${(slowFactor * sp).toFixed(1)}× — too many Blinks for this computer`, 'warn']);
   if (asleep) items.push([asleep === world.blinks.length ? 'Asleep · press a Blink to wake it' : `${asleep} asleep`, '']);
@@ -708,7 +741,7 @@ function frame(now) {
   const dt = Math.min(100, now - last);
   last = now;
   if (!state.paused && world.program) {
-    let simDt = dt * SPEEDS[state.speedIdx];
+    let simDt = dt * state.speed;
     const budget = 12;
     const allowed = budget / costPerMs;
     const capped = simDt > allowed;
@@ -717,7 +750,7 @@ function frame(now) {
     world.advance(simDt);
     const spent = performance.now() - t0;
     if (simDt > 1) costPerMs = costPerMs * 0.9 + (spent / simDt) * 0.1;
-    const f = capped ? simDt / (dt * SPEEDS[state.speedIdx]) : 1;
+    const f = capped ? simDt / (dt * state.speed) : 1;
     const nf = slowFactor * 0.95 + f * 0.05;
     if (Math.abs(nf - slowFactor) > 0.01 || (slowFactor < 0.95) !== (nf < 0.95)) { slowFactor = nf; renderFlags(); }
     else slowFactor = nf;
@@ -750,6 +783,7 @@ function showHelp() {
       <li>Drag a Blink by its rim to move it. Drop it on the bin to remove it. Double-click the table to add one.</li>
       <li>Right-click or press <kbd>R</kbd> to rotate a Blink. Real Blinks can be turned any way, so test your game with rotated Blinks.</li>
       <li>The debug button under the table picks what you see: <b>Tooltip</b> shows what each face sends and hears when you hover a Blink, <b>Comms</b> shows every face's value on the Blinks themselves (orange when a neighbor hears it), and each datagram as a bubble showing its bytes. It ends in a green check when the neighbor gets it, a red X when it's dropped because the last one wasn't read yet, and is grey when nobody is there.</li>
+      <li>Real Blinks don't keep exactly the same time: each one's clock runs a little fast or slow. The simulator does the same, so timers on different Blinks drift apart. The speed menu (under the table) has a slider to make the drift bigger or smaller.</li>
     </ul>
     <h3>When it says no</h3>
     <p>If something would not work on a real Blink, the simulator tells you: code that doesn't compile, a loop that never ends, an array index out of range, or a face number above 5.</p>`;

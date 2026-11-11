@@ -245,9 +245,11 @@ export class Board {
     for (const b of bs) this.drawBlink(c, b, now);
     this.trackDatagrams(now);
     if (this.debug === 'comms') {
-      for (const b of bs) this.drawComms(c, b);
+      for (const b of bs) if (!isQuiet(b)) this.drawComms(c, b);
       this.drawDatagrams(c, now);
     }
+    // on top of everything, so they can float over the neighbors
+    for (const b of bs) if (b.mode === 'sleep') this.drawZzz(c, b, now);
   }
 
   drawGrid(c) {
@@ -309,7 +311,6 @@ export class Board {
     const r2 = R * 0.8;
     const V = [];
     for (let i = 0; i < 6; i++) { const a = a0 + i * Math.PI / 3; V.push([x + r2 * Math.cos(a), y + r2 * Math.sin(a)]); }
-    const sleeping = b.mode === 'sleep';
     for (let f = 0; f < 6; f++) {
       const A = V[(f + 4) % 6], B = V[(f + 5) % 6];
       const L = colorToRGB(b.display[f]);
@@ -330,13 +331,29 @@ export class Board {
       const p = 0.5 + 0.5 * Math.sin(now / 180);
       rhex(c, x, y, R * 1.02, R * 0.17); c.strokeStyle = `rgba(255,93,108,${0.5 + 0.5 * p})`; c.lineWidth = 2.5; c.stroke();
       badge(c, x, y - R * 0.05, S * 0.26, '#ff5d6c', '!');
-    } else if (sleeping) {
-      c.fillStyle = 'rgba(40,36,56,.55)'; c.font = `600 ${Math.round(S * 0.32)}px Figtree, sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle';
-      c.fillText('z', x + S * 0.08, y - S * 0.06);
-      c.font = `600 ${Math.round(S * 0.22)}px Figtree, sans-serif`; c.fillText('z', x - S * 0.14, y + S * 0.12);
     }
     if (b === this.lastTouched && document.activeElement === this.cv) {
       c.fillStyle = '#FA4616'; c.beginPath(); c.arc(x, y + R * 0.88, 2.4, 0, TAU); c.fill();
+    }
+  }
+
+  // A sleeping Blink's z's: each rises from its top right corner, drifting up and to the right,
+  // growing and fading as it goes. Blinks are out of step with each other so they don't bob together.
+  drawZzz(c, b, now) {
+    const [x, y] = this.pos(b), S = this.view.S;
+    const PERIOD = 2400, N = 3;
+    c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.lineJoin = 'round';
+    for (let i = 0; i < N; i++) {
+      const t = ((now + b.id * 777) / PERIOD + i / N) % 1;
+      const ease = 1 - (1 - t) * (1 - t);
+      const px = x + S * (0.42 + 0.5 * ease) + Math.sin(t * TAU) * S * 0.06;
+      const py = y - S * (0.5 + 0.7 * ease);
+      const a = Math.min(1, t * 5) * (1 - t * t);
+      c.font = `800 ${Math.round(S * (0.24 + 0.2 * t))}px Figtree, sans-serif`;
+      c.lineWidth = Math.max(2.5, S * 0.07);
+      c.strokeStyle = `rgba(24,20,36,${0.8 * a})`; c.strokeText('z', px, py);
+      c.fillStyle = `rgba(200,190,255,${a})`; c.fillText('z', px, py);
     }
   }
 
@@ -512,6 +529,9 @@ function badge(c, x, y, r, col, txt) {
   c.fillStyle = '#fff'; c.font = `800 ${Math.round(r * 1.3)}px Figtree, sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle';
   c.fillText(txt, x, y + 1);
 }
+
+// Asleep (or fading in or out of sleep), a Blink sends no face values and hears none
+export const isQuiet = b => b.mode === 'sleep' || b.mode === 'sleeping' || b.mode === 'waking';
 
 // Arrangements for the layout buttons (axial hex coordinates)
 export const LAYOUTS = {

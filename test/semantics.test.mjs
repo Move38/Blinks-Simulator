@@ -318,6 +318,9 @@ test('holding for 6 s in a group puts everyone to sleep; a press wakes them', ()
   assert.ok(colorB(blue) > 0 && colorR(blue) === 0 && colorG(blue) === 0, 'the sleep fade is blue');
   w.advance(150);
   assert.ok(colorB(a.display[0]) < colorB(blue), 'and it dims');
+  while (a.mode !== 'sleep') w.advance(2);
+  // each neighbor waits a moment before its own fade, so it ripples out like a wave
+  assert.equal(c.mode, 'sleeping', 'the far Blink is still fading when the first is dark');
   w.advance(800);
   assert.deepEqual(w.blinks.map(x => x.mode), ['sleep', 'sleep', 'sleep']);
   assert.ok(w.blinks.every(x => x.display.every(v => v === 0)), 'asleep is dark');
@@ -327,9 +330,33 @@ test('holding for 6 s in a group puts everyone to sleep; a press wakes them', ()
   assert.equal(c.mode, 'waking');
   const white = c.display[0];
   assert.ok(colorR(white) > 0 && colorR(white) === colorG(white) && colorG(white) === colorB(white), 'the wake fade is white');
+  assert.notEqual(a.mode, 'waking', 'the wake reaches the far Blink later');
   c.press(false); w.advance(1000);
   assert.deepEqual(w.blinks.map(x => x.mode), ['run', 'run', 'run']);
   assert.ok(log.includes('woke'));
+});
+
+test('each Blink keeps its own time when clocks drift', () => {
+  const src = `Timer t; byte n; void setup(){ t.set(1000); } void loop(){ if (t.isExpired()) { n++; t.set(1000); Serial.println(n); } }`;
+  const { w, log } = sim(src, [[0, 0], [3, 0]], { tag: true });
+  const [fast, slow] = w.blinks;
+  // in step: both clocks keep true time
+  w.advance(1000);
+  const m0 = [fast.millis, slow.millis];
+  w.advance(5000);
+  assert.equal(fast.millis - m0[0], 5000);
+  assert.equal(slow.millis - m0[1], 5000);
+  // 2% fast and 2% slow
+  w.drift = 0.02; fast.clockSkew = 1; slow.clockSkew = -1;
+  const m1 = [fast.millis, slow.millis], l1 = [fast.loops, slow.loops];
+  w.advance(10000);
+  assert.ok(Math.abs(fast.millis - m1[0] - 10200) <= 1, `fast clock: ${fast.millis - m1[0]}`);
+  assert.ok(Math.abs(slow.millis - m1[1] - 9800) <= 1, `slow clock: ${slow.millis - m1[1]}`);
+  // loop() runs on each Blink's own clock too
+  assert.ok(Math.abs((fast.loops - l1[0]) - 5100) <= 1 && Math.abs((slow.loops - l1[1]) - 4900) <= 1);
+  // so the fast Blink's timer fires more often
+  const count = id => log.filter(x => x.startsWith(id + ':')).length;
+  assert.ok(count(fast.id) > count(slow.id), log.join(' '));
 });
 
 test('Serial prints only after begin()', () => {
