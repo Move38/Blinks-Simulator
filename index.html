@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Blinks Playground</title>
+<meta name="description" content="Write code for Blinks in C or with blocks and watch it run on simulated Blinks, right in your browser.">
+<meta name="theme-color" content="#14111b">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.css">
+<link rel="stylesheet" href="css/app.css">
+<link rel="stylesheet" href="css/blocks.css" onerror="this.remove()">
+</head>
+<body>
+<div class="app" id="app">
+  <header class="top">
+    <a class="brand" href="./" aria-label="Blinks Playground home">
+      <img class="logo" src="assets/blinks-logo.svg" alt="Blinks" width="73" height="32">
+      <span class="brand-name">Playground</span>
+    </a>
+    <button type="button" class="btn ghost" id="examplesBtn" aria-haspopup="true" aria-expanded="false">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 5h12M4 10h12M4 15h8" /></svg>
+      Examples
+    </button>
+    <div class="top-spacer"></div>
+    <label class="switch" title="Run your code automatically as you type">
+      <input type="checkbox" id="liveToggle" checked>
+      <span class="track"><span class="knob"></span></span>
+      <span class="switch-label">Live</span>
+    </label>
+    <button type="button" class="btn primary" id="runBtn" title="Run on all Blinks (⌘↵)">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 4.5v11l9-5.5z" /></svg>
+      <span>Run</span>
+    </button>
+    <button type="button" class="btn icon ghost" id="menuBtn" aria-label="More" aria-haspopup="true" aria-expanded="false">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="4.5" cy="10" r="1.6" /><circle cx="10" cy="10" r="1.6" /><circle cx="15.5" cy="10" r="1.6" /></svg>
+    </button>
+  </header>
+
+  <main class="work" id="work">
+    <section class="pane editor-pane" aria-label="Code">
+      <div class="pane-head">
+        <div class="seg" role="tablist" aria-label="Editor view">
+          <button type="button" role="tab" id="tabCode" aria-selected="true" data-view="code">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7.5 6 3.5 10l4 4M12.5 6l4 4-4 4" /></svg>Code
+          </button>
+          <button type="button" role="tab" id="tabBlocks" aria-selected="false" data-view="blocks">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 4h5v3h2V4h5v5H4zM4 11h12v5H4z" /></svg>Blocks
+          </button>
+        </div>
+        <input class="sketch-name" id="sketchName" value="My sketch" spellcheck="false" aria-label="Sketch name">
+        <div class="status" id="status" aria-live="polite"><span class="dot"></span><span class="txt">Ready</span></div>
+      </div>
+      <div class="editor-body">
+        <div id="code" class="view"></div>
+        <div id="blocks" class="view" hidden></div>
+        <div class="view-note" id="viewNote" hidden></div>
+      </div>
+    </section>
+
+    <div class="splitter" id="splitter" role="separator" aria-orientation="vertical" aria-label="Resize" tabindex="0"></div>
+
+    <section class="pane table-pane" aria-label="Blinks">
+      <div class="board-wrap" id="boardWrap">
+        <canvas id="board" tabindex="0" aria-label="Blinks table. Press the center of a Blink to use its button; drag a Blink by its rim to move it."></canvas>
+        <div class="hint" id="hint">Press the center to click · drag the rim to move · <kbd>R</kbd> rotates</div>
+        <div class="sim-flags" id="simFlags"></div>
+        <div class="dock">
+          <div class="pill">
+            <button type="button" class="ib" id="removeBlink" aria-label="Remove a Blink"><svg viewBox="0 0 20 20"><path d="M5 10h10" /></svg></button>
+            <span class="count" id="blinkCount">6</span>
+            <button type="button" class="ib" id="addBlink" aria-label="Add a Blink"><svg viewBox="0 0 20 20"><path d="M5 10h10M10 5v10" /></svg></button>
+            <span class="sep"></span>
+            <div class="layouts" id="layouts" role="group" aria-label="Arrange">
+              <button type="button" data-layout="solo" title="One Blink"><svg viewBox="0 0 24 24"><use href="#hx" x="12" y="12" /></svg></button>
+              <button type="button" data-layout="pair" title="Two Blinks"><svg viewBox="0 0 24 24"><use href="#hxs" x="8" y="9.5" /><use href="#hxs" x="16" y="14.5" /></svg></button>
+              <button type="button" data-layout="line" title="A line of four"><svg viewBox="0 0 24 24"><use href="#hxt" x="4" y="8" /><use href="#hxt" x="10" y="11" /><use href="#hxt" x="16" y="14" /><use href="#hxt" x="22" y="17" /></svg></button>
+              <button type="button" data-layout="flower" title="Flower of seven"><svg viewBox="0 0 24 24"><use href="#hxt" x="12" y="12" /><use href="#hxt" x="12" y="5" /><use href="#hxt" x="18" y="8.5" /><use href="#hxt" x="18" y="15.5" /><use href="#hxt" x="12" y="19" /><use href="#hxt" x="6" y="15.5" /><use href="#hxt" x="6" y="8.5" /></svg></button>
+              <button type="button" data-layout="scatter" title="Scatter them apart"><svg viewBox="0 0 24 24"><use href="#hxt" x="5" y="6" /><use href="#hxt" x="17" y="5" /><use href="#hxt" x="11" y="13" /><use href="#hxt" x="5" y="19" /><use href="#hxt" x="19" y="18" /></svg></button>
+            </div>
+            <span class="sep"></span>
+            <button type="button" class="ib" id="shuffleRot" title="Turn every Blink a random way, like real Blinks on a table"><svg viewBox="0 0 20 20"><path d="M15.5 8.5A6 6 0 0 0 4.6 7M4.5 11.5A6 6 0 0 0 15.4 13M4.5 3.5v3.7h3.7M15.5 16.5v-3.7h-3.7" /></svg></button>
+            <button type="button" class="ib toggle" id="facesToggle" aria-pressed="false" title="Show face numbers and the values each Blink is sending"><svg viewBox="0 0 20 20"><path d="M10 2.8 16.2 6.4v7.2L10 17.2 3.8 13.6V6.4z" /><path d="M10 2.8V10m0 0 6.2 3.6M10 10l-6.2 3.6" /></svg></button>
+          </div>
+          <div class="pill">
+            <button type="button" class="ib" id="restartBtn" title="Restart all Blinks (like putting fresh batteries in)"><svg viewBox="0 0 20 20"><path d="M4.5 10a5.5 5.5 0 1 0 1.8-4.1M4.5 3.5v3.3h3.3" /></svg></button>
+            <button type="button" class="ib" id="pauseBtn" aria-label="Pause" title="Pause time"><svg viewBox="0 0 20 20"><path class="pz" d="M7 5v10M13 5v10" /><path class="pl" d="M7 4.8v10.4l8.2-5.2z" /></svg></button>
+            <button type="button" class="ib" id="stepBtn" title="Step forward 16 ms" disabled><svg viewBox="0 0 20 20"><path d="M5.5 4.8v10.4l7.2-5.2zM14.5 5v10" /></svg></button>
+            <button type="button" class="speed" id="speedBtn" title="Speed">1×</button>
+          </div>
+        </div>
+        <div class="bin" id="bin" hidden><svg viewBox="0 0 24 24"><path d="M5 7h14M10 4h4M7 7l1 13h8l1-13" /></svg></div>
+        <div class="inspector" id="inspector" hidden></div>
+      </div>
+      <section class="console" id="console" aria-label="Console">
+        <div class="console-head">
+          <span class="console-title">Console</span>
+          <span class="ram" id="ram" title="Memory your global variables use, out of what a Blink has left after blinklib"></span>
+          <button type="button" class="link" id="clearConsole">Clear</button>
+          <button type="button" class="ib small" id="toggleConsole" aria-label="Collapse console" aria-expanded="true"><svg viewBox="0 0 20 20"><path d="M6 8l4 4 4-4" /></svg></button>
+        </div>
+        <ol class="console-body" id="consoleBody"></ol>
+        <form class="console-input" id="serialForm" hidden>
+          <input id="serialInput" autocomplete="off" spellcheck="false" placeholder="Type here to send to the Blink over Serial">
+        </form>
+      </section>
+    </section>
+  </main>
+</div>
+
+<div class="popover examples-pop" id="examplesPop" hidden></div>
+<div class="popover menu-pop" id="menuPop" hidden>
+  <button type="button" data-action="new">New sketch</button>
+  <button type="button" data-action="open">Open .ino file…</button>
+  <button type="button" data-action="download">Download .ino</button>
+  <button type="button" data-action="share">Copy share link</button>
+  <hr>
+  <button type="button" data-action="help">How the simulator works</button>
+</div>
+<input type="file" id="fileInput" accept=".ino,.cpp,.c,.h,.txt" hidden>
+<dialog class="help" id="helpDialog"></dialog>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <path id="hx" d="M-8 0-4-6.9h8L8 0 4 6.9h-8z" />
+    <path id="hxs" d="M-5.5 0-2.75-4.75h5.5L5.5 0 2.75 4.75h-5.5z" />
+    <path id="hxt" d="M-3.6 0-1.8-3.1h3.6L3.6 0 1.8 3.1h-3.6z" />
+  </defs>
+</svg>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/clike/clike.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closebrackets.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/selection/active-line.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/comment/comment.min.js"></script>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
