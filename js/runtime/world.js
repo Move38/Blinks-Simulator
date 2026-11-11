@@ -12,6 +12,11 @@ export const DIRS = [[0, -1], [1, -1], [1, 0], [0, 1], [-1, 1], [-1, 0]];
 const key = (q, r) => q + ',' + r;
 const LOOP_PERIOD_MS = 2;
 
+// How far each Blink's clock can run fast or slow. A Blink's clock is an RC oscillator in its
+// chip, not a crystal, and its speed shifts with the battery's voltage and the temperature,
+// so no two Blinks keep quite the same time. The typical amount is an estimate.
+export const DRIFT = { typical: 0.02, min: 0.005, max: 0.1 };
+
 export class World {
   constructor(events = {}) {
     this.blinks = [];
@@ -23,6 +28,7 @@ export class World {
     this.events = events;
     this.warned = new Map();
     this.seeding = null;
+    this.drift = 0;             // each Blink's clock runs up to this much fast or slow (0.02 = ±2%)
   }
 
   // ---------- program ----------
@@ -100,6 +106,8 @@ export class World {
 
   // ---------- time ----------
   // Advance simulated time by dt milliseconds. Returns the number of loop passes run.
+  // Every Blink keeps its own time: its millisecond ticks come at its own clock's rate, and it
+  // runs loop() every LOOP_PERIOD_MS of its own time, so Blinks slowly slide in and out of step.
   advance(dt) {
     this.acc += dt;
     let passes = 0;
@@ -107,16 +115,24 @@ export class World {
       this.acc -= 1;
       this.time++;
       const bs = this.blinks;
-      for (let i = 0; i < bs.length; i++) bs[i].tick1ms();
-      if (this.time % LOOP_PERIOD_MS === 0) {
-        for (let i = 0; i < bs.length; i++) bs[i].pass();
-        this.deliver();
-        passes++;
+      let passed = false;
+      for (let i = 0; i < bs.length; i++) {
+        const b = bs[i];
+        b.clockAcc += 1 + b.clockSkew * this.drift;
+        while (b.clockAcc >= 1) {
+          b.clockAcc -= 1;
+          b.tick1ms();
+          if (++b.loopTick >= LOOP_PERIOD_MS) { b.loopTick = 0; b.pass(); passes++; passed = true; }
+        }
       }
+      if (passed) this.deliver();
       if (this.seeding) this.seedTick();
     }
     return passes;
   }
+
+  // This Blink's clock compared with true time, e.g. 1.013 runs 1.3% fast
+  clockRate(b) { return 1 + b.clockSkew * this.drift; }
 
   deliver() {
     for (const b of this.blinks) {

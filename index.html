@@ -90,7 +90,7 @@
             <button type="button" class="ib" id="restartBtn" title="Restart all Blinks (like putting fresh batteries in)"><svg viewBox="0 0 20 20"><path d="M4.5 10a5.5 5.5 0 1 0 1.8-4.1M4.5 3.5v3.3h3.3" /></svg></button>
             <button type="button" class="ib" id="pauseBtn" aria-label="Pause" title="Pause time"><svg viewBox="0 0 20 20"><path class="pz" d="M7 5v10M13 5v10" /><path class="pl" d="M7 4.8v10.4l8.2-5.2z" /></svg></button>
             <button type="button" class="ib" id="stepBtn" title="Step forward 16 ms" disabled><svg viewBox="0 0 20 20"><path d="M5.5 4.8v10.4l7.2-5.2zM14.5 5v10" /></svg></button>
-            <button type="button" class="speed" id="speedBtn" title="Speed">1×</button>
+            <button type="button" class="speed" id="speedBtn" aria-haspopup="menu" aria-expanded="false" title="Speed and clock drift"><span id="speedVal">1×</span><svg viewBox="0 0 10 10"><path d="M2.5 6.2 5 3.7l2.5 2.5" /></svg></button>
           </div>
         </div>
         <div class="bin" id="bin" hidden><svg viewBox="0 0 24 24"><path d="M5 7h14M10 4h4M7 7l1 13h8l1-13" /></svg></div>
@@ -118,6 +118,23 @@
   <button type="button" role="menuitemradio" data-debug="none"><span class="t">None</span><span class="b">Just the Blinks</span></button>
   <button type="button" role="menuitemradio" data-debug="tooltip"><span class="t">Tooltip</span><span class="b">Hover a Blink to see what each face sends and hears</span></button>
   <button type="button" role="menuitemradio" data-debug="comms"><span class="t">Comms</span><span class="b">Show the value every face is sending, and datagrams as bubbles</span></button>
+</div>
+<div class="popover menu-pop time-pop" id="timePop" role="menu" aria-label="Time" hidden>
+  <h3>Speed</h3>
+  <div class="speed-row">
+    <button type="button" role="menuitemradio" data-speed="0.25">¼×</button>
+    <button type="button" role="menuitemradio" data-speed="0.5">½×</button>
+    <button type="button" role="menuitemradio" data-speed="1">1×</button>
+    <button type="button" role="menuitemradio" data-speed="2">2×</button>
+    <button type="button" role="menuitemradio" data-speed="4">4×</button>
+  </div>
+  <hr />
+  <h3>Clock drift <output id="driftVal" for="driftRange">±2.0%</output></h3>
+  <p class="pop-note">No two Blinks keep quite the same time. Each one's clock runs up to this much fast or slow.</p>
+  <div class="drift">
+    <input type="range" id="driftRange" min="0.5" max="10" step="0.1" value="2" aria-label="Clock drift in percent" />
+    <span class="drift-mark" aria-hidden="true">typical</span>
+  </div>
 </div>
 <div class="popover menu-pop" id="menuPop" hidden>
   <button type="button" data-action="new">New sketch</button>
