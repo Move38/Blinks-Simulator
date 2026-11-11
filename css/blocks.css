@@ -102,6 +102,9 @@
 .bk-host .bkMono.blocklyText,
 .bk-host text.bkMono { font-family: var(--bk-mono); font-weight: 500; }
 .bk-host .bkCodeTitle.blocklyText { fill-opacity: .7; font-size: 11px; }
+/* Typing in a block's text box keeps it the white box it was (the page's dark color scheme would
+   otherwise make it dark) */
+.blocklyWidgetDiv .blocklyHtmlInput { color-scheme: light; background: #fff; color: #575e75; }
 .blocklyWidgetDiv .blocklyHtmlInput.bkMono { font-family: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace; }
 
 /* Comments on blocks and on the workspace */
@@ -113,14 +116,27 @@
   font: 13px/1.4 Figtree, system-ui, sans-serif;
 }
 
-/* The comment and gear icons on blocks: white on a see-through circle, like the + and − buttons */
+/* The comment icon on blocks: white on a see-through circle, like the + and − buttons */
 .bk-host .blocklyIconGroup .blocklyIconShape { fill: rgba(255, 255, 255, .22); stroke: none; }
 .bk-host .blocklyIconGroup .blocklyIconSymbol { fill: #fff; }
-.bk-host .blocklyMutatorIcon .blocklyIconShape { rx: 8px; ry: 8px; }
 .bk-host .blocklyIconGroup:hover .blocklyIconShape { fill: rgba(255, 255, 255, .36); }
 .bk-host .blocklyIconGroup { opacity: 1; }
 
-/* Their pop-ups: a dark panel like the menus and tooltips, instead of the block's color */
+/* A function input's − sits on the corner of its name while the name is being edited, in the
+   orange-red of the selected block's outline (the WidgetDiv is outside .bk-host, so no --bk-accent) */
+.blocklyWidgetDiv .bkInputRemove {
+  position: absolute; top: -9px; right: -9px; width: 20px; height: 20px; padding: 0; box-sizing: border-box;
+  display: grid; place-items: center; border: 0; border-radius: 50%;
+  background: #FA4616; cursor: pointer; box-shadow: 0 2px 6px rgba(0, 0, 0, .35);
+  transition: transform .15s cubic-bezier(.34, 1.56, .64, 1);
+  animation: bkInputRemoveIn .22s cubic-bezier(.34, 1.56, .64, 1);
+}
+.blocklyWidgetDiv .bkInputRemove::before { content: ''; width: 8px; height: 2px; border-radius: 1px; background: #fff; }
+.blocklyWidgetDiv .bkInputRemove:hover { transform: scale(1.2); }
+@keyframes bkInputRemoveIn { from { transform: scale(.4); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .blocklyWidgetDiv .bkInputRemove { animation: none; transition: none; } }
+
+/* A comment's pop-up: a dark panel like the menus and tooltips, instead of the block's color */
 .bk-host .blocklyBubble .blocklyEmboss { filter: drop-shadow(0 8px 18px rgba(0, 0, 0, .4)); }
 .bk-host .blocklyBubble .blocklyDraggable { fill: #2a2337; stroke: #3a3149; stroke-width: 1px; rx: 10px; ry: 10px; }
 .bk-host .blocklyBubble .blocklyBubbleTail { fill: #2a2337; stroke: #3a3149; stroke-width: 1px; }
@@ -144,9 +160,6 @@
 .bk-host .blocklyTextInputBubble.bkHeld .bkBubbleGrip { opacity: 1; }
 .bk-host .bkBubbleGrip rect:first-child { fill: #3a3149; stroke: #4a4060; stroke-width: 1px; }
 .bk-host .bkBubbleGrip circle { fill: var(--bk-muted); pointer-events: none; }
-.bk-host .blocklyMiniWorkspaceBubble .blocklyMainBackground,
-.bk-host .blocklyMutatorBackground { fill: #1d1827; stroke: none; rx: 8px; ry: 8px; }
-.bk-host .blocklyMiniWorkspaceBubble .blocklyFlyoutBackground { fill: #231d30; }
 /* Workspace comments (the notes at the top of a sketch) are windows like a block's comment: a dark
    panel with the text in a rounded inset. The collapse and delete buttons show on hover. */
 .bk-host .blocklyComment .blocklyCommentHighlight { fill: #2a2337; stroke: #3a3149; stroke-width: 1px; rx: 10px; ry: 10px; filter: drop-shadow(0 8px 18px rgba(0, 0, 0, .4)); }
@@ -333,6 +346,8 @@
 .bk-btn:hover { background: rgba(255, 255, 255, .06); }
 .bk-btn-primary { background: var(--bk-accent); border-color: var(--bk-accent); color: #fff; }
 .bk-btn-primary:hover { background: #ff5a2e; }
+.bk-btn-danger { color: #ff8a95; border-color: rgba(255, 93, 108, .35); }
+.bk-btn-danger:hover { background: rgba(255, 93, 108, .15); }
 
 @media (max-width: 600px) {
   .bk-host .blocklyToolbox { min-width: 0; padding: 8px 4px; }
@@ -371,6 +386,10 @@
 .bk-host .bk-nav button:hover { background: #2a2337; color: var(--bk-text); }
 .bk-host .bk-nav svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 
+/* a disabled block is ghostly too (the blocks inside it are disabled with it: they don't fade twice) */
+.bk-host .blocklyDisabled { opacity: .3; }
+.bk-host .blocklyDisabled .blocklyDisabled { opacity: 1; }
+
 /* the trash drawer along the bottom: what's in it is ghostly */
 /* (Blockly sets the theme's flyout color as an inline style) */
 .bk-host .bkTrashDrawer .blocklyFlyoutBackground { fill: #2a2337 !important; fill-opacity: .98 !important; stroke: #3a3149; stroke-width: 1px; }
@@ -390,3 +409,12 @@
 .bk-host .bkTrashClose path { fill: none; stroke: var(--bk-muted); stroke-width: 1.8px; stroke-linecap: round; }
 .bk-host .bkTrashClose:hover circle { fill: rgba(255, 255, 255, .16); }
 .bk-host .bkTrashClose:hover path { stroke: var(--bk-text); }
+
+/* the pencil beside a variable in a drawer, shown on hover */
+.bk-host .bkVarPencil { opacity: 0; transition: opacity .12s; cursor: pointer; }
+.bk-host g:hover > .bkVarPencil, .bk-host .bkVarPencil:focus { opacity: 1; }
+.bk-host .bkPencilBridge { fill: transparent; }
+.bk-host .bkPencilDot { fill: rgba(255, 255, 255, .1); }
+.bk-host .bkVarPencil path { fill: none; stroke: var(--bk-muted); stroke-width: 1.5px; stroke-linecap: round; stroke-linejoin: round; }
+.bk-host .bkVarPencil:hover .bkPencilDot { fill: rgba(255, 255, 255, .2); }
+.bk-host .bkVarPencil:hover path { stroke: var(--bk-text); }
