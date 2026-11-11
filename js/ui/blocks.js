@@ -507,8 +507,12 @@ const PLUS_MINUS = sign => 'data:image/svg+xml;charset=utf-8,' + encodeURICompon
   `<path d="M6 10h8${sign === '+' ? 'M10 6v8' : ''}" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg>`);
 
 // The blocks that set up a list (a global C array): with a size, or with its starting items
+// The default item of a list (0, false or off): the shadow left in a slot when its item is dragged away
+const itemShadow = kind => (kind === 'color' ? colorBlock('OFF') : kind === 'bool' ? { type: 'bk_bool', fields: { BOOL: 'FALSE' } } : numBlock(0));
+// List items are real blocks over that shadow, so they can be picked up and dragged into a new place
+const itemInput = (kind, block) => ({ shadow: itemShadow(kind), block: block || itemShadow(kind) });
+
 function defineListBlocks(Blockly) {
-  const itemShadow = kind => (kind === 'color' ? colorBlock('OFF') : kind === 'bool' ? { type: 'bk_bool', fields: { BOOL: 'FALSE' } } : numBlock(0));
   const kindOfId = (block, id) => {
     const v = id && block.workspace && block.workspace.getVariableMap().getVariableById(id);
     return v && isList(v.type) ? listKind(v.type) : 'num';
@@ -545,16 +549,47 @@ function defineListBlocks(Blockly) {
         .appendField(new Blockly.FieldVariable(null, id => { this.updateShape_(kindOfId(this, id)); return id; }, ALL_LIST_TYPES, 'int[]'), 'LIST')
         .appendField('starts as');
       this.appendDummyInput('TAIL')
-        .appendField(new Blockly.FieldImage(PLUS_MINUS('-'), 18, 18, 'one item fewer', () => this.resize_(-1)))
-        .appendField(new Blockly.FieldImage(PLUS_MINUS('+'), 18, 18, 'one more item', () => this.resize_(1)));
+        .appendField(new Blockly.FieldImage(PLUS_MINUS('+'), 18, 18, 'one more item', () => this.resize_(1)), 'PLUS');
       this.setInputsInline(true);
       this.setStyle('bk_lists');
-      this.setTooltip('Sets up a list with these starting items. Use − and + to change how many it holds.');
+      this.setTooltip('Sets up a list with these starting items. Drag an item out to remove it, or drag a block between items to add it there. + adds a copy of the last item.');
       this.updateShape_();
       warnDuplicate.call(this);
     },
     // the item kind is saved too: the item slots are made before the list field is loaded
     saveExtraState() { return { items: this.items_, kind: this.kind_ }; },
+    // the item blocks in order (null where a slot holds only its default)
+    itemIds_() {
+      const ids = [];
+      for (let k = 0; this.getInput('ITEM' + k); k++) {
+        const t = this.getInputTargetBlock('ITEM' + k);
+        ids.push(t && !t.isShadow() ? t.id : null);
+      }
+      return ids;
+    },
+    // put these item blocks in the slots, growing or shrinking the list to fit (an undo step)
+    setItems_(ids) {
+      const before = JSON.stringify(this.saveExtraState());
+      this.placeItems_(ids, -1, () => {
+        const after = JSON.stringify(this.saveExtraState());
+        if (after !== before) Blockly.Events.fire(new (Blockly.Events.get(Blockly.Events.BLOCK_CHANGE))(this, 'mutation', null, before, after));
+      });
+    },
+    // the same without the mutation event; slot `empty` is left as an open, empty slot
+    placeItems_(ids, empty, reshaped) {
+      for (let k = 0; this.getInput('ITEM' + k); k++) {
+        const t = this.getInputTargetBlock('ITEM' + k);
+        if (t && !t.isShadow()) t.unplug(false);
+      }
+      this.items_ = Math.max(1, Math.min(LIST_MAX + 1, ids.length));
+      this.updateShape_();
+      if (reshaped) reshaped();
+      if (empty >= 0 && this.getInput('ITEM' + empty)) this.getInput('ITEM' + empty).connection.setShadowState(null);
+      ids.slice(0, this.items_).forEach((id, k) => {
+        const b = id && this.workspace.getBlockById(id);
+        if (b && !b.isDeadOrDying() && !b.getParent()) this.getInput('ITEM' + k).connection.connect(b.outputConnection);
+      });
+    },
     loadExtraState(state) {
       this.items_ = Math.max(1, Math.min(LIST_MAX, Number(state && state.items) || 1));
       this.updateShape_(KIND_CHECK[state && state.kind] ? state.kind : 'num');
@@ -565,10 +600,26 @@ function defineListBlocks(Blockly) {
       if (n === this.items_) return;
       const before = JSON.stringify(this.saveExtraState());
       Blockly.Events.setGroup(true);
-      this.items_ = n;
-      this.updateShape_();
-      Blockly.Events.fire(new (Blockly.Events.get(Blockly.Events.BLOCK_CHANGE))(this, 'mutation', null, before, JSON.stringify(this.saveExtraState())));
-      Blockly.Events.setGroup(false);
+      try {
+        for (let i = n; i < this.items_; i++) {
+          const gone = this.getInputTargetBlock('ITEM' + i);
+          if (gone && !gone.isShadow()) gone.dispose(false);
+        }
+        const last = delta > 0 && this.getInputTargetBlock('ITEM' + (this.items_ - 1));
+        const old = this.items_;
+        this.items_ = n;
+        this.updateShape_();
+        Blockly.Events.fire(new (Blockly.Events.get(Blockly.Events.BLOCK_CHANGE))(this, 'mutation', null, before, JSON.stringify(this.saveExtraState())));
+        // a new item starts as a copy of the last one
+        for (let i = old; i < n; i++) {
+          const state = last ? Blockly.serialization.blocks.save(last, { addCoordinates: false, addNextBlocks: false, doFullSerialization: false }) : itemShadow(this.kind_);
+          delete state.id;
+          const b = Blockly.serialization.blocks.append(state, this.workspace, { recordUndo: true });
+          this.getInput('ITEM' + i).connection.connect(b.outputConnection);
+        }
+      } finally {
+        Blockly.Events.setGroup(false);
+      }
     },
     updateShape_(kind = kindOfId(this, this.getFieldValue('LIST'))) {
       this.kind_ = kind;
@@ -1417,11 +1468,10 @@ class Importer {
     } else {
       json = { type: 'bk_list_init', extraState: { items: list.size, kind }, fields: { LIST: { id: v.id } }, inputs: {} };
       const ctx = { scopes: [], fn: { name: null } };
-      const fill = kind === 'color' ? 'OFF' : kind === 'bool' ? null : 0;
       for (let i = 0; i < list.size; i++) {
-        json.inputs['ITEM' + i] = i < list.items.length
-          ? this.slot(list.items[i], KIND_CHECK[kind], ctx, fill)
-          : { shadow: kind === 'bool' ? { type: 'bk_bool', fields: { BOOL: 'FALSE' } } : shadowFor(KIND_CHECK[kind], fill) };
+        if (i >= list.items.length) { json.inputs['ITEM' + i] = itemInput(kind); continue; }
+        const slot = this.slot(list.items[i], KIND_CHECK[kind], ctx, null);
+        json.inputs['ITEM' + i] = itemInput(kind, slot.block || slot.shadow);
       }
     }
     this.anchors.push({ line: this.realLine(d.line || decl.line), target: json });
@@ -2430,7 +2480,10 @@ function listsFlyout(ws) {
   const index = { INDEX: { shadow: numBlock(0) } };
   items.push({ kind: 'sep', gap: 24 });
   items.push({ kind: 'block', type: 'bk_list_decl', fields: { ...ref(lists[0]), COUNT: LIST_SIZE } });
-  items.push({ kind: 'block', type: 'bk_list_init', fields: ref(lists[0]), extraState: { items: 3, kind: listKind(lists[0].type) } });
+  const kind0 = listKind(lists[0].type);
+  const samples = { num: [1, 2, 3].map(numBlock), color: ['RED', 'GREEN', 'BLUE'].map(colorBlock), bool: [true, false, true].map(b => ({ type: 'bk_bool', fields: { BOOL: b ? 'TRUE' : 'FALSE' } })) }[kind0];
+  items.push({ kind: 'block', type: 'bk_list_init', fields: ref(lists[0]), extraState: { items: 3, kind: kind0 },
+    inputs: Object.fromEntries(samples.map((b, i) => ['ITEM' + i, itemInput(kind0, b)])) });
   for (const kind of ['num', 'bool', 'color']) {
     const of = lists.filter(v => listKind(v.type) === kind);
     if (!of.length) continue;
@@ -2460,7 +2513,7 @@ function placeListSetup(Blockly, ws, v) {
   Blockly.Events.setGroup(true);
   try {
     // made from JSON with the list already chosen, so no default variable gets created
-    const b = Blockly.serialization.blocks.append({ type: 'bk_list_decl', fields: { LIST: { id: v.getId() }, COUNT: LIST_SIZE } }, ws);
+    const b = Blockly.serialization.blocks.append({ type: 'bk_list_decl', fields: { LIST: { id: v.getId() }, COUNT: LIST_SIZE } }, ws, { recordUndo: true });
     const view = ws.getMetricsManager().getViewMetrics(true);
     const flyout = ws.getFlyout && ws.getFlyout();
     const left = flyout && flyout.isVisible() ? flyout.getWidth() / ws.scale : 0;
@@ -2554,6 +2607,7 @@ function openAsk(message, value, done) {
 function installUi(Blockly) {
   if (installUi.done) return;
   installUi.done = true;
+  installListItemDrag(Blockly);
 
   if (Blockly.dialog && Blockly.dialog.setPrompt) {
     Blockly.dialog.setPrompt((message, value, callback) => openAsk(message, String(value ?? ''), v => callback(v)));
@@ -2710,6 +2764,181 @@ export async function createBlocksEditor(container, { onChange } = {}) {
 }
 
 // One tidy column: file notes first, then the scripts in order, a little away from the edges
+// Lists take items by insertion: picking an item up takes it out of its list (the others close
+// up), and while a block that fits is dragged near a gap between items, the items slide apart
+// around an empty slot where dropping will put it. Item slots themselves aren't drop targets.
+// Blockly's block drag is wrapped so all of this happens inside the drag, in its undo step; the
+// open-slot preview is made with events off and taken back before the drop, so undo never sees it.
+function installListItemDrag(Blockly) {
+  const P = Blockly.dragging && Blockly.dragging.BlockDragStrategy && Blockly.dragging.BlockDragStrategy.prototype;
+  if (!P || P.bkListItems) return;
+  P.bkListItems = true;
+  const itemSlot = conn => {
+    const list = conn && conn.getSourceBlock();
+    if (!list || list.type !== 'bk_list_init') return null;
+    const input = list.inputList.find(i => i.connection === conn);
+    const m = input && /^ITEM(\d+)$/.exec(input.name);
+    return m ? { list, index: Number(m[1]) } : null;
+  };
+  const { startDrag, drag, endDrag, revertDrag } = P;
+  const quietly = fn => {
+    Blockly.Events.disable();
+    try { fn(); } finally { Blockly.Events.enable(); }
+  };
+  // open (or close) an empty slot at `index` in a list
+  const preview = (gap, open) => {
+    if (!gap || gap.list.isDeadOrDying()) return;
+    quietly(() => {
+      const ids = gap.list.itemIds_();
+      if (open) ids.splice(gap.index, 0, null); else ids.splice(gap.index, 1);
+      gap.list.placeItems_(ids, open ? gap.index : -1);
+    });
+  };
+  const same = (a, b) => (a && b ? a.list === b.list && a.index === b.index : a === b);
+  const unpreview = strategy => { preview(strategy.bkGap, false); strategy.bkGap = null; };
+
+  P.startDrag = function (e) {
+    const slot = !this.block.isShadow() && this.block.outputConnection && itemSlot(this.block.outputConnection.targetConnection);
+    let result;
+    slideItems(Blockly, slot ? [slot.list] : [], () => {
+      result = startDrag.call(this, e);
+      if (slot && slot.list.items_ > 1) {
+        const ids = slot.list.itemIds_();
+        ids.splice(slot.index, 1);
+        slot.list.setItems_(ids);
+      }
+    });
+    this.bkLayouts = new Map();
+    return result;
+  };
+  // Blockly's own search, minus list item slots
+  P.getConnectionCandidate = function (block, delta) {
+    let radius = this.getSearchRadius(), best = null;
+    for (const local of this.getLocalConnections(block)) {
+      const { connection, radius: r } = local.closest(radius, delta);
+      if (connection && !itemSlot(connection)) { best = { local, neighbour: connection, distance: r }; radius = r; }
+    }
+    return best;
+  };
+  P.drag = function (newLoc, e) {
+    const result = drag.call(this, newLoc, e);
+    const layouts = this.bkLayouts || (this.bkLayouts = new Map());
+    const gap = this.block.isShadow() || this.connectionCandidate ? null : findListGap(this.block, newLoc, this.bkGap, layouts);
+    if (!same(gap, this.bkGap)) {
+      const lists = [this.bkGap && this.bkGap.list, gap && gap.list].filter(Boolean);
+      slideItems(Blockly, lists, () => {
+        unpreview(this);
+        if (gap) { preview(gap, true); this.bkGap = gap; }
+      });
+    }
+    return result;
+  };
+  P.revertDrag = function (...args) {
+    slideItems(Blockly, this.bkGap ? [this.bkGap.list] : [], () => unpreview(this));
+    return revertDrag.apply(this, args);
+  };
+  P.endDrag = function (e) {
+    const gap = this.bkGap && { list: this.bkGap.list, index: this.bkGap.index };
+    let result;
+    slideItems(Blockly, gap ? [gap.list] : [], () => {
+      unpreview(this);
+      result = endDrag.call(this, e);
+      const block = this.block;
+      if (gap && !block.isDeadOrDying() && !block.getParent() && !gap.list.isDeadOrDying()) {
+        const ids = gap.list.itemIds_();
+        if (ids.length === 1 && ids[0] === null) ids[0] = block.id;   // a list holding only its default
+        else ids.splice(gap.index, 0, block.id);
+        if (ids.length <= LIST_MAX) gap.list.setItems_(ids);
+      }
+    });
+    this.bkLayouts = null;
+    return result;
+  };
+}
+
+// Run fn, which moves items around in these lists, then slide each item (and the + button) from
+// where it was drawn to its new place. An item still sliding starts from where it is now.
+function slideItems(Blockly, lists, fn) {
+  lists = [...new Set(lists)].filter(l => l && !l.isDeadOrDying() && l.rendered);
+  const offset = el => {
+    const t = getComputedStyle(el).translate;
+    return t && t !== 'none' ? parseFloat(t) || 0 : 0;
+  };
+  const parts = list => {
+    const out = [];
+    for (let k = 0; list.getInput('ITEM' + k); k++) {
+      const t = list.getInputTargetBlock('ITEM' + k);
+      if (t) out.push([t.id, t.getSvgRoot(), () => t.getRelativeToSurfaceXY().x]);
+    }
+    const plus = list.getField('PLUS');
+    const el = plus && plus.getSvgRoot();
+    // its place in the block (the transform attribute, so a running slide isn't counted)
+    if (el) out.push(['+' + list.id, el, () => { const m = el.transform.baseVal.consolidate(); return m ? m.matrix.e : 0; }]);
+    return out;
+  };
+  const before = new Map();
+  for (const list of lists) for (const [id, el, x] of parts(list)) before.set(id, x() + offset(el));
+  fn();
+  if (!lists.length) return;
+  if (Blockly.renderManagement) Blockly.renderManagement.triggerQueuedRenders(lists[0].workspace);
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  for (const list of lists) {
+    if (list.isDeadOrDying()) continue;
+    for (const [id, el, x] of parts(list)) {
+      if (!before.has(id)) continue;
+      el.getAnimations().forEach(a => a.cancel());
+      const dx = before.get(id) - x();
+      if (still || Math.abs(dx) < 0.5) continue;
+      el.animate([{ translate: `${dx}px 0` }, { translate: '0 0' }], { duration: 180, easing: 'cubic-bezier(.2,.8,.2,1)' });
+    }
+  }
+}
+
+// Where a list's items would part for each gap, measured with no gap open: an open gap moves the
+// items after it, and measuring that would make the gap jump between places
+function listGaps(list) {
+  const rects = [];
+  for (let k = 0; list.getInput('ITEM' + k); k++) {
+    const t = list.getInputTargetBlock('ITEM' + k);
+    if (t) rects.push(t.getBoundingRectangle());
+  }
+  const gaps = [];
+  for (let k = 0; k <= rects.length && rects.length; k++) {
+    const r = rects[Math.min(k, rects.length - 1)];
+    gaps.push({
+      x: k === 0 ? r.left - 3 : k === rects.length ? r.right + 3 : (rects[k - 1].right + rects[k].left) / 2,
+      y: (r.top + r.bottom) / 2,
+      h: r.bottom - r.top,
+    });
+  }
+  return gaps;
+}
+
+// The gap between list items nearest the dragged block's left edge (where it would connect).
+// `layouts` keeps each list's gaps as first measured in this drag, before any opened (lists don't
+// move during a drag); the open gap is a little stickier, so it doesn't flick between two.
+function findListGap(block, loc, open, layouts) {
+  const out = block.outputConnection;
+  if (!out) return null;
+  const check = out.getCheck();
+  const height = block.getHeightWidth().height;
+  const px = loc.x, py = loc.y + height / 2;
+  let best = null, bestD = 44;
+  for (const list of block.workspace.getTopBlocks(false)) {
+    if (list.type !== 'bk_list_init' || !list.isEnabled()) continue;
+    if (check && !check.includes(KIND_CHECK[list.kind_])) continue;
+    const isOpen = open && open.list === list;
+    if (!isOpen && list.items_ >= LIST_MAX) continue;
+    if (!layouts.has(list)) layouts.set(list, listGaps(list));
+    layouts.get(list).forEach((g, k) => {
+      if (Math.abs(py - g.y) > g.h) return;
+      const d = Math.abs(px - g.x) - (isOpen && k === open.index ? 8 : 0);
+      if (d < bestD) { bestD = d; best = { list, index: k }; }
+    });
+  }
+  return best;
+}
+
 // Slide the block drawer in and out instead of popping it. Blockly shows and hides the
 // flyout (and its scrollbar) in updateDisplay(), so closing waits for the slide to finish.
 function animateFlyout(flyout) {
