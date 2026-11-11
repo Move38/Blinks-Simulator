@@ -1,0 +1,268 @@
+/* Blocks editor (js/ui/blocks.js): dark theme for Blockly's Zelos renderer */
+
+.bk-host {
+  --bk-bg: #14111b;
+  --bk-panel: #1d1827;
+  --bk-panel-2: #2a2337;
+  --bk-line: #30283f;
+  --bk-text: #eee9f5;
+  --bk-muted: #a69db8;
+  --bk-accent: #FA4616;
+  --bk-mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: var(--bk-panel);
+  font-family: Figtree, system-ui, -apple-system, sans-serif;
+}
+
+.bk-host .blocklySvg { background: var(--bk-panel); outline: none; }
+.bk-host .blocklyMainBackground { stroke: none; }
+
+/* Toolbox: a quiet list of categories with colored dots */
+.bk-host .blocklyToolbox {
+  background: var(--bk-bg);
+  border-right: 1px solid var(--bk-line);
+  padding: 10px 8px;
+  min-width: 112px;
+  box-sizing: border-box;
+}
+.bk-host .blocklyToolboxCategoryContainer { margin: 1px 0; }
+.bk-host .blocklyToolboxCategory {
+  display: flex;
+  align-items: center;
+  height: auto;
+  padding: 7px 12px 7px 10px;
+  padding-left: 10px !important;   /* Blockly sets an inline padding-left for nesting; keep room before the dot */
+  margin: 0;
+  border-radius: 8px;
+  cursor: pointer;
+  border: none;
+  transition: background-color .12s ease;
+}
+.bk-host .blocklyTreeRowContentContainer { display: flex; align-items: center; }
+.bk-host .blocklyToolboxCategory:hover { background: rgba(255, 255, 255, .05); }
+.bk-host .blocklyToolboxCategory.bkCatSelected { background: var(--bk-panel-2); }
+.bk-host .bkCatDot {
+  display: inline-block;
+  flex: none;
+  width: 12px;
+  height: 12px;
+  margin-right: 10px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .18);
+}
+.bk-host .blocklyToolboxCategoryLabel {
+  font: 600 13px/1.2 Figtree, system-ui, sans-serif;
+  color: var(--bk-muted);
+  padding: 0;
+}
+.bk-host .blocklyToolboxCategory:hover .blocklyToolboxCategoryLabel,
+.bk-host .bkCatSelected .blocklyToolboxCategoryLabel { color: var(--bk-text); }
+.bk-host .blocklyTreeSeparator { border-bottom: 1px solid var(--bk-line); margin: 6px 4px; }
+
+/* Flyout */
+.bk-host .blocklyFlyoutBackground { fill: #231d30; fill-opacity: .97; }
+.bk-host .blocklyFlyoutButtonBackground { fill: #352c46; stroke: #4a4060; rx: 9px; ry: 9px; }
+.bk-host .blocklyFlyoutButton:hover .blocklyFlyoutButtonBackground { fill: #43395a; }
+.bk-host .blocklyFlyoutButtonShadow { fill: none; }
+.bk-host .blocklyFlyoutButton .blocklyText {
+  fill: var(--bk-text);
+  font: 600 13px Figtree, system-ui, sans-serif;
+}
+.bk-host .blocklyFlyoutLabelText { fill: var(--bk-muted); font: 600 12px Figtree, system-ui, sans-serif; }
+.bk-host .bkFlyoutSub .blocklyFlyoutLabelText { fill: var(--bk-muted); font-family: Figtree, system-ui, sans-serif !important; font-size: 11px !important; font-weight: 700 !important; letter-spacing: .12em; }
+/* The "local" pill on a local variable's name */
+.bk-host .bkLocalPill rect { fill: rgba(0, 0, 0, .28); }
+.bk-host .bkLocalPill text { fill: #fff !important; font: 700 10px Figtree, system-ui, sans-serif; text-anchor: middle; letter-spacing: .02em; }
+.bk-host .bkRuleLine { fill: rgba(255, 255, 255, .24); }
+.bk-host .bkFlyoutHeading .blocklyFlyoutLabelText { fill: var(--bk-text); font-family: Figtree, system-ui, sans-serif !important; font-size: 15px !important; font-weight: 700 !important; }
+
+/* Scrollbars, zoom, trash */
+.bk-host .blocklyScrollbarHandle { fill: #4a4060; }
+.bk-host .blocklyScrollbarBackground { fill: none; }
+.bk-host .blocklyZoom > image, .bk-host .blocklyZoom > svg > image { opacity: .5; filter: invert(1); }
+.bk-host .blocklyZoom > image:hover, .bk-host .blocklyZoom > svg > image:hover { opacity: .85; }
+.bk-host .blocklyTrash image { filter: invert(1); opacity: .45; }
+
+/* Code text */
+.bk-host .bkMono.blocklyText,
+.bk-host text.bkMono { font-family: var(--bk-mono); font-weight: 500; }
+.bk-host .bkCodeTitle.blocklyText { fill-opacity: .7; font-size: 11px; }
+.blocklyWidgetDiv .blocklyHtmlInput.bkMono { font-family: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace; }
+
+/* Comments on blocks and on the workspace */
+.bk-host .blocklyCommentText,
+.bk-host .blocklyTextarea,
+.bk-host .blocklyCommentForeignObject textarea {
+  background: #2f2742;
+  color: var(--bk-text);
+  font: 13px/1.4 Figtree, system-ui, sans-serif;
+}
+.bk-host .blocklyComment .blocklyCommentTopbarBackground { fill: #3a3150; }
+.bk-host .blocklyComment .blocklyCommentHighlight { fill: #2f2742; stroke: #4a4060; }
+.bk-host .blocklyComment .blocklyCommentPreview { fill: var(--bk-muted); }
+.bk-host .blocklyComment .blocklyFoldoutIcon,
+.bk-host .blocklyComment .blocklyDeleteIcon { filter: invert(1); opacity: .6; }
+
+/* Menus, tooltips and dropdowns live outside the host */
+.blocklyTooltipDiv {
+  background: #2a2337 !important;
+  color: #eee9f5 !important;
+  border: 1px solid #3a3149 !important;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .35) !important;
+  font: 13px/1.4 Figtree, system-ui, sans-serif !important;
+  padding: 6px 10px !important;
+  max-width: 280px;
+}
+.blocklyWidgetDiv .blocklyMenu,
+.blocklyDropDownDiv .blocklyMenu {
+  font-family: Figtree, system-ui, sans-serif;
+}
+.blocklyWidgetDiv .blocklyContextMenu {
+  background: #2a2337;
+  border: 1px solid #3a3149;
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .45);
+  padding: 4px;
+}
+.blocklyWidgetDiv .blocklyContextMenu .blocklyMenuItem { color: #eee9f5; border-radius: 6px; }
+.blocklyWidgetDiv .blocklyContextMenu .blocklyMenuItemHighlight { background: #3a3149; }
+.blocklyWidgetDiv .blocklyContextMenu .blocklyMenuItemDisabled { color: #6e6582; }
+
+/* Bit strips on the Bits blocks */
+.bk-host .bkBitArrow { fill: #fff; font: 700 15px Figtree, system-ui, sans-serif; }
+.bk-host .bkBitZero { fill: rgba(255, 255, 255, .7); font: 700 9px "JetBrains Mono", monospace; text-anchor: middle; }
+.bk-host .bkBitValue { fill: #fff; font: 600 11px "JetBrains Mono", monospace; }
+
+/* Color picker (lives in Blockly's drop-down div, outside .bk-host) */
+.bkPicker { width: 216px; padding: 6px 4px 4px; font: 600 12px Figtree, system-ui, sans-serif; color: #eee9f5; }
+.bkPickerNamed { display: grid; grid-template-columns: repeat(9, 1fr); gap: 4px; }
+.bkPickerSwatch { width: 20px; height: 20px; padding: 0; border-radius: 50%; border: 1.5px solid rgba(255, 255, 255, .3); cursor: pointer; }
+.bkPickerSwatch:hover { transform: scale(1.12); }
+.bkPickerSwatch.on { box-shadow: 0 0 0 2px #2a2337, 0 0 0 4px #FA4616; }
+.bkPickerHead { display: flex; align-items: center; justify-content: space-between; margin: 12px 0 6px; color: #a69db8; }
+.bkPickerPreview { width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid rgba(255, 255, 255, .3); }
+.bkPickerRow { display: grid; grid-template-columns: 14px 1fr 28px; align-items: center; gap: 8px; margin: 6px 0; }
+.bkPickerRow span { color: #a69db8; }
+.bkPickerRow output { text-align: right; font: 500 11.5px "JetBrains Mono", ui-monospace, monospace; color: #eee9f5; }
+.bkPickerRow input { -webkit-appearance: none; appearance: none; width: 100%; height: 10px; margin: 0; border-radius: 5px; outline: none; cursor: pointer; }
+.bkPickerRow input::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: #fff; border: 2px solid #1d1827; box-shadow: 0 1px 4px rgba(0, 0, 0, .5); }
+.bkPickerRow input::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: #fff; border: 2px solid #1d1827; }
+.bkPickerRow input:focus-visible { box-shadow: 0 0 0 2px #FA4616; }
+
+/* Dialog for editing multi-line C code */
+.bk-dialog {
+  position: absolute;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(10, 8, 14, .55);
+  backdrop-filter: blur(2px);
+}
+.bk-dialog-card {
+  width: min(640px, 100%);
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  background: var(--bk-panel-2);
+  border: 1px solid #3a3149;
+  border-radius: 14px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, .5);
+  box-sizing: border-box;
+}
+.bk-dialog-title { font: 600 13px Figtree, system-ui, sans-serif; color: var(--bk-muted); }
+.bk-dialog-code {
+  width: 100%;
+  min-height: 90px;
+  resize: vertical;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  background: var(--bk-bg);
+  color: var(--bk-text);
+  border: 1px solid var(--bk-line);
+  border-radius: 8px;
+  outline: none;
+  font: 13px/1.5 var(--bk-mono);
+  tab-size: 2;
+}
+.bk-dialog-code:focus { border-color: var(--bk-accent); }
+.bk-dialog-small { width: min(360px, 100%); }
+.bk-dialog-message { color: var(--bk-text); font-size: 14px; line-height: 1.4; }
+.bk-dialog-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  background: var(--bk-bg);
+  color: var(--bk-text);
+  border: 1px solid var(--bk-line);
+  border-radius: 8px;
+  outline: none;
+  font: 14px Figtree, system-ui, sans-serif;
+}
+.bk-dialog-input:focus { border-color: var(--bk-accent); }
+/* Make a variable: segmented choices */
+.bk-seg { display: flex; gap: 2px; padding: 3px; background: var(--bk-bg); border: 1px solid var(--bk-line); border-radius: 10px; }
+.bk-seg label { flex: 1; position: relative; }
+.bk-seg input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.bk-seg span { display: block; padding: 6px 4px; border-radius: 7px; text-align: center; font: 600 12.5px Figtree, system-ui, sans-serif; color: var(--bk-muted); }
+.bk-seg input:checked + span { background: var(--bk-panel-2); color: var(--bk-text); box-shadow: 0 1px 3px rgba(0, 0, 0, .3); }
+.bk-seg input:focus-visible + span { outline: 2px solid var(--bk-accent); outline-offset: -2px; }
+.bk-seg input:disabled + span { opacity: .35; }
+.bk-seg input:disabled { cursor: default; }
+.bk-scope-hint, .bk-type-hint { flex: none; min-height: 32px; line-height: 1.4; }
+.bk-seg-wrap { flex-wrap: wrap; }
+.bk-seg-wrap label { flex: 1 0 30%; }
+.bk-seg-wrap span { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12px; }
+.bk-number-types[hidden] { display: none; }
+/* Example values for a type, in a tooltip over the choice being hovered, and the float warning */
+.bk-make-var { position: relative; }
+.bk-tip { position: absolute; z-index: 2; box-sizing: border-box; min-width: 96px; padding: 8px 11px 9px; border-radius: 10px; background: #3a3149; border: 1px solid #4a405e; box-shadow: 0 10px 24px rgba(0, 0, 0, .45); pointer-events: none; transform-origin: var(--arrow, 50%) 100%; }
+.bk-tip[hidden] { display: none; }
+.bk-tip::after { content: ""; position: absolute; left: var(--arrow, 50%); bottom: -5px; width: 9px; height: 9px; background: #3a3149; border: solid #4a405e; border-width: 0 1px 1px 0; transform: translateX(-50%) rotate(45deg); }
+.bk-tip.in { animation: bk-pop .38s cubic-bezier(.34, 1.56, .64, 1); }
+@keyframes bk-pop { from { opacity: 0; transform: translateY(6px) scale(.85); } }
+.bk-tip-type { font: 600 11px "JetBrains Mono", ui-monospace, monospace; color: var(--bk-muted); }
+.bk-ex-val { display: flex; align-items: center; justify-content: flex-end; gap: 6px; min-height: 24px; margin-top: 2px; font: 700 17px "JetBrains Mono", ui-monospace, monospace; color: var(--bk-text); }
+.bk-ex-val i { width: 12px; height: 12px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, .3); }
+.bk-digits { display: inline-flex; white-space: pre; }
+.bk-dig { position: relative; display: inline-block; overflow: hidden; height: 1.3em; line-height: 1.3em; }
+.bk-dig-in { display: inline-block; animation: bk-dig-in .5s cubic-bezier(.2, .8, .2, 1) both; }
+.bk-dig-out { position: absolute; left: 0; top: 0; animation: bk-dig-out .5s cubic-bezier(.4, 0, .2, 1) both; }
+@keyframes bk-dig-in { from { transform: translateY(100%); opacity: 0; } }
+@keyframes bk-dig-out { to { transform: translateY(-100%); opacity: 0; } }
+.bk-ex-note { font: 600 11.5px/15px Figtree, system-ui, sans-serif; color: var(--bk-accent); text-align: right; text-wrap: balance; }
+.bk-ex-note:empty { display: none; }
+.bk-ex-note.in { animation: bk-note .35s ease-out; }
+@keyframes bk-note { from { opacity: 0; transform: translateX(-4px); } }
+.bk-warn { padding: 8px 10px; border-radius: 8px; background: rgba(255, 196, 0, .1); border: 1px solid rgba(255, 196, 0, .3); color: #ffd772; font: 500 12px/1.45 Figtree, system-ui, sans-serif; }
+.bk-warn[hidden] { display: none; }
+@media (prefers-reduced-motion: reduce) { .bk-tip.in, .bk-dig-in, .bk-dig-out, .bk-ex-note.in { animation: none; } }
+.bk-make-err { color: #ffb4bd; }
+.bk-dialog-actions { display: flex; align-items: center; gap: 8px; }
+.bk-dialog-hint { flex: 1; font: 12px Figtree, system-ui, sans-serif; color: #6e6582; }
+.bk-btn {
+  padding: 7px 14px;
+  border: 1px solid var(--bk-line);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--bk-text);
+  font: 600 13px Figtree, system-ui, sans-serif;
+  cursor: pointer;
+}
+.bk-btn:hover { background: rgba(255, 255, 255, .06); }
+.bk-btn-primary { background: var(--bk-accent); border-color: var(--bk-accent); color: #fff; }
+.bk-btn-primary:hover { background: #ff5a2e; }
+
+@media (max-width: 600px) {
+  .bk-host .blocklyToolbox { min-width: 0; padding: 8px 4px; }
+  .bk-host .blocklyToolboxCategory { padding: 7px 8px; }
+  .bk-host .blocklyToolboxCategoryLabel { font-size: 12px; }
+  .bk-dialog-hint { display: none; }
+}
