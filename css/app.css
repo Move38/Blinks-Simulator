@@ -154,7 +154,7 @@ li.CodeMirror-hint-active .sig { color: rgba(255,255,255,.8); }
 .ib svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .ib:hover:not(:disabled) { background: var(--panel-2); color: var(--text); }
 .ib:disabled { opacity: .35; cursor: default; }
-.ib.toggle[aria-pressed="true"] { background: rgba(250,70,22,.18); color: var(--blinks-2); }
+.ib.toggle[aria-pressed="true"], .ib.on { background: rgba(250,70,22,.18); color: var(--blinks-2); }
 .ib.small { width: 26px; height: 26px; }
 .ib.small svg { width: 16px; height: 16px; }
 #pauseBtn .pl { display: none; fill: currentColor; stroke: none; }
@@ -172,7 +172,9 @@ li.CodeMirror-hint-active .sig { color: rgba(255,255,255,.8); }
 .bin { position: absolute; right: 18px; bottom: 74px; width: 64px; height: 64px; border-radius: 50%; border: 2px dashed rgba(255,255,255,.35); display: grid; place-items: center; color: rgba(255,255,255,.7); background: rgba(13,11,18,.6); pointer-events: none; transition: all .15s; }
 .bin svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .bin.hot { border-color: var(--blinks); background: rgba(250,70,22,.25); color: #fff; transform: scale(1.08); }
-.inspector { position: absolute; z-index: 4; pointer-events: none; min-width: 200px; background: rgba(20,17,27,.97); border: 1px solid var(--line-2); border-radius: 12px; padding: 10px 12px; box-shadow: 0 14px 34px rgba(0,0,0,.45); font-size: 12px; }
+.inspector { --tip: #17131f; position: absolute; z-index: 4; pointer-events: none; min-width: 200px; background: var(--tip); border: 1px solid var(--line-2); border-radius: 12px; padding: 10px 12px; box-shadow: 0 14px 34px rgba(0,0,0,.45); font-size: 12px; }
+.inspector::after { content: ""; position: absolute; left: var(--caret, 50%); bottom: -6px; width: 10px; height: 10px; background: var(--tip); border: solid var(--line-2); border-width: 0 1px 1px 0; border-bottom-right-radius: 2px; transform: translateX(-50%) rotate(45deg); }
+.inspector.below::after { bottom: auto; top: -6px; transform: translateX(-50%) rotate(225deg); }
 .inspector h4 { margin: 0 0 6px; font-size: 12.5px; display: flex; justify-content: space-between; gap: 10px; }
 .inspector h4 span { color: var(--muted); font: 500 11.5px var(--f-mono); }
 .inspector table { border-collapse: collapse; font: 500 11.5px var(--f-mono); width: 100%; }
@@ -216,6 +218,12 @@ li.CodeMirror-hint-active .sig { color: rgba(255,255,255,.8); }
 .menu-pop button { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 8px 12px; border-radius: 8px; cursor: pointer; font-size: 13.5px; }
 .menu-pop button:hover { background: var(--panel-2); }
 .menu-pop hr { border: 0; border-top: 1px solid var(--line); margin: 6px 4px; }
+.debug-pop { width: 288px; }
+.debug-pop h3 { margin: 6px 10px 6px; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--blinks-2); font-weight: 700; }
+.debug-pop button { position: relative; padding: 7px 34px 7px 12px; }
+.debug-pop .t { display: block; font-weight: 600; }
+.debug-pop .b { display: block; color: var(--muted); font-size: 12px; margin-top: 1px; }
+.debug-pop button[aria-checked="true"]::after { content: ""; position: absolute; right: 13px; top: 50%; width: 5px; height: 10px; border: solid var(--blinks-2); border-width: 0 2px 2px 0; transform: translate(0, -65%) rotate(45deg); }
 .examples-pop { width: min(760px, calc(100vw - 28px)); max-height: min(560px, calc(100vh - 80px)); overflow-y: auto; padding: 16px 18px 18px; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px 20px; scrollbar-width: thin; }
 .ex-group h3 { margin: 6px 0 6px; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--blinks-2); font-weight: 700; }
 .ex-group button { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 6px 9px; margin: 0 -9px; border-radius: 8px; cursor: pointer; width: calc(100% + 18px); }

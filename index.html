@@ -84,7 +84,7 @@
             </div>
             <span class="sep"></span>
             <button type="button" class="ib" id="shuffleRot" title="Turn every Blink a random way, like real Blinks on a table"><svg viewBox="0 0 20 20"><path d="M15.5 8.5A6 6 0 0 0 4.6 7M4.5 11.5A6 6 0 0 0 15.4 13M4.5 3.5v3.7h3.7M15.5 16.5v-3.7h-3.7" /></svg></button>
-            <button type="button" class="ib toggle" id="facesToggle" aria-pressed="false" title="Show face numbers and the values each Blink is sending"><svg viewBox="0 0 20 20"><path d="M10 2.8 16.2 6.4v7.2L10 17.2 3.8 13.6V6.4z" /><path d="M10 2.8V10m0 0 6.2 3.6M10 10l-6.2 3.6" /></svg></button>
+            <button type="button" class="ib" id="debugBtn" aria-haspopup="menu" aria-expanded="false" title="Debug view"><svg viewBox="0 0 20 20"><path d="M10 2.8 16.2 6.4v7.2L10 17.2 3.8 13.6V6.4z" /><path d="M10 2.8V10m0 0 6.2 3.6M10 10l-6.2 3.6" /></svg></button>
           </div>
           <div class="pill">
             <button type="button" class="ib" id="restartBtn" title="Restart all Blinks (like putting fresh batteries in)"><svg viewBox="0 0 20 20"><path d="M4.5 10a5.5 5.5 0 1 0 1.8-4.1M4.5 3.5v3.3h3.3" /></svg></button>
@@ -113,6 +113,12 @@
 </div>
 
 <div class="popover examples-pop" id="examplesPop" hidden></div>
+<div class="popover menu-pop debug-pop" id="debugPop" role="menu" aria-label="Debug view" hidden>
+  <h3>Debug view</h3>
+  <button type="button" role="menuitemradio" data-debug="none"><span class="t">None</span><span class="b">Just the Blinks</span></button>
+  <button type="button" role="menuitemradio" data-debug="tooltip"><span class="t">Tooltip</span><span class="b">Hover a Blink to see what each face sends and hears</span></button>
+  <button type="button" role="menuitemradio" data-debug="comms"><span class="t">Comms</span><span class="b">Show the value every face is sending, and datagrams as bubbles</span></button>
+</div>
 <div class="popover menu-pop" id="menuPop" hidden>
   <button type="button" data-action="new">New sketch</button>
   <button type="button" data-action="open">Open .ino file…</button>

@@ -27,7 +27,9 @@ export class Board {
     this.W = 1; this.H = 1; this.DPR = 1;
     this.view = { S: 48, OX: 0, OY: 0 };
     this.target = { S: 48, OX: 0, OY: 0 };
-    this.showFaces = false;
+    this.debug = 'tooltip';     // 'none' | 'tooltip' | 'comms'
+    this.bubbles = [];          // datagrams in flight, for the comms view
+    this.seenDg = new WeakMap(); // face -> last datagram we started a bubble for
     this.presses = new Map();
     this.hover = null;
     this.lastTouched = null;
@@ -241,7 +243,11 @@ export class Board {
     for (const b of bs) this.drawGlow(c, b);
     c.globalCompositeOperation = 'source-over';
     for (const b of bs) this.drawBlink(c, b, now);
-    if (this.showFaces) for (const b of bs) this.drawFaces(c, b);
+    this.trackDatagrams(now);
+    if (this.debug === 'comms') {
+      for (const b of bs) this.drawComms(c, b);
+      this.drawDatagrams(c, now);
+    }
   }
 
   drawGrid(c) {
@@ -334,32 +340,152 @@ export class Board {
     }
   }
 
-  drawFaces(c, b) {
+  // Comms view: the value each face is sending, on the rim of that face. Chips sit just inside
+  // the rim so the values of two touching Blinks don't overlap. Orange means a neighbor hears it.
+  drawComms(c, b) {
     const [x, y] = this.pos(b), S = this.view.S;
     const a0 = this.angle(b);
+    const h = Math.max(10, S * 0.24);
+    c.font = `600 ${Math.max(7, Math.round(S * 0.165))}px "JetBrains Mono", monospace`;
     c.textAlign = 'center'; c.textBaseline = 'middle';
     for (let f = 0; f < 6; f++) {
       const ang = -Math.PI / 2 + a0 + f * Math.PI / 3;
-      const cs = Math.cos(ang), sn = Math.sin(ang);
-      // face number inside the segment
-      c.font = `600 ${Math.max(9, Math.round(S * 0.2))}px "JetBrains Mono", monospace`;
-      const L = colorToRGB(b.display[f]);
-      const lum = (L[0] * 0.3 + L[1] * 0.55 + L[2] * 0.15);
-      c.fillStyle = lum > 150 ? 'rgba(20,18,30,.75)' : 'rgba(255,255,255,.8)';
-      c.fillText(String(f), x + cs * S * 0.5, y + sn * S * 0.5);
-      // value sent on this face, on the edge
-      const face = b.faces[f];
+      const px = x + Math.cos(ang) * S * 0.66, py = y + Math.sin(ang) * S * 0.66;
+      const txt = String(b.faces[f].outValue);
+      const w = Math.max(h, c.measureText(txt).width + h * 0.5);
       const linked = !b.lifted && this.world.neighbor(b, f);
-      if (!linked && !face.outValue) continue;
-      const px = x + cs * S * 0.87, py = y + sn * S * 0.87;
-      const txt = String(face.outValue);
-      c.font = `600 ${Math.max(9, Math.round(S * 0.19))}px "JetBrains Mono", monospace`;
-      const w = Math.max(S * 0.3, c.measureText(txt).width + S * 0.14), h = S * 0.27;
-      c.fillStyle = linked ? 'rgba(250,70,22,.95)' : 'rgba(30,26,40,.85)';
-      rrect(c, px - w / 2, py - h / 2, w, h, h / 2); c.fill();
-      c.fillStyle = '#fff'; c.fillText(txt, px, py + 0.5);
+      rrect(c, px - w / 2, py - h / 2, w, h, h / 2);
+      c.fillStyle = linked ? 'rgba(250,70,22,.95)' : 'rgba(28,24,38,.82)';
+      c.fill();
+      c.fillStyle = linked ? '#fff' : 'rgba(255,255,255,.72)';
+      c.fillText(txt, px, py + 0.5);
     }
   }
+}
+
+// A datagram bubbles out of its face showing its payload, drifts to the seam with the neighbor
+// and pops. A face with nobody there sends a grey bubble that just pops. Otherwise the pop is
+// followed by a badge: a green check when the neighbor got it, a red X when it was dropped
+// (the neighbor hadn't read its last one yet).
+const DG_RISE = 420, DG_POP = 280, DG_BADGE_AT = DG_RISE + DG_POP * 0.4, DG_BADGE = 700;
+const DG_COLOR = { ok: '48,196,104', dropped: '255,72,92', lost: '150,140,170' };
+const DG_ORANGE = '250,70,22';
+
+Board.prototype.trackDatagrams = function (now) {
+  const comms = this.debug === 'comms';
+  for (const b of this.world.blinks) {
+    for (let f = 0; f < 6; f++) {
+      const face = b.faces[f], p = face.lastDg;
+      if (!p || this.seenDg.get(face) === p) continue;
+      this.seenDg.set(face, p);
+      if (comms && this.bubbles.length < 300) this.bubbles.push({ b, f, p, t0: now });
+    }
+  }
+};
+
+Board.prototype.drawDatagrams = function (c, now) {
+  const S = this.view.S;
+  this.bubbles = this.bubbles.filter(d => now - d.t0 < DG_BADGE_AT + DG_BADGE && this.world.blinks.includes(d.b));
+  const fs = Math.max(8, Math.round(S * 0.15));
+  c.font = `600 ${fs}px "JetBrains Mono", monospace`;
+  c.textAlign = 'center'; c.textBaseline = 'middle';
+  const h = Math.max(12, fs * 1.6);
+  for (const d of this.bubbles) {
+    const t = now - d.t0;
+    const [x, y] = this.pos(d.b);
+    const ang = -Math.PI / 2 + this.angle(d.b) + d.f * Math.PI / 3;
+    const cs = Math.cos(ang), sn = Math.sin(ang);
+    // the payload, in decimal like the face values; long ones are cut short
+    d.label ??= dgLabel(d.p.data);
+    const w = Math.max(h, c.measureText(d.label).width + h * 0.75);
+    if (t < DG_RISE) {
+      const k = t / DG_RISE, e = 1 - Math.pow(1 - k, 3);
+      const dist = S * (0.66 + 0.21 * e);
+      const wob = Math.sin(k * Math.PI * 3) * S * 0.025 * (1 - k);
+      const px = x + cs * dist - sn * wob, py = y + sn * dist + cs * wob;
+      const sc = Math.min(1, 0.3 + k * 2.4) * (1 + 0.05 * Math.sin(k * Math.PI * 4));
+      c.save();
+      c.translate(px, py); c.scale(sc, sc);
+      const nobody = d.p.result === 'lost';
+      c.save();
+      c.shadowColor = 'rgba(0,0,0,.35)'; c.shadowBlur = 6; c.shadowOffsetY = 2;
+      rrect(c, -w / 2, -h / 2, w, h, h / 2);
+      c.fillStyle = nobody ? 'rgba(226,223,234,.92)' : 'rgba(255,255,255,.96)'; c.fill();
+      c.restore();
+      c.lineWidth = 1.5; c.strokeStyle = `rgba(${nobody ? DG_COLOR.lost : DG_ORANGE},.95)`; c.stroke();
+      c.fillStyle = nobody ? '#7d748f' : '#c4360d';
+      c.fillText(d.label, 0, 0.5);
+      c.restore();
+    } else if (t < DG_RISE + DG_POP) {
+      const k = (t - DG_RISE) / DG_POP, e = 1 - Math.pow(1 - k, 2);
+      const px = x + cs * S * 0.87, py = y + sn * S * 0.87;
+      const col = DG_COLOR[d.p.result] || DG_COLOR.lost;
+      const gx = 1 + e * 0.18, gy = 1 + e * 0.7;   // the pill bursts outward, more in height
+      if (k < 0.4) {   // the burst
+        const f = 1 + e * 0.2;
+        rrect(c, px - w * f / 2, py - h * f / 2, w * f, h * f, h * f / 2);
+        c.fillStyle = `rgba(${col},${0.3 * (1 - k / 0.4)})`; c.fill();
+      }
+      rrect(c, px - w * gx / 2, py - h * gy / 2, w * gx, h * gy, h * gy / 2);
+      c.lineWidth = Math.max(0.5, 1.8 * (1 - k)); c.strokeStyle = `rgba(${col},${0.9 * (1 - k)})`; c.stroke();
+      c.fillStyle = `rgba(${col},${1 - k})`;
+      const ex = w / 2 * (1 + e * 0.3) + h * 0.2, ey = h / 2 * (1 + e * 1.2) + h * 0.2;
+      for (let i = 0; i < 8; i++) {
+        const a = Math.PI / 8 + i * Math.PI / 4;
+        c.beginPath(); c.arc(px + Math.cos(a) * ex, py + Math.sin(a) * ey, Math.max(0.6, h * 0.1 * (1 - k)), 0, TAU); c.fill();
+      }
+    }
+    if (t > DG_BADGE_AT && (d.p.result === 'ok' || d.p.result === 'dropped')) {
+      drawBadge(c, x + cs * S * 0.87, y + sn * S * 0.87, Math.max(9, h * 0.95), d.p.result === 'ok', t - DG_BADGE_AT);
+    }
+  }
+};
+
+// A check (received) or an X (dropped) drawing itself in a circle, then fading away
+function drawBadge(c, x, y, R, ok, t) {
+  const pop = Math.min(1, t / 170);
+  const back = 1 + 2.4 * Math.pow(pop - 1, 3) + 1.4 * Math.pow(pop - 1, 2);   // ease out with a little overshoot
+  const fade = Math.max(0, Math.min(1, (DG_BADGE - t) / 180));
+  const sc = back * (0.85 + 0.15 * fade);
+  const col = ok ? DG_COLOR.ok : DG_COLOR.dropped;
+  c.save();
+  c.translate(x, y); c.scale(sc, sc);
+  c.globalAlpha = fade;
+  c.save();
+  c.shadowColor = 'rgba(0,0,0,.35)'; c.shadowBlur = 8; c.shadowOffsetY = 2;
+  c.beginPath(); c.arc(0, 0, R, 0, TAU);
+  c.fillStyle = `rgb(${col})`; c.fill();
+  c.restore();
+  const m = Math.max(0, Math.min(1, (t - 110) / 230));   // the mark draws in after the circle lands
+  c.strokeStyle = '#fff'; c.lineWidth = R * 0.24; c.lineCap = 'round'; c.lineJoin = 'round';
+  if (ok) strokePart(c, [[-0.42, 0.02], [-0.12, 0.32], [0.44, -0.3]].map(([a, b]) => [a * R, b * R]), m);
+  else {
+    const q = R * 0.36;
+    strokePart(c, [[-q, -q], [q, q]], Math.min(1, m * 2));
+    strokePart(c, [[q, -q], [-q, q]], Math.max(0, m * 2 - 1));
+  }
+  c.restore();
+}
+
+// Stroke the first `frac` of a polyline
+function strokePart(c, pts, frac) {
+  if (frac <= 0) return;
+  const lens = [];
+  let total = 0;
+  for (let i = 1; i < pts.length; i++) { const l = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); lens.push(l); total += l; }
+  let left = total * frac;
+  c.beginPath(); c.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length && left > 0; i++) {
+    const u = Math.min(1, left / lens[i - 1]);
+    c.lineTo(pts[i - 1][0] + (pts[i][0] - pts[i - 1][0]) * u, pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * u);
+    left -= lens[i - 1];
+  }
+  c.stroke();
+}
+
+function dgLabel(bytes) {
+  const shown = Array.from(bytes.subarray(0, bytes.length > 5 ? 4 : 5));
+  return shown.join(' ') + (bytes.length > shown.length ? ' …' : '');
 }
 
 function ledFill(L) {

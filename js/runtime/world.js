@@ -123,10 +123,12 @@ export class World {
       const out = b.outbox;
       if (!out.length) continue;
       for (let i = 0; i < out.length; i += 2) {
+        const pkt = out[i + 1];
         const n = this.neighbor(b, out[i]);
-        if (!n) continue;
+        if (!n) { if (pkt.k === 'dgram') pkt.result = 'lost'; continue; }
         const face = n.blink.faces[n.face];
-        if (!face.rx) face.rx = out[i + 1];   // a full buffer drops the packet, as on hardware
+        if (!face.rx) face.rx = pkt;   // a full buffer drops the packet, as on hardware
+        else if (pkt.k === 'dgram') pkt.result = 'dropped';
       }
       out.length = 0;
     }

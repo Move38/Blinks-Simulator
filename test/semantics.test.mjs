@@ -192,6 +192,26 @@ test('datagrams arrive once and can be dropped when unread', () => {
   assert.deepEqual(log, ['3 7 -1234']);
 });
 
+test('each sent datagram records whether it was received, dropped or lost', () => {
+  // both Blinks send a datagram on every face twice and never read their buffers
+  const src = `
+    byte n = 0; Timer t;
+    void setup(){ t.set(300); }
+    void loop(){
+      if (n < 2 && t.isExpired()) { byte d[2] = { 1, 2 }; FOREACH_FACE(f) sendDatagramOnFace(d, 2, f); n++; t.set(300); }
+    }`;
+  const { w } = sim(src, [[0, 0], [1, 0]]);
+  const [a] = w.blinks;
+  const linked = [0, 1, 2, 3, 4, 5].find(f => w.neighbor(a, f));
+  w.advance(500);
+  const first = a.faces.map(f => f.lastDg);
+  assert.equal(first[linked].result, 'ok');
+  for (let f = 0; f < 6; f++) if (f !== linked) assert.equal(first[f].result, 'lost');
+  w.advance(400);
+  assert.notEqual(a.faces[linked].lastDg, first[linked]);
+  assert.equal(a.faces[linked].lastDg.result, 'dropped');   // the first one is still unread
+});
+
 test('infinite loops and recursion are caught', () => {
   let r = sim(`void setup(){} void loop(){ while (true) { } }`);
   r.w.advance(5);

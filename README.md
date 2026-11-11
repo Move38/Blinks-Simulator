@@ -16,10 +16,10 @@ Write code for [Blinks](https://move38.com) in C or with Scratch-style blocks, a
 | Right-click, or <kbd>R</kbd> | rotate a Blink (real Blinks can face any way) |
 | Double-click the table | add a Blink |
 | <kbd>Space</kbd> | press the button of the last Blink you touched |
-| Hover a Blink | see what each face sends and hears |
+| Hover a Blink | see what each face sends and hears (Tooltip debug view) |
 | <kbd>⌘</kbd>/<kbd>Ctrl</kbd> + <kbd>Enter</kbd> | run |
 
-The face button under the table shows face numbers and the value each face is sending. Pause and step through time, or slow it down, from the controls on the right.
+The debug button under the table switches between three views: **None**, **Tooltip** (hover a Blink to see what each face sends and hears) and **Comms** (every face's sent value drawn on its rim, orange when a neighbor hears it, plus a bubble with each datagram's bytes that pops into a green check when received or a red X when dropped, and is grey when nobody is there). Pause and step through time, or slow it down, from the controls on the right.
 
 ## How close is it to a real Blink?
 

@@ -57,6 +57,7 @@ export class Blink {
     this.faces = Array.from({ length: 6 }, () => ({
       inValue: 0, outValue: 0, expireTime: 0, sendTime: 0, prevValue: 0,
       inDgLen: 0, outDgLen: 0, outDg: new Uint8Array(DATAGRAM_LEN), rx: null,
+      lastDg: null,     // last datagram sent, for the comms view (its .result says what happened to it)
     }));
     this.btn = { down: 0, bitflags: 0, clickcount: 0, debounce: 0, clickWindow: 0, pending: 0, longReg: 0, pressCountup: 0 };
     this.snapDown = 0; this.snapFlags = 0; this.clickCount = 0;
@@ -224,8 +225,8 @@ export class Blink {
         if (face.inDgLen === 0 && p.data.length <= DATAGRAM_LEN) {
           face.inDgLen = p.data.length;
           this.mem.set(p.data, MEM.DATAGRAM_IN + f * DATAGRAM_LEN);
-        }
-        // otherwise dropped, as on hardware
+          p.result = 'ok';
+        } else p.result = 'dropped';   // the last one hasn't been read yet: dropped, as on hardware
       } else if (p.k === 'sleep') {
         this.warmSleep();
         return;
@@ -239,7 +240,8 @@ export class Blink {
       if (face.sendTime > this.now) continue;
       let pkt;
       if (face.outDgLen) {
-        pkt = { k: 'dgram', data: face.outDg.slice(0, face.outDgLen) };
+        pkt = { k: 'dgram', data: face.outDg.slice(0, face.outDgLen), result: null };
+        face.lastDg = pkt;
       } else {
         pkt = { k: 'value', v: face.outValue };
       }

@@ -15,13 +15,14 @@ const STORE = 'blinks.playground.v2';
 const SPEEDS = [1, 2, 4, 0.25, 0.5];
 
 // ---------------- state ----------------
+const DEBUG_MODES = ['none', 'tooltip', 'comms'];
 const saved = loadState();
 const state = {
   code: saved.code ?? STARTER,
   name: saved.name ?? 'My sketch',
   view: saved.view === 'blocks' ? 'blocks' : 'code',
   live: saved.live ?? true,
-  faces: !!saved.faces,
+  debug: DEBUG_MODES.includes(saved.debug) ? saved.debug : saved.faces ? 'comms' : 'tooltip',
   consoleOpen: saved.consoleOpen ?? true,
   split: saved.split ?? null,
   source: saved.source ?? null,     // the example (or starter) text this sketch started from
@@ -41,7 +42,7 @@ function saveState() {
   saveTimer = setTimeout(() => {
     try {
       localStorage.setItem(STORE, JSON.stringify({
-        code: state.code, name: state.name, view: state.view, live: state.live, faces: state.faces,
+        code: state.code, name: state.name, view: state.view, live: state.live, debug: state.debug,
         consoleOpen: state.consoleOpen, split: state.split, source: state.source,
         cells: world.blinks.map(b => [b.q, b.r, b.rot]),
       }));
@@ -275,11 +276,13 @@ function openPopover(pop, anchor) {
   pop.hidden = false;
   const r = anchor.getBoundingClientRect();
   const w = pop.offsetWidth;
-  pop.style.top = (r.bottom + 8) + 'px';
+  const h = pop.offsetHeight;
+  // open upward when there's no room below (the table dock sits at the bottom)
+  pop.style.top = (r.bottom + 8 + h > window.innerHeight - 8 ? Math.max(8, r.top - 8 - h) : r.bottom + 8) + 'px';
   pop.style.left = Math.max(12, Math.min(window.innerWidth - w - 12, r.left)) + 'px';
   anchor.setAttribute('aria-expanded', 'true');
   pop._anchor = anchor;
-  const first = pop.querySelector('button');
+  const first = pop.querySelector('[aria-checked="true"]') || pop.querySelector('button');
   if (first) first.focus({ preventScroll: true });
 }
 function closePopovers() {
@@ -288,7 +291,7 @@ function closePopovers() {
   }
 }
 document.addEventListener('pointerdown', e => {
-  if (!e.target.closest('.popover') && !e.target.closest('#examplesBtn') && !e.target.closest('#menuBtn')) closePopovers();
+  if (!e.target.closest('.popover') && !e.target.closest('#examplesBtn') && !e.target.closest('#menuBtn') && !e.target.closest('#debugBtn')) closePopovers();
 });
 
 function buildExamples() {
@@ -314,6 +317,10 @@ function buildExamples() {
 buildExamples();
 $('#examplesBtn').addEventListener('click', e => {
   const pop = $('#examplesPop');
+  if (!pop.hidden) closePopovers(); else openPopover(pop, e.currentTarget);
+});
+$('#debugBtn').addEventListener('click', e => {
+  const pop = $('#debugPop');
   if (!pop.hidden) closePopovers(); else openPopover(pop, e.currentTarget);
 });
 $('#menuBtn').addEventListener('click', e => {
@@ -475,14 +482,20 @@ $('#shuffleRot').addEventListener('click', () => {
   for (const b of world.blinks) b.rot = Math.floor(Math.random() * 6);
   saveState();
 });
-const facesBtn = $('#facesToggle');
-facesBtn.setAttribute('aria-pressed', state.faces);
-board.showFaces = state.faces;
-facesBtn.addEventListener('click', () => {
-  state.faces = !state.faces;
-  board.showFaces = state.faces;
-  facesBtn.setAttribute('aria-pressed', state.faces);
+// debug view: none, a tooltip on hover, or every face's sent value drawn on the Blinks
+function setDebug(mode) {
+  state.debug = mode;
+  board.debug = mode;
+  $('#debugBtn').classList.toggle('on', mode !== 'none');
+  for (const b of document.querySelectorAll('#debugPop [data-debug]')) b.setAttribute('aria-checked', b.dataset.debug === mode);
   saveState();
+}
+setDebug(state.debug);
+$('#debugPop').addEventListener('click', e => {
+  const b = e.target.closest('[data-debug]');
+  if (!b) return;
+  closePopovers();
+  setDebug(b.dataset.debug);
 });
 $('#restartBtn').addEventListener('click', () => {
   runtimeDiags.clear();
@@ -552,12 +565,13 @@ $('#splitter').addEventListener('pointerdown', e => {
 
 // ---------------- inspector (hover a Blink) ----------------
 const insp = $('#inspector');
-let inspAt = 0;
+let inspAt = 0, inspFor = null;
 function updateInspector(now) {
-  const b = board.hover;
-  if (!b || board.dragging || !world.blinks.includes(b)) { insp.hidden = true; return; }
-  if (now - inspAt < 120 && !insp.hidden) return;
+  const b = state.debug === 'tooltip' ? board.hover : null;
+  if (!b || board.dragging || !world.blinks.includes(b)) { insp.hidden = true; inspFor = null; return; }
+  if (b === inspFor && now - inspAt < 120) { placeInspector(b); return; }
   inspAt = now;
+  inspFor = b;
   const rows = b.faces.map((f, i) => {
     const linked = !(f.expireTime < b.now);
     return `<tr><td>${i}</td><td>${f.outValue}</td><td class="${linked ? '' : 'off'}">${linked ? f.inValue : '—'}</td></tr>`;
@@ -567,14 +581,19 @@ function updateInspector(now) {
     <table><tr><th>face</th><th>sends</th><th>hears</th></tr>${rows}</table>
     ${b.error ? `<div class="err">${b.error.message.replace(/[<>&]/g, '')}</div>` : ''}`;
   insp.hidden = false;
+  placeInspector(b);
+}
+// Float the card above the Blink with its caret pointing down at it (below, if there's no room above)
+function placeInspector(b) {
   const [x, y] = board.pos(b);
-  const S = board.view.S;
+  const reach = board.view.S * 0.84 + 12;   // the Blink's top edge, plus room for the caret
   const w = insp.offsetWidth, h = insp.offsetHeight;
-  let left = x + S * 1.1, top = y - h / 2;
-  if (left + w > board.W - 8) left = x - S * 1.1 - w;
-  top = Math.max(8, Math.min(board.H - h - 8, top));
+  const below = y - reach - h < 8;
+  const left = Math.max(8, Math.min(board.W - w - 8, x - w / 2));
+  insp.classList.toggle('below', below);
   insp.style.left = left + 'px';
-  insp.style.top = top + 'px';
+  insp.style.top = (below ? y + reach : y - reach - h) + 'px';
+  insp.style.setProperty('--caret', Math.max(16, Math.min(w - 16, x - left)) + 'px');
 }
 
 // ---------------- flags (paused / slowed) ----------------
@@ -646,7 +665,7 @@ function showHelp() {
       <li>Press the center of a Blink to press its button. <kbd>Space</kbd> presses the last Blink you touched.</li>
       <li>Drag a Blink by its rim to move it. Drop it on the bin to remove it. Double-click the table to add one.</li>
       <li>Right-click or press <kbd>R</kbd> to rotate a Blink. Real Blinks can be turned any way, so test your game with rotated Blinks.</li>
-      <li>Hover a Blink to see what each face sends and hears. The face button shows face numbers on the table.</li>
+      <li>The debug button under the table picks what you see: <b>Tooltip</b> shows what each face sends and hears when you hover a Blink, <b>Comms</b> shows every face's value on the Blinks themselves (orange when a neighbor hears it), and each datagram as a bubble showing its bytes. It ends in a green check when the neighbor gets it, a red X when it's dropped because the last one wasn't read yet, and is grey when nobody is there.</li>
     </ul>
     <h3>When it says no</h3>
     <p>If something would not work on a real Blink, the simulator tells you: code that doesn't compile, a loop that never ends, an array index out of range, or a face number above 5.</p>`;
