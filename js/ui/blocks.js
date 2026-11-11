@@ -115,6 +115,7 @@ const GRID_TYPES = { num: NUM_TYPES.filter(Boolean).map(t => t + '[][]'), bool: 
 const ALL_GRID_TYPES = [...GRID_TYPES.num, ...GRID_TYPES.bool, ...GRID_TYPES.color];
 // datagrams are bytes, so a list sent as one holds one-byte numbers
 const BYTE_LIST_TYPES = ['byte[]', 'char[]', 'int8_t[]'];
+const BYTE_GRID_TYPES = BYTE_LIST_TYPES.map(t => t + '[]');
 const LIST_SIZE = 6;   // a list without a "list … with N items" block gets one item per face
 const LIST_MAX = 64;
 const GRID_MAX = 16;   // rows, and items in a row
@@ -1150,10 +1151,12 @@ function defineBlocks(Blockly) {
       listField(ALL_GRID_TYPES)], output: N, style: 'bk_lists', tooltip: 'How many rows the grid has, or how many items are in each row.' },
 
     // Datagrams: a packet of up to 16 bytes sent once to one neighbor
-    { type: 'bk_dg_send', message0: 'send list %1 as a datagram on face %2', args0: [
-      { type: 'field_variable', name: 'LIST', variable: 'message', variableTypes: BYTE_LIST_TYPES, defaultType: 'byte[]' }, val('FACE', N)],
-      ...stmt, inputsInline: true, style: 'bk_neighbors',
-      tooltip: 'Send the whole list (bytes, up to 16 of them) once to the neighbor on this face. It arrives as a datagram.' },
+    // a list of bytes, or a row of a grid of bytes (then a "row" slot appears: see bk_dg_row)
+    { type: 'bk_dg_send', message0: 'send list %1 %2 as a datagram on face %3', args0: [
+      { type: 'field_variable', name: 'LIST', variable: 'message', variableTypes: [...BYTE_LIST_TYPES, ...BYTE_GRID_TYPES], defaultType: 'byte[]' },
+      { type: 'input_dummy', name: 'T' }, val('FACE', N)],
+      ...stmt, inputsInline: true, style: 'bk_neighbors', mutator: 'bk_dg_row',
+      tooltip: 'Send the whole list (bytes, up to 16 of them), or one row of a grid, once to the neighbor on this face. It arrives as a datagram.' },
     { type: 'bk_dg_item', message0: 'item %1 of datagram on face %2', args0: [val('INDEX', N), val('FACE', N)], output: N, inputsInline: true,
       style: 'bk_neighbors', tooltip: 'One byte of the datagram waiting on this face. The first is item 0.' },
   );
@@ -1490,6 +1493,9 @@ function defineListBlocks(Blockly) {
         .appendField(new Blockly.FieldNumber(LIST_SIZE, 1, LIST_MAX, 1), 'COUNT')
         .appendField('items');
       this.setStyle('bk_lists');
+      // stackable, so it can also set up a local list inside a function
+      this.setPreviousStatement(true);
+      this.setNextStatement(true);
       this.setTooltip('Sets up a list with this many items. Numbers start at 0, colors off, true/false at false, and timers already finished.');
       warnDuplicate.call(this);
     },
@@ -1506,6 +1512,9 @@ function defineListBlocks(Blockly) {
         .appendField(new Blockly.FieldNumber(3, 1, GRID_MAX, 1), 'COLS')
         .appendField('items');
       this.setStyle('bk_lists');
+      // stackable, so it can also set up a local list inside a function
+      this.setPreviousStatement(true);
+      this.setNextStatement(true);
       this.setTooltip('Sets up a grid: rows that each hold the same number of items (a 2D array). Numbers start at 0, colors off and true/false at false.');
       warnDuplicate.call(this);
     },
@@ -1527,6 +1536,9 @@ function defineListBlocks(Blockly) {
         .appendField('  items').appendField(btn('-', 'item in each row', [0, -1])).appendField(btn('+', 'item in each row', [0, 1]));
       this.setInputsInline(true);
       this.setStyle('bk_lists');
+      // stackable, so it can also set up a local list inside a function
+      this.setPreviousStatement(true);
+      this.setNextStatement(true);
       this.setTooltip('Sets up a grid (a 2D array) with these starting items: each line is a row. The buttons add or take away a row, or an item in every row.');
       this.updateShape_();
       warnDuplicate.call(this);
@@ -1606,6 +1618,9 @@ function defineListBlocks(Blockly) {
         .appendField(new Blockly.FieldImage(PLUS_MINUS('+'), 18, 18, 'one more item', () => this.resize_(1)), 'PLUS');
       this.setInputsInline(true);
       this.setStyle('bk_lists');
+      // stackable, so it can also set up a local list inside a function
+      this.setPreviousStatement(true);
+      this.setNextStatement(true);
       this.setTooltip('Sets up a list with these starting items. Drag an item out to remove it, or drag a block between items to add it there. + adds a copy of the last item.');
       this.updateShape_();
       warnDuplicate.call(this);
@@ -1698,27 +1713,31 @@ function defineListBlocks(Blockly) {
 
 function registerExtensions(Blockly) {
   const reg = (name, fn) => { if (!Blockly.Extensions.isRegistered(name)) Blockly.Extensions.register(name, fn); };
-  // Timer blocks: when the timer chosen is a list of timers, an "item" slot picks which one
-  if (!Blockly.Extensions.isRegistered('bk_timer_item')) {
-    Blockly.Extensions.registerMutator('bk_timer_item', {
-      saveExtraState() { return this.getInput('INDEX') ? { item: true } : null; },
-      loadExtraState(state) { this.setTimerItem_(!!(state && state.item)); },
-      setTimerItem_(on) {
-        if (!!this.getInput('INDEX') === on) return;
-        if (!on) { this.removeInput('INDEX'); return; }
-        const input = this.appendValueInput('INDEX').setCheck(N).appendField('item');
+  // A slot that appears after a variable field when the variable chosen needs an index: an item of a
+  // list of timers in the timer blocks, a row of a grid in "send … as a datagram"
+  const indexSlot = (mutator, field, slot, label, key, wants) => {
+    if (Blockly.Extensions.isRegistered(mutator)) return;
+    Blockly.Extensions.registerMutator(mutator, {
+      saveExtraState() { return this.getInput(slot) ? { [key]: true } : null; },
+      loadExtraState(state) { this.setIndexSlot_(!!(state && state[key])); },
+      setIndexSlot_(on) {
+        if (!!this.getInput(slot) === on) return;
+        if (!on) { this.removeInput(slot); return; }
+        const input = this.appendValueInput(slot).setCheck(N).appendField(label);
         const at = this.inputList.indexOf(this.getInput('T')) + 1;
         if (at < this.inputList.length - 1) this.moveNumberedInputBefore(this.inputList.length - 1, at);
         input.connection.setShadowState(numBlock(0));
       },
     }, function () {
-      this.getField('TIMER').setValidator(id => {
+      this.getField(field).setValidator(id => {
         const v = id && this.workspace && this.workspace.getVariableMap().getVariableById(id);
-        if (v) this.setTimerItem_(v.type === TIMER_LIST);
+        if (v) this.setIndexSlot_(wants(v.type));
         return id;
       });
     });
-  }
+  };
+  indexSlot('bk_timer_item', 'TIMER', 'INDEX', 'item', 'item', type => type === TIMER_LIST);
+  indexSlot('bk_dg_row', 'LIST', 'ROW', 'row', 'row', isGrid);
   const LOOPS = new Set(['controls_repeat_ext', 'controls_whileUntil', 'bk_for_each_face', 'bk_c_wrap', 'bk_switch']);
   const warn = (test, msg) => function () {
     this.setOnChange(function () {
@@ -2083,7 +2102,7 @@ function makeGenerator(Blockly) {
 
   // Datagrams
   F.bk_dg_send = block => {
-    const name = listVar(block).name;
+    const name = listVar(block).name + (block.getInput('ROW') ? `[${v(block, 'ROW', ORDER.NONE, '0')}]` : '');
     return `sendDatagramOnFace(${name}, sizeof(${name}), ${v(block, 'FACE', ORDER.COMMA, '0')});\n`;
   };
   F.bk_dg_item = block => [`getDatagramOnFace(${v(block, 'FACE', ORDER.NONE, '0')})[${v(block, 'INDEX', ORDER.NONE, '0')}]`, ORDER.POSTFIX];
@@ -2280,6 +2299,8 @@ function generateProgram(ws, G) {
     setUp.add(id);
     return true;
   }));
+  // a list set up inside a function is a local there
+  for (const b of ws.getAllBlocks(false)) if (LIST_SETUPS.includes(b.type) && b.isEnabled()) setUp.add(b.getFieldValue('LIST'));
   for (const m of sortedVars(ws)) {
     if (isList(m.type) && !setUp.has(m.getId())) globals.push(`${cType(itemType(m.type))} ${G.varName(m.getId())}[${LIST_SIZE}]${isGrid(m.type) ? `[${LIST_SIZE}]` : ''};`);
   }
@@ -2455,6 +2476,11 @@ function chain(blocks) {
 }
 
 const stripParens = e => { while (e && e.kind === 'Paren') e = e.expr; return e; };
+// Are two expressions written the same (ignoring where they are)?
+const sameExpr = (a, b) => {
+  const plain = e => JSON.stringify(stripParens(e) ?? null, (k, v) => (k === 'line' || k === 'endLine' || k === 'type' ? undefined : v));
+  return plain(a) === plain(b);
+};
 
 // The value of a constant whole-number expression (an array size), or null
 function constInt(e) {
@@ -3061,7 +3087,7 @@ class Importer {
   ctxFor(fn, kind, ret, params = []) {
     const scope = new Map();
     for (const v of params) scope.set(v.name, { kind: 'var', v });
-    return { scopes: [scope], fn: { kind, ret, name: fn.name } };
+    return { scopes: [scope], fn: { kind, ret, name: fn.name, node: fn } };
   }
 
   convertSetup(fn) {
@@ -3309,6 +3335,23 @@ class Importer {
       if (node.isConst) throw new Unsupported('const local');
       const out = [];
       for (const d of node.decls) {
+        // a local array: its setup block, there in the function
+        if (d.type && d.type.k === 'arr') {
+          const list = this.listDecl(d);
+          if (!list || d.ctorArgs || this.procs.has(d.name) || this.globals.has(d.name)) throw new Unsupported('local array');
+          const v = this.findVar(d.name, list.type) || (this.canName(d.name, list.type) ? this.newVar(d.name, list.type) : null);
+          if (!v) throw new Unsupported('local name');
+          ctx.scopes[ctx.scopes.length - 1].set(d.name, { kind: 'var', v });
+          out.push(this.listSetup(v, list, d, node));
+          continue;
+        }
+        // a pointer to the datagram on a face, only ever read as data[i]: those reads become
+        // "item i of datagram on face …", and the pointer itself goes away
+        const face = this.datagramPointer(d, ctx);
+        if (face) {
+          ctx.scopes[ctx.scopes.length - 1].set(d.name, { kind: 'datagram', face });
+          continue;
+        }
         const type = varTypeOf(d.type);
         if (!type || type === 'Timer' || d.ctorArgs || (d.init && d.init.kind === 'InitList') || this.procs.has(d.name)) throw new Unsupported('local');
         const lt = localType(type);
@@ -3410,7 +3453,9 @@ class Importer {
       if (name === 'sendDatagramOnFace') {
         const list = this.datagramList(e.args, ctx);
         if (!list) throw new Unsupported('datagram');
-        return this.anchor(node, { type: 'bk_dg_send', fields: { LIST: { id: list.id } }, inputs: { FACE: this.slot(e.args[2], N, ctx, 0) } });
+        const json = this.anchor(node, { type: 'bk_dg_send', fields: { LIST: { id: list.v.id } }, inputs: { FACE: this.slot(e.args[2], N, ctx, 0) } });
+        if (list.row) { json.extraState = { row: true }; json.inputs.ROW = this.slot(list.row, N, ctx, 0); }
+        return json;
       }
       const def = CALL_BY_FN.get(name);
       if (def && !def[5]) return this.callBlock(node, def, e.args, ctx);
@@ -3504,16 +3549,52 @@ class Importer {
     return entry.v;
   }
 
-  // sendDatagramOnFace(list, sizeof(list), face), or with &list: the whole of a list of bytes
+  // sendDatagramOnFace(list, sizeof(list), face) sends a whole list of bytes, and
+  // sendDatagramOnFace(grid[r], sizeof(grid[r]), face) a row of a grid; either may have an &: { v, row }
   datagramList(args, ctx) {
     if (args.length !== 3) return null;
-    let a = stripParens(args[0]);
-    if (a.kind === 'Unary' && a.op === '&') a = stripParens(a.arg);
-    const size = stripParens(args[1]);
-    const sized = size.kind === 'SizeofExpr' ? stripParens(size.arg) : null;
-    if (a.kind !== 'Ident' || !sized || sized.kind !== 'Ident' || sized.name !== a.name) return null;
-    const entry = this.lookup(a.name, ctx);
-    return entry && entry.kind === 'var' && BYTE_LIST_TYPES.includes(entry.v.type) ? entry.v : null;
+    const what = e => {
+      e = stripParens(e);
+      if (e.kind === 'Unary' && e.op === '&') e = stripParens(e.arg);
+      if (e.kind === 'Ident') return { name: e.name, row: null };
+      const obj = e.kind === 'Index' ? stripParens(e.obj) : null;
+      return obj && obj.kind === 'Ident' ? { name: obj.name, row: stripParens(e.index) } : null;
+    };
+    const data = what(args[0]), size = stripParens(args[1]);
+    const sized = size.kind === 'SizeofExpr' ? what(size.arg) : null;
+    if (!data || !sized || sized.name !== data.name || !sameExpr(sized.row, data.row)) return null;
+    const entry = this.lookup(data.name, ctx);
+    if (!entry || entry.kind !== 'var') return null;
+    const ok = data.row ? BYTE_GRID_TYPES.includes(entry.v.type) : BYTE_LIST_TYPES.includes(entry.v.type);
+    return ok ? { v: entry.v, row: data.row } : null;
+  }
+
+  // `byte *data = (byte *) getDatagramOnFace(face);` where face is a name or a number that the
+  // function never changes, and data is only read as data[i]: the face, or null
+  datagramPointer(d, ctx) {
+    if (!d.type || d.type.k !== 'ptr' || !d.init || !ctx.fn.node) return null;
+    let init = stripParens(d.init);
+    while (init && init.kind === 'Cast') init = stripParens(init.arg);
+    if (!init || init.kind !== 'Call' || init.callee.kind !== 'Ident' || init.callee.name !== 'getDatagramOnFace' || init.args.length !== 1) return null;
+    const face = stripParens(init.args[0]);
+    if (face.kind !== 'Num' && face.kind !== 'Ident') return null;
+    let ok = true, declared = 0;
+    const changes = e => {
+      e = stripParens(e);
+      return e && e.kind === 'Ident' && (e.name === d.name || (face.kind === 'Ident' && e.name === face.name));
+    };
+    const walk = (n, parent) => {
+      if (!ok || !n || typeof n !== 'object') return;
+      if (Array.isArray(n)) { n.forEach(x => walk(x, parent)); return; }
+      if (n.kind === 'VarDecl') declared += n.decls.filter(x => x.name === d.name).length;
+      if ((n.kind === 'Assign' && changes(n.target)) || ((n.kind === 'Postfix' || n.kind === 'Unary') && /^(\+\+|--|&)$/.test(n.op) && changes(n.arg))) ok = false;
+      if (n.kind === 'Ident' && n.name === d.name && !(parent && parent.kind === 'Index' && stripParens(parent.obj) === n)) ok = false;
+      // writing through it (data[i] = …) changes the datagram, which blocks can't do
+      if (n.kind === 'Assign' && stripParens(n.target).kind === 'Index' && changes(stripParens(n.target).obj)) ok = false;
+      for (const k of Object.keys(n)) if (k !== 'type' && n[k] && typeof n[k] === 'object') walk(n[k], n);
+    };
+    walk(ctx.fn.node.body, null);
+    return ok && declared === 1 ? face : null;
   }
 
   // A Timer variable, or an item of a list of timers, used as `t.method(...)` or `t[i].method(...)`: { v, index }
@@ -3601,7 +3682,12 @@ class Importer {
       }
       case 'Bool': return { json: { type: 'bk_bool', fields: { BOOL: e.value ? 'TRUE' : 'FALSE' } }, out: B };
       case 'Index': {
-        // an item of the datagram waiting on a face: getDatagramOnFace(f)[i]
+        // an item of the datagram waiting on a face: getDatagramOnFace(f)[i], or data[i] where data
+        // points at it (see datagramPointer)
+        const pointer = stripParens(e.obj).kind === 'Ident' ? this.lookup(stripParens(e.obj).name, ctx) : null;
+        if (pointer && pointer.kind === 'datagram') {
+          return { json: { type: 'bk_dg_item', inputs: { INDEX: this.slot(e.index, N, ctx, 0), FACE: this.slot(pointer.face, N, ctx, 0) } }, out: N };
+        }
         const call = stripParens(e.obj);
         if (call.kind === 'Call' && call.callee.kind === 'Ident' && call.callee.name === 'getDatagramOnFace' && call.args.length === 1 && !this.lookup('getDatagramOnFace', ctx)) {
           return { json: { type: 'bk_dg_item', inputs: { INDEX: this.slot(e.index, N, ctx, 0), FACE: this.slot(call.args[0], N, ctx, 0) } }, out: N };
@@ -3615,7 +3701,7 @@ class Importer {
       case 'Ident': {
         const entry = this.lookup(e.name, ctx);
         if (!entry && this.enumNames.has(e.name)) return { json: { type: 'bk_enum_value', fields: { NAME: e.name } }, out: N };
-        if (!entry || entry.kind === 'raw') throw new Unsupported('name');
+        if (!entry || entry.kind === 'raw' || entry.kind === 'datagram') throw new Unsupported('name');
         if (entry.kind === 'face') return { json: { type: 'bk_face_var', fields: { VAR: { id: entry.v.id } } }, out: N };
         const kind = kindOf(entry.v.type);
         if (!GETTER[kind]) throw new Unsupported('timer value');
