@@ -321,12 +321,34 @@ $('#menuBtn').addEventListener('click', e => {
   if (!pop.hidden) closePopovers(); else openPopover(pop, e.currentTarget);
 });
 
+// Has the sketch been changed since it was opened? Blocks add a header line, which isn't a change.
+const plain = code => code.replace(/^\/\/ Made with blocks in the Blinks Playground\n+/, '').trim();
 function modified() {
-  return state.code.trim() && state.code !== state.source && state.code !== STARTER;
+  const code = plain(state.code);
+  return code && code !== plain(state.source ?? '') && code !== plain(STARTER);
 }
 
+// In-app confirm: the browser's own confirm dialog is blocked in some embedded browsers,
+// which silently cancelled every example load.
+function ask(message, okLabel) {
+  const d = $('#confirmDialog');
+  d.innerHTML = `<form method="dialog"><p></p><div class="actions">
+    <button class="btn ghost" value="cancel">Cancel</button>
+    <button class="btn primary" value="ok"></button></div></form>`;
+  d.querySelector('p').textContent = message;
+  d.querySelector('.primary').textContent = okLabel;
+  return new Promise(resolve => {
+    d.addEventListener('close', () => resolve(d.returnValue === 'ok'), { once: true });
+    d.onclick = e => { if (e.target === d) d.close(); };
+    d.returnValue = '';
+    d.showModal();
+    d.querySelector('.primary').focus();
+  });
+}
+const replaceOk = what => !modified() || ask(`Replace your changes to “${state.name}” with ${what}? Download your sketch first if you want to keep it.`, 'Replace');
+
 async function openExample(ex) {
-  if (modified() && !confirm('Replace your current sketch with this example? (Download it first if you want to keep it.)')) return;
+  if (!await replaceOk(`the “${ex.title}” example`)) return;
   let text;
   try {
     const res = await fetch('examples/' + ex.file);
@@ -359,7 +381,7 @@ $('#menuPop').addEventListener('click', async e => {
   if (!a) return;
   closePopovers();
   if (a === 'new') {
-    if (modified() && !confirm('Start a new sketch? Your current code will be replaced.')) return;
+    if (!await replaceOk('a new sketch')) return;
     loadSketch(STARTER, 'My sketch', null);
   } else if (a === 'open') {
     $('#fileInput').click();
@@ -383,7 +405,7 @@ $('#fileInput').addEventListener('change', async e => {
   if (!f) return;
   const text = await f.text();
   e.target.value = '';
-  if (modified() && !confirm(`Replace your current sketch with ${f.name}?`)) return;
+  if (!await replaceOk(f.name)) return;
   loadSketch(text, f.name.replace(/\.\w+$/, ''), null);
 });
 // drop a .ino file anywhere
@@ -393,7 +415,7 @@ document.addEventListener('drop', async e => {
   if (!f) return;
   e.preventDefault();
   const text = await f.text();
-  if (modified() && !confirm(`Replace your current sketch with ${f.name}?`)) return;
+  if (!await replaceOk(f.name)) return;
   loadSketch(text, f.name.replace(/\.\w+$/, ''), null);
 });
 
@@ -629,7 +651,7 @@ function showHelp() {
     <h3>When it says no</h3>
     <p>If something would not work on a real Blink, the simulator tells you: code that doesn't compile, a loop that never ends, an array index out of range, or a face number above 5.</p>`;
   d.querySelector('.close').onclick = () => d.close();
-  d.addEventListener('click', e => { if (e.target === d) d.close(); }, { once: true });
+  d.onclick = e => { if (e.target === d) d.close(); };
   d.showModal();
 }
 

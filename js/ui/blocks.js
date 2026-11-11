@@ -2142,6 +2142,7 @@ export async function createBlocksEditor(container, { onChange } = {}) {
       move: { scrollbars: true, drag: true, wheel: true },
       oneBasedIndex: false,
     });
+    animateFlyout(ws.getToolbox()?.getFlyout());
     ws.registerToolboxCategoryCallback('BK_VARIABLES', variablesFlyout);
     ws.registerToolboxCategoryCallback('BK_FUNCTIONS', w => functionsFlyout(Blockly, w));
     for (const type of ['int', 'bool', 'Color', 'Timer']) {
@@ -2206,7 +2207,10 @@ export async function createBlocksEditor(container, { onChange } = {}) {
       Blockly.svgResize(ws);
       if (pendingLayout && host.clientWidth) {
         pendingLayout = false;
-        layout(ws);
+        // tidying the blocks is not an edit, so it must not rewrite the sketch
+        loading = true;
+        Blockly.Events.disable();
+        try { layout(ws); } finally { Blockly.Events.enable(); loading = false; }
       }
     },
     focus() {
@@ -2217,6 +2221,41 @@ export async function createBlocksEditor(container, { onChange } = {}) {
 }
 
 // One tidy column: file notes first, then the scripts in order, a little away from the edges
+// Slide the block drawer in and out instead of popping it. Blockly shows and hides the
+// flyout (and its scrollbar) in updateDisplay(), so closing waits for the slide to finish.
+function animateFlyout(flyout) {
+  if (!flyout || !Element.prototype.animate) return;
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)');
+  const update = flyout.updateDisplay.bind(flyout);
+  const parts = () => [flyout.svgGroup_, flyout.workspace_?.scrollbar?.vScroll?.outerSvg].filter(Boolean);
+  const OUT = { opacity: 0, translate: '-16px 0' }, IN = { opacity: 1, translate: '0 0' };
+  let shown = false, closing = null;
+  flyout.updateDisplay = () => {
+    const show = flyout.containerVisible && flyout.isVisible();
+    if (closing) { for (const a of closing) a.cancel(); closing = null; for (const el of parts()) el.style.pointerEvents = ''; }
+    if (show || !shown || reduce.matches) {
+      update();
+      if (show && !shown && !reduce.matches) {
+        for (const el of parts()) el.animate([OUT, IN], { duration: 200, easing: 'cubic-bezier(.2,.8,.2,1)' });
+      }
+      shown = show;
+      return;
+    }
+    const anims = closing = parts().map(el => {
+      el.style.pointerEvents = 'none';
+      return el.animate([IN, OUT], { duration: 140, easing: 'cubic-bezier(.4,0,1,1)', fill: 'forwards' });
+    });
+    anims[0].finished.then(() => {
+      if (closing !== anims) return;     // reopened before the slide finished
+      closing = null;
+      shown = false;
+      update();
+      for (const el of parts()) el.style.pointerEvents = '';
+      for (const a of anims) a.cancel();
+    }, () => {});
+  };
+}
+
 function layout(ws) {
   const C = globalThis.Blockly.utils.Coordinate;
   let y = 36;

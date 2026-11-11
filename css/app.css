@@ -28,6 +28,7 @@ html, body { height: 100%; margin: 0; }
 body { background: var(--bg); color: var(--text); font: 14px/1.4 var(--f-ui); -webkit-font-smoothing: antialiased; overflow: hidden; }
 button { font: inherit; color: inherit; }
 svg { display: block; }
+svg[display="none"] { display: none; }   /* Blockly hides its scrollbars with this attribute */
 [hidden] { display: none !important; }
 kbd { font: 600 10.5px var(--f-mono); padding: 1px 5px; border-radius: 4px; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.12); }
 :focus-visible { outline: 2px solid var(--blinks); outline-offset: 2px; }
@@ -232,6 +233,13 @@ dialog.help p, dialog.help li { color: #dcd6e7; line-height: 1.55; font-size: 13
 dialog.help ul { padding-left: 18px; margin: 4px 0; }
 dialog.help code { font: 12.5px var(--f-mono); background: var(--panel-2); padding: 1px 5px; border-radius: 5px; }
 dialog.help .close { position: absolute; right: 14px; top: 12px; }
+dialog.confirm { max-width: 420px; padding: 22px 24px 18px; }
+dialog.confirm p { margin: 0 0 18px; font-size: 14.5px; }
+dialog.confirm .actions { display: flex; justify-content: flex-end; gap: 8px; }
+dialog.confirm .btn.primary { padding: 0 16px; }
+dialog.help[open] { animation: dlg-in .18s cubic-bezier(.2,.8,.2,1); }
+@keyframes dlg-in { from { opacity: 0; transform: translateY(8px) scale(.98); } }
+@media (prefers-reduced-motion: reduce) { dialog.help[open] { animation: none; } }
 
 /* ---------- small screens ---------- */
 @media (max-width: 900px) {
