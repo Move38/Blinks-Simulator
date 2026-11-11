@@ -250,6 +250,16 @@ function showNote(text) {
   close.onclick = () => { note.hidden = true; };
   note.append(span, close);
   note.hidden = false;
+  // along the bottom of the editor, clear of the block categories on the left and the trash can on
+  // the right
+  requestAnimationFrame(() => {
+    const blocks = $('#blocks');
+    const box = note.parentElement.getBoundingClientRect();
+    const at = sel => (!blocks.hidden && blocks.querySelector(sel)?.getBoundingClientRect()) || null;
+    const toolbox = at('.blocklyToolbox'), controls = [at('.blocklyTrash')].filter(r => r && r.width);
+    note.style.left = 12 + (toolbox ? toolbox.right - box.left : 0) + 'px';
+    note.style.right = 12 + (controls.length ? box.right - Math.min(...controls.map(r => r.left)) : 0) + 'px';
+  });
 }
 
 document.querySelectorAll('.seg [data-view]').forEach(b => b.addEventListener('click', () => setView(b.dataset.view)));

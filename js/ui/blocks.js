@@ -1174,6 +1174,7 @@ function defineBlocks(Blockly) {
   defineCodeBlocks(Blockly);
   defineListBlocks(Blockly);
   defineSwitchAndEnum(Blockly);
+  defineTrashedComment(Blockly);
   defineBitBlocks(Blockly);
   defineSetBlock(Blockly);
 }
@@ -1361,6 +1362,31 @@ function enumMeaning(ws, name) {
     return `${name} stands for ${i}${of ? ` (in the enum ${of})` : ''}.`;
   }
   return null;
+}
+
+// A comment from the workspace that was thrown away: it waits in the trash as this block (a drawer only
+// holds blocks), showing its first lines; dragged back out, it turns into the comment again (see
+// trashDrawer). It makes no code.
+function defineTrashedComment(Blockly) {
+  Blockly.Blocks.bk_trashed_comment = {
+    init() {
+      this.comment_ = { text: '' };
+      this.setColour('#4a4060');
+      this.setTooltip('A comment in the trash. Drag it out to put it back.');
+      this.updateShape_();
+    },
+    saveExtraState() { return { comment: this.comment_ }; },
+    loadExtraState(state) { this.comment_ = (state && state.comment) || { text: '' }; this.updateShape_(); },
+    updateShape_() {
+      for (let i = 0; this.getInput('L' + i); i++) this.removeInput('L' + i);
+      if (this.getInput('HEAD')) this.removeInput('HEAD');
+      this.appendDummyInput('HEAD').appendField('comment');
+      const lines = String(this.comment_.text || '').split('\n').filter(l => l.trim());
+      const shown = lines.slice(0, 4).map(l => (l.length > 40 ? l.slice(0, 40) + '…' : l));
+      if (lines.length > 4) shown[3] += '  …';
+      shown.forEach((l, i) => this.appendDummyInput('L' + i).appendField(l, 'T' + i));
+    },
+  };
 }
 
 // set: one block for every variable, global or local. Its value slot takes the kind of value the
@@ -2105,6 +2131,7 @@ function makeGenerator(Blockly) {
     const name = listVar(block).name + (block.getInput('ROW') ? `[${v(block, 'ROW', ORDER.NONE, '0')}]` : '');
     return `sendDatagramOnFace(${name}, sizeof(${name}), ${v(block, 'FACE', ORDER.COMMA, '0')});\n`;
   };
+  F.bk_trashed_comment = () => '';
   F.bk_dg_item = block => [`getDatagramOnFace(${v(block, 'FACE', ORDER.NONE, '0')})[${v(block, 'INDEX', ORDER.NONE, '0')}]`, ORDER.POSTFIX];
 
   // switch: each case ends with break; "or" values become stacked case labels
@@ -4316,12 +4343,18 @@ export async function createBlocksEditor(container, { onChange } = {}) {
       sounds: false,
       trashcan: true,
       grid: { spacing: 28, length: 2.5, colour: '#2f2840', snap: false },
-      zoom: { controls: true, wheel: false, pinch: true, startScale: small ? 0.8 : 0.9, maxScale: 2, minScale: 0.4, scaleSpeed: 1.15 },
+      // wheel: a trackpad pinch (or ⌘/Ctrl + scroll) zooms; plain scrolling still moves around
+      zoom: { controls: false, wheel: true, pinch: true, startScale: small ? 0.8 : 0.9, maxScale: 2, minScale: 0.4, scaleSpeed: 1.15 },
       move: { scrollbars: true, drag: true, wheel: true },
       oneBasedIndex: false,
     });
     animateFlyout(ws.getToolbox()?.getFlyout());
     decorateRules(ws.getToolbox()?.getFlyout());
+    safariPinch(Blockly, ws, host);
+    addNavigation(ws, host);
+    trashDrawer(Blockly, ws);
+    trashCanArt(Blockly, ws);
+    if (!small) addMinimap(Blockly, ws, host);
     ws.registerToolboxCategoryCallback('BK_VARIABLES', variablesFlyout);
     ws.registerToolboxCategoryCallback('BK_FUNCTIONS', w => functionsFlyout(Blockly, w));
     ws.registerToolboxCategoryCallback('BK_LISTS', listsFlyout);
@@ -4601,12 +4634,13 @@ function decorateRules(flyout) {
 
 // Slide the block drawer in and out instead of popping it. Blockly shows and hides the
 // flyout (and its scrollbar) in updateDisplay(), so closing waits for the slide to finish.
-function animateFlyout(flyout) {
+// A flyout slides in from `from` (the toolbox's from the left, the trash drawer's from below)
+function animateFlyout(flyout, from = '-16px 0') {
   if (!flyout || !Element.prototype.animate) return;
   const reduce = matchMedia('(prefers-reduced-motion: reduce)');
   const update = flyout.updateDisplay.bind(flyout);
-  const parts = () => [flyout.svgGroup_, flyout.workspace_?.scrollbar?.vScroll?.outerSvg].filter(Boolean);
-  const OUT = { opacity: 0, translate: '-16px 0' }, IN = { opacity: 1, translate: '0 0' };
+  const parts = () => [flyout.svgGroup_, flyout.workspace_?.scrollbar?.vScroll?.outerSvg, flyout.workspace_?.scrollbar?.hScroll?.outerSvg].filter(Boolean);
+  const OUT = { opacity: 0, translate: from }, IN = { opacity: 1, translate: '0 0' };
   let shown = false, closing = null;
   flyout.updateDisplay = () => {
     const show = flyout.containerVisible && flyout.isVisible();
@@ -4632,6 +4666,380 @@ function animateFlyout(flyout) {
       for (const a of anims) a.cancel();
     }, () => {});
   };
+}
+
+// The trash can opens a drawer that slides up along the bottom, holding what was thrown away. The
+// blocks in it are ghostly (see blocks.css), so they read as out of use; drag one out to use it again.
+// It's a vertical flyout (so it scrolls up and down) laid out along the bottom: its items wrap into
+// rows, the heading on a row of its own, stopping short of the close button, and the drawer is as
+// tall as its rows, up to most of the editor.
+const CLOSE_ROOM = 52;   // the close button, the scrollbar and a margin, in screen pixels
+const DRAWER_MIN = 160;  // the drawer opens at least this tall
+const TRASH_GAP = 16;    // between the items in the drawer, across and down
+function trashDrawer(Blockly, ws) {
+  const trash = ws.trashcan;
+  if (!trash || !trash.flyout) return;
+  trash.flyout.dispose();
+  const options = ws.copyOptionsForFlyout();
+  options.toolboxPosition = Blockly.utils.toolbox.Position.RIGHT;
+  const Flyout = Blockly.registry.getClassFromOptions(Blockly.registry.Type.FLYOUTS_VERTICAL_TOOLBOX, ws.options, true);
+  const flyout = trash.flyout = new Flyout(options);
+  const dom = flyout.createDom(Blockly.utils.Svg.SVG);
+  dom.classList.add('blocklyTrashcanFlyout', 'bkTrashDrawer');
+  Blockly.utils.dom.insertAfter(dom, ws.getParentSvg());
+  flyout.init(ws);
+
+  const metrics = () => ws.getMetricsManager();
+  const isGap = el => el instanceof Blockly.FlyoutSeparator;
+  let height = 0;
+  flyout.layout_ = function (contents) {
+    this.workspace_.scale = this.targetWorkspace.scale;
+    const M = this.MARGIN, scale = this.workspace_.scale;
+    const room = metrics().getViewMetrics().width / scale - M - CLOSE_ROOM / scale;
+    let x = M, y = M, rowHeight = 0, gap = 0, newRow = false;
+    for (const item of contents) {
+      const el = item.getElement(), r = el.getBoundingRectangle();
+      if (isGap(el)) { gap = r.getWidth(); continue; }
+      const w = r.getWidth(), h = r.getHeight();
+      // (a little more room under the heading, for the buttons beside it)
+      if (newRow || (x > M && x + (gap || TRASH_GAP) + w > room)) { x = M; y += rowHeight + TRASH_GAP + (newRow ? 4 : 0); rowHeight = 0; gap = 0; }
+      if (x > M) x += gap || TRASH_GAP;
+      el.moveBy(x - r.left, y - r.top);
+      x += w;
+      rowHeight = Math.max(rowHeight, h);
+      gap = 0;
+      newRow = item.getType() === 'label';
+    }
+  };
+  flyout.reflowInternal_ = function () {
+    this.workspace_.scale = this.getFlyoutScale();
+    const bottom = this.getContents().reduce((b, c) => Math.max(b, c.getElement().getBoundingRectangle().bottom), 0);
+    height = Math.min((bottom + this.MARGIN) * this.workspace_.scale, metrics().getViewMetrics().height * 0.7);
+    this.position();
+    this.targetWorkspace.resizeContents();
+    this.targetWorkspace.recordDragTargets();
+  };
+  // along the bottom, from where the block categories end to the right edge, with rounded top corners
+  flyout.position = function () {
+    if (!this.isVisible() || !this.targetWorkspace.isVisible()) return;
+    const view = metrics().getViewMetrics(), abs = metrics().getAbsoluteMetrics();
+    const w = this.width_ = view.width, h = this.height_ = Math.max(height, Math.min(DRAWER_MIN, view.height * 0.7)), r = 12;
+    this.svgBackground_.setAttribute('d', `M0,${r}a${r},${r} 0 0 1 ${r},${-r}h${w - 2 * r}a${r},${r} 0 0 1 ${r},${r}v${h - r}h${-w}z`);
+    this.positionAt_(w, h, abs.left, abs.top + view.height - h);
+    placeClose();
+  };
+  // any drag on a block takes it out (the drawer scrolls with the wheel or its scrollbar)
+  flyout.isDragTowardWorkspace = () => true;
+  animateFlyout(flyout, '0 24px');
+
+  // which entry in the trash each block in the drawer came from, so taking one out removes it
+  const from = new WeakMap();
+  const show = flyout.show.bind(flyout);
+  flyout.show = contents => {
+    const entries = trash.contents.slice();
+    show([{ kind: 'label', text: 'Trash  ·  drag a block out to use it again', 'web-class': 'bkTrashLabel' }, ...contents]);
+    flyout.getWorkspace().getTopBlocks(false).forEach((b, i) => from.set(b, entries[i]));
+  };
+  const createBlock = flyout.createBlock.bind(flyout);
+  flyout.createBlock = original => {
+    const block = createBlock(original);
+    const i = trash.contents.indexOf(from.get(original));
+    if (i >= 0) trash.contents.splice(i, 1);
+    if (!trash.hasContents()) trash.setMinOpenness(0);
+    return block;
+  };
+  // a close button in the drawer's top right corner
+  const svg = Blockly.utils.dom.createSvgElement, S = Blockly.utils.Svg;
+  const close = svg(S.G, { class: 'bkTrashClose', role: 'button', 'aria-label': 'Close the trash' }, dom);
+  svg(S.CIRCLE, { cx: 12, cy: 12, r: 12 }, close);
+  svg(S.PATH, { d: 'M8 8l8 8M16 8l-8 8' }, close);
+  svg(S.TITLE, {}, close).textContent = 'Close';
+  close.addEventListener('pointerdown', e => e.stopPropagation());
+  close.addEventListener('click', e => { e.stopPropagation(); trash.closeFlyout(); });
+  // and an "Empty trash" button beside it
+  const empty = svg(S.G, { class: 'bkTrashEmpty', role: 'button' }, dom);
+  const emptyBox = svg(S.RECT, { height: 24, rx: 12, ry: 12 }, empty);
+  // a trash can on fire
+  const fire = svg(S.G, { class: 'bkTrashFire', transform: 'translate(8, 3.5) scale(.3)' }, empty);
+  for (const [cls, d] of [['bkFireFlames', CAN.FLAMES], ['bkFireCan', CAN.FULL], ['bkFireCan', CAN.LID]]) svg(S.PATH, { class: cls, d }, fire);
+  fire.lastChild.setAttribute('transform', 'translate(-2, -9) rotate(-12, 5, 17)');   // the lid blown up off the flames
+  const emptyText = svg(S.TEXT, { x: 26, y: 16.5 }, empty);
+  emptyText.textContent = 'Empty trash';
+  empty.addEventListener('pointerdown', e => e.stopPropagation());
+  empty.addEventListener('click', e => { e.stopPropagation(); trash.emptyContents(); });
+  // a comment deleted from the workspace goes in the trash too (Blockly's trash only keeps blocks)
+  const converted = new Set();   // trashed-comment blocks turned back into comments
+  ws.addChangeListener(e => {
+    // the block that stood in for a comment went away when the comment came back: Blockly's trash
+    // (which hears about it first) shouldn't keep it
+    if (e.type === Blockly.Events.BLOCK_DELETE && converted.delete(e.blockId) && e.oldJson) {
+      const i = trash.contents.indexOf(JSON.stringify(trash.cleanBlockJson(e.oldJson)));
+      if (i >= 0) trash.contents.splice(i, 1);
+      return;
+    }
+    if (e.type === Blockly.Events.COMMENT_DELETE && e.json && e.recordUndo && ws.options.maxTrashcanContents > 0) {
+      const { x, y, ...comment } = e.json;
+      const entry = JSON.stringify({ kind: 'BLOCK', type: 'bk_trashed_comment', extraState: { comment } });
+      if (!trash.contents.includes(entry)) {
+        trash.contents.unshift(entry);
+        trash.contents.length = Math.min(trash.contents.length, ws.options.maxTrashcanContents);
+      }
+    }
+    // a trashed comment dragged back out and let go becomes the comment again, where it was dropped
+    if (e.type === Blockly.Events.BLOCK_DRAG && !e.isStart) {
+      const block = ws.getBlockById(e.blockId);
+      if (!block || block.type !== 'bk_trashed_comment') return;
+      const at = block.getRelativeToSurfaceXY();
+      Blockly.Events.setGroup(e.group || true);
+      try {
+        Blockly.serialization.workspaceComments.append({ ...block.comment_, x: at.x, y: at.y }, ws);
+        converted.add(block.id);
+        block.dispose(false);
+      } finally {
+        Blockly.Events.setGroup(false);
+      }
+    }
+  });
+  const placeClose = () => {
+    close.setAttribute('transform', `translate(${flyout.getWidth() - 44}, 8)`);
+    let w = 0;
+    try { w = emptyText.getComputedTextLength(); } catch (err) { /* not laid out yet */ }
+    emptyBox.setAttribute('width', w + 38);
+    empty.setAttribute('transform', `translate(${flyout.getWidth() - 44 - 8 - (w + 38)}, 8)`);
+  };
+}
+
+// The trash can's shapes (in a 47 × 60 box, Blockly's trash can size)
+const CAN = {
+  EMPTY: 'M8 20H39L36.5 54.5Q36.2 58 33 58H14Q10.8 58 10.5 54.5Z',
+  FULL: 'M8 20H39C44 30 42 47 37 54.5Q35.8 58 33 58H14Q11.2 58 10 54.5C5 47 3 30 8 20Z',
+  RIBS: 'M17 25V52M23.5 25V53M30 25V52',
+  LID: 'M5 14.5Q5 12.5 7 12.5H40Q42 12.5 42 14.5V17.5H5ZM19 12.5V9.5Q19 8 20.5 8H26.5Q28 8 28 9.5V12.5',
+  FLAMES: 'M11 20l2.5-6 3.5 2.5 2.5-5 4 3.5 3-4.5 3 4 3.5-3 2 5 3 3.5z',
+};
+
+// Our own trash can, drawn over Blockly's (which keeps the behavior: drop blocks on it, click to open
+// the drawer, a lid that opens as a block is dragged over). It's see-through at rest and outlined when
+// you point at it or drag a block over it, and it bulges once something's in it.
+function trashCanArt(Blockly, ws) {
+  const trash = ws.trashcan;
+  const group = trash && trash.svgGroup;
+  if (!group) return;
+  const svg = Blockly.utils.dom.createSvgElement, S = Blockly.utils.Svg;
+  group.classList.add('bkCan');
+  let full = false;
+  const art = svg(S.G, { class: 'bkCanArt' }, group);
+  const body = svg(S.G, { class: 'bkCanBody' }, art);
+  const shell = svg(S.PATH, { class: 'bkCanShell', d: CAN.EMPTY }, body);
+  svg(S.PATH, { class: 'bkCanRibs', d: CAN.RIBS }, body);
+  const lid = svg(S.G, { class: 'bkCanLid' }, art);
+  const pop = svg(S.G, { class: 'bkCanLidPop' }, lid);   // (the lid tips by its transform, and pops by this one's)
+  svg(S.PATH, { class: 'bkCanLidShape', d: CAN.LID }, pop);
+  // the lid tips open about its right end, as Blockly's does (but stays shut when the can's full:
+  // the bulge says so)
+  trash.setLidAngle = angle => { lid.setAttribute('transform', `rotate(${angle}, 40, 17)`); };
+  trash.setMinOpenness = () => {};
+  // drag over or point at it: outlined; Blockly's own fading is replaced by ours
+  const setLidOpen = trash.setLidOpen.bind(trash);
+  trash.setLidOpen = open => { group.classList.toggle('bkCanOpen', open); setLidOpen(open); };
+  const update = () => {
+    const now = trash.hasContents();
+    if (now === full) return;
+    full = now;
+    group.classList.toggle('bkCanFull', full);
+    shell.setAttribute('d', full ? CAN.FULL : CAN.EMPTY);
+    // a little bounce as it fills
+    if (full && art.animate && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      body.animate([{ transform: 'scale(1, 1)' }, { transform: 'scale(1.12, .94)' }, { transform: 'scale(.97, 1.03)' }, { transform: 'scale(1, 1)' }],
+        { duration: 420, easing: 'ease-out' });
+    }
+  };
+  ws.addChangeListener(() => requestAnimationFrame(update));
+  // emptied: once the drawer has slid away, a little fire flares up out of the can and the lid pops
+  const flames = svg(S.PATH, { class: 'bkCanFlames', d: CAN.FLAMES }, art);
+  art.insertBefore(flames, lid);
+  const burn = () => {
+    if (!art.animate || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    flames.animate([
+      { opacity: 0, transform: 'scale(.4, 0)' }, { opacity: 1, transform: 'scale(1, 1.3)', offset: 0.12 },
+      { transform: 'scale(1.1, .85)', offset: 0.24 }, { transform: 'scale(.9, 1.25)', offset: 0.36 },
+      { transform: 'scale(1.08, .9)', offset: 0.5 }, { transform: 'scale(.95, 1.15)', offset: 0.64 },
+      { opacity: 1, transform: 'scale(1, 1)', offset: 0.78 }, { opacity: 0, transform: 'scale(.6, .2)' },
+    ], { duration: 1500, easing: 'ease-in-out' });
+    pop.animate([
+      { transform: 'translate(0, 0)' }, { transform: 'translate(-2px, -9px) rotate(-14deg)', offset: 0.15 },
+      { transform: 'translate(-1px, -6px) rotate(-8deg)', offset: 0.6 }, { transform: 'translate(0, 0)', offset: 0.85 },
+      { transform: 'translate(0, -1.5px)', offset: 0.92 }, { transform: 'translate(0, 0)' },
+    ], { duration: 1500, easing: 'ease-out' });
+  };
+  const emptyContents = trash.emptyContents.bind(trash);
+  trash.emptyContents = () => {
+    const had = trash.hasContents();
+    emptyContents();
+    update();
+    if (had) setTimeout(burn, 220);
+  };
+  update();
+}
+
+// Zoom in, zoom out and home (back to "when Blink starts") in a row under the minimap, styled like
+// the controls under the table
+function addNavigation(ws, host) {
+  const nav = document.createElement('div');
+  nav.className = 'bk-nav';
+  const button = (title, path, act) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.title = title;
+    b.setAttribute('aria-label', title);
+    b.innerHTML = `<svg viewBox="0 0 20 20"><path d="${path}"/></svg>`;
+    b.addEventListener('click', act);
+    nav.append(b);
+  };
+  // a smooth move, like Blockly's own zoom buttons
+  const smoothly = f => {
+    ws.beginCanvasTransition();
+    f();
+    setTimeout(() => ws.endCanvasTransition(), 500);
+  };
+  button('Zoom in', 'M10 4.5v11M4.5 10h11', () => smoothly(() => ws.zoomCenter(1)));
+  button('Zoom out', 'M4.5 10h11', () => smoothly(() => ws.zoomCenter(-1)));
+  button('Go to "when Blink starts"', 'M3.5 9.5 10 4l6.5 5.5M5.5 8v8h3.5v-4.5h2V16h3.5V8', () => smoothly(() => goHome(ws)));
+  host.append(nav);
+}
+
+// Back to the usual zoom with "when Blink starts" at the top left (or the first block, if there's none)
+function goHome(ws) {
+  const tops = ws.getTopBlocks(true);
+  const home = tops.find(b => b.type === 'bk_setup') || tops[0];
+  ws.setScale(ws.options.zoomOptions.startScale);
+  if (!home) { ws.scrollCenter(); return; }
+  const at = home.getRelativeToSurfaceXY(), s = ws.scale, margin = 28;
+  ws.scroll(-at.x * s + margin, -at.y * s + margin);
+}
+
+// Safari sends a trackpad pinch as gesture events, not Ctrl + wheel: zoom around the pinch
+function safariPinch(Blockly, ws, host) {
+  let last = 1;
+  host.addEventListener('gesturestart', e => { e.preventDefault(); last = 1; });
+  host.addEventListener('gesturechange', e => {
+    e.preventDefault();
+    const at = Blockly.browserEvents.mouseToSvg(e, ws.getParentSvg(), ws.getInverseScreenCTM());
+    ws.zoom(at.x, at.y, Math.log(e.scale / last) / Math.log(ws.options.zoomOptions.scaleSpeed));
+    last = e.scale;
+  });
+  host.addEventListener('gestureend', e => e.preventDefault());
+}
+
+// A small map of the sketch in the corner: the blocks in their colors and the part on screen as a
+// frame. Click somewhere to go there, or drag the frame around. A sketch that would be too small to
+// see at the map's size shows a part of it, which scrolls along as you move around (like a code
+// editor's minimap).
+function addMinimap(Blockly, ws, host) {
+  const W = 128, H = 168, PAD = 8;   // portrait, like a sketch's column of blocks
+  const box = document.createElement('div');
+  box.className = 'bk-minimap';
+  box.setAttribute('aria-hidden', 'true');
+  const canvas = document.createElement('canvas');
+  box.append(canvas);
+  host.append(box);
+  host.classList.add('bk-has-minimap');
+  const dpr = Math.max(1, Math.min(3, devicePixelRatio || 1));
+  canvas.width = W * dpr; canvas.height = H * dpr;
+  canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+  const c = canvas.getContext('2d');
+  let map = null;      // workspace → map: { x, y, s } (map = (ws - x) * s + PAD)
+  let frozen = null;   // the map while the frame is dragged, so it stays under the pointer
+
+  const rect = r => [r.left, r.top, r.right - r.left, r.bottom - r.top];
+  const draw = () => {
+    frame = 0;
+    if (!ws.rendered || !box.isConnected) return;
+    const view = ws.getMetricsManager().getViewMetrics(true);
+    const items = [...ws.getTopBlocks(false), ...ws.getTopComments(false)];
+    let l = view.left, t = view.top, r = view.left + view.width, b = view.top + view.height;
+    for (const it of items) {
+      const bb = it.getBoundingRectangle();
+      l = Math.min(l, bb.left); t = Math.min(t, bb.top); r = Math.max(r, bb.right); b = Math.max(b, bb.bottom);
+    }
+    const MW = W - 2 * PAD, MH = H - 2 * PAD;
+    // everything, unless that makes the frame small: then the frame fills at least 40% of the map
+    const s = Math.max(Math.min(MW / Math.max(1, r - l), MH / Math.max(1, b - t)), Math.min(MW / view.width, MH / view.height) * 0.4);
+    // along each side: centered if it fits, or else the part around the view, in proportion
+    const along = (lo, hi, at, size, span) => (hi - lo <= span ? lo - (span - (hi - lo)) / 2
+      : lo + (at - lo) / Math.max(1, hi - lo - size) * (hi - lo - span));
+    if (!frozen) map = { x: along(l, r, view.left, view.width, MW / s), y: along(t, b, view.top, view.height, MH / s), s };
+    const { x, y } = map;
+    const sc = map.s;
+    const at = (px, py) => [(px - x) * sc + PAD, (py - y) * sc + PAD];
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c.clearRect(0, 0, W, H);
+    // every block in its color, so nested ones show up over their parents
+    for (const top of ws.getTopBlocks(true)) {
+      for (const block of top.getDescendants(true)) {
+        if (block.isShadow() || !block.rendered) continue;
+        const [bx, by, bw, bh] = rect(block.getBoundingRectangle());
+        const [mx, my] = at(bx, by);
+        c.fillStyle = block.getColour();
+        c.globalAlpha = block === top ? 0.9 : 0.55;
+        c.fillRect(mx, my, Math.max(1, bw * sc), Math.max(1, bh * sc));
+      }
+    }
+    c.globalAlpha = 1;
+    c.fillStyle = '#4a4060';
+    for (const com of ws.getTopComments(false)) {
+      const [cx, cy, cw, ch] = rect(com.getBoundingRectangle());
+      const [mx, my] = at(cx, cy);
+      c.fillRect(mx, my, Math.max(1, cw * sc), Math.max(1, ch * sc));
+    }
+    // the part on screen
+    const [vx, vy] = at(view.left, view.top);
+    c.fillStyle = 'rgba(255, 255, 255, .07)';
+    c.fillRect(vx, vy, view.width * sc, view.height * sc);
+    c.strokeStyle = '#FA4616';
+    c.lineWidth = 1.5;
+    c.strokeRect(vx + 0.75, vy + 0.75, Math.max(2, view.width * sc - 1.5), Math.max(2, view.height * sc - 1.5));
+  };
+  let frame = 0;
+  const redraw = () => { if (!frame) frame = requestAnimationFrame(draw); };
+  ws.addChangeListener(redraw);
+  new ResizeObserver(redraw).observe(host);
+  redraw();
+
+  // put the top left of the view at a workspace point
+  const scrollTo = (left, top) => ws.scroll(-left * ws.scale, -top * ws.scale);
+  canvas.addEventListener('pointerdown', e => {
+    if (!map) return;
+    e.preventDefault();
+    e.stopPropagation();
+    canvas.setPointerCapture(e.pointerId);
+    box.classList.add('dragging');
+    const view = ws.getMetricsManager().getViewMetrics(true);
+    const toWs = ev => {
+      const r = canvas.getBoundingClientRect();
+      return [(ev.clientX - r.left - PAD) / map.s + map.x, (ev.clientY - r.top - PAD) / map.s + map.y];
+    };
+    const [px, py] = toWs(e);
+    // grabbed inside the frame: keep the same hold on it; anywhere else: center the view there
+    const inside = px >= view.left && px <= view.left + view.width && py >= view.top && py <= view.top + view.height;
+    const dx = inside ? px - view.left : view.width / 2, dy = inside ? py - view.top : view.height / 2;
+    const lock = frozen = { ...map };
+    const move = ev => {
+      const r = canvas.getBoundingClientRect();
+      const wx = (ev.clientX - r.left - PAD) / lock.s + lock.x, wy = (ev.clientY - r.top - PAD) / lock.s + lock.y;
+      scrollTo(wx - dx, wy - dy);
+    };
+    move(e);
+    const up = () => {
+      frozen = null;
+      box.classList.remove('dragging');
+      canvas.removeEventListener('pointermove', move);
+      redraw();
+    };
+    canvas.addEventListener('pointermove', move);
+    canvas.addEventListener('pointerup', up, { once: true });
+    canvas.addEventListener('pointercancel', up, { once: true });
+  });
 }
 
 function layout(ws) {
