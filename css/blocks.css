@@ -99,11 +99,69 @@
   color: var(--bk-text);
   font: 13px/1.4 Figtree, system-ui, sans-serif;
 }
-.bk-host .blocklyComment .blocklyCommentTopbarBackground { fill: #3a3150; }
-.bk-host .blocklyComment .blocklyCommentHighlight { fill: #2f2742; stroke: #4a4060; }
+
+/* The comment and gear icons on blocks: white on a see-through circle, like the + and − buttons */
+.bk-host .blocklyIconGroup .blocklyIconShape { fill: rgba(255, 255, 255, .22); stroke: none; }
+.bk-host .blocklyIconGroup .blocklyIconSymbol { fill: #fff; }
+.bk-host .blocklyMutatorIcon .blocklyIconShape { rx: 8px; ry: 8px; }
+.bk-host .blocklyIconGroup:hover .blocklyIconShape { fill: rgba(255, 255, 255, .36); }
+.bk-host .blocklyIconGroup { opacity: 1; }
+
+/* Their pop-ups: a dark panel like the menus and tooltips, instead of the block's color */
+.bk-host .blocklyBubble .blocklyEmboss { filter: drop-shadow(0 8px 18px rgba(0, 0, 0, .4)); }
+.bk-host .blocklyBubble .blocklyDraggable { fill: #2a2337; stroke: #3a3149; stroke-width: 1px; rx: 10px; ry: 10px; }
+.bk-host .blocklyBubble .blocklyBubbleTail { fill: #2a2337; stroke: #3a3149; stroke-width: 1px; }
+/* the text's corners nest inside the panel's: 10px less the 6px border */
+.bk-host .blocklyTextInputBubble .blocklyTextarea {
+  border: 0;
+  border-radius: 4px;
+  outline: none;
+  padding: 4px 6px;
+  resize: none;
+}
+.bk-host .blocklyTextInputBubble .blocklyTextarea::placeholder { color: var(--bk-muted); }
+/* the page's body style would paint square corners behind the text area */
+.bk-host .blocklyBubble .blocklyMinimalBody { background: transparent; }
+/* the resize corner sits inside the text area, not on the border */
+.bk-host .blocklyBubble .blocklyResizeHandle { filter: invert(1); opacity: .35; transform: translate(-8px, -8px); }
+.bk-host .blocklyBubble .blocklyResizeHandle:hover { opacity: .6; }
+/* a grip tab on the top edge, shown on hover, to drag the comment by */
+.bk-host .bkBubbleGrip { opacity: 0; transition: opacity .15s; cursor: grab; }
+.bk-host .blocklyTextInputBubble:hover .bkBubbleGrip,
+.bk-host .blocklyTextInputBubble.bkHeld .bkBubbleGrip { opacity: 1; }
+.bk-host .bkBubbleGrip rect:first-child { fill: #3a3149; stroke: #4a4060; stroke-width: 1px; }
+.bk-host .bkBubbleGrip circle { fill: var(--bk-muted); pointer-events: none; }
+.bk-host .blocklyMiniWorkspaceBubble .blocklyMainBackground,
+.bk-host .blocklyMutatorBackground { fill: #1d1827; stroke: none; rx: 8px; ry: 8px; }
+.bk-host .blocklyMiniWorkspaceBubble .blocklyFlyoutBackground { fill: #231d30; }
+/* Workspace comments (the notes at the top of a sketch) are windows like a block's comment: a dark
+   panel with the text in a rounded inset. The collapse and delete buttons show on hover. */
+.bk-host .blocklyComment .blocklyCommentHighlight { fill: #2a2337; stroke: #3a3149; stroke-width: 1px; rx: 10px; ry: 10px; filter: drop-shadow(0 8px 18px rgba(0, 0, 0, .4)); }
+.bk-host .blocklyComment.blocklySelected .blocklyCommentHighlight { stroke: var(--bk-accent); stroke-width: 2px; }
+.bk-host .blocklyComment .blocklyCommentTopbarBackground { fill: transparent; }
+/* collapsed, the window is just its top bar */
+.bk-host .blocklyComment.blocklyCollapsed .blocklyCommentHighlight { display: none; }
+.bk-host .blocklyComment.blocklyCollapsed .blocklyCommentTopbarBackground { fill: #2a2337; stroke: #3a3149; stroke-width: 1px; rx: 10px; ry: 10px; filter: drop-shadow(0 8px 18px rgba(0, 0, 0, .4)); }
+.bk-host .blocklyComment.blocklyCollapsed.blocklySelected .blocklyCommentTopbarBackground { stroke: var(--bk-accent); stroke-width: 2px; }
+/* with room around the title: a taller bar (Blockly centers the arrow, title and buttons in it) */
+.bk-host .blocklyComment.blocklyCollapsed .blocklyCommentTopbarBackground { height: 36px; }
+.bk-host .blocklyComment.blocklyCollapsed .blocklyFoldoutIcon { transform-origin: 18px 18px; }
+.bk-host .blocklyComment.blocklyCollapsed .blocklyCommentPreview { fill: var(--bk-text); font-weight: 600; }
+/* the grip sits out the collapse and expand slide */
+.bk-host .blocklyComment.bkSliding > .bkBubbleGrip { display: none; }
+.bk-host .bkCommentPage { display: none; fill: none; stroke: var(--bk-muted); stroke-width: 1.2px; stroke-linejoin: round; stroke-linecap: round; }
+.bk-host .blocklyComment.blocklyCollapsed .bkCommentPage { display: inline; }
 .bk-host .blocklyComment .blocklyCommentPreview { fill: var(--bk-muted); }
 .bk-host .blocklyComment .blocklyFoldoutIcon,
-.bk-host .blocklyComment .blocklyDeleteIcon { filter: invert(1); opacity: .6; }
+.bk-host .blocklyComment .blocklyDeleteIcon { filter: invert(1); opacity: 0; transition: opacity .15s; }
+.bk-host .blocklyComment:hover .blocklyFoldoutIcon,
+.bk-host .blocklyComment:hover .blocklyDeleteIcon,
+.bk-host .blocklyComment.blocklyCollapsed .blocklyFoldoutIcon { opacity: .6; }
+.bk-host .blocklyComment .blocklyMinimalBody { background: transparent; padding: 0 6px 6px; box-sizing: border-box; }
+.bk-host .blocklyComment .blocklyTextarea { border: 0; border-radius: 4px; padding: 6px 8px; overflow: hidden; resize: none; }
+.bk-host .blocklyComment .blocklyResizeHandle { filter: invert(1); opacity: .35; transform: translate(-8px, -8px); }
+.bk-host .blocklyComment:hover .bkBubbleGrip,
+.bk-host .blocklyComment.bkHeld .bkBubbleGrip { opacity: 1; }
 
 /* Menus, tooltips and dropdowns live outside the host */
 .blocklyTooltipDiv {
@@ -115,6 +173,9 @@
   font: 13px/1.4 Figtree, system-ui, sans-serif !important;
   padding: 6px 10px !important;
   max-width: 280px;
+  /* the text wraps here, at the box's width (registerIcons keeps Blockly from breaking it into
+     50-letter lines first); line breaks a tooltip asks for stay */
+  white-space: pre-line;
 }
 .blocklyWidgetDiv .blocklyMenu,
 .blocklyDropDownDiv .blocklyMenu {
@@ -266,3 +327,6 @@
   .bk-host .blocklyToolboxCategoryLabel { font-size: 12px; }
   .bk-dialog-hint { display: none; }
 }
+
+/* the line between an enum's name and its names */
+.bk-host .bkDivider { fill: rgba(255, 255, 255, .35); }
