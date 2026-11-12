@@ -95,6 +95,7 @@
         </div>
         <div class="bin" id="bin" hidden><svg viewBox="0 0 24 24"><path d="M5 7h14M10 4h4M7 7l1 13h8l1-13" /></svg></div>
         <div class="inspector" id="inspector" hidden></div>
+        <div class="chip-tip" id="chipTip" hidden></div>
       </div>
       <section class="console" id="console" aria-label="Console">
         <div class="console-head">
@@ -114,7 +115,13 @@
 
 <div class="popover examples-pop" id="examplesPop" hidden></div>
 <div class="popover menu-pop debug-pop" id="debugPop" role="menu" aria-label="Debug view" hidden>
-  <h3>Debug view</h3>
+  <div class="debug-head">
+    <h3>Debug view</h3>
+    <div class="bits-switch" role="radiogroup" aria-label="Show face values as">
+      <button type="button" role="radio" data-bits="0" title="Face values as numbers">12</button>
+      <button type="button" role="radio" data-bits="1" title="Face values as bits: a filled dot is a 1" aria-label="Bits"><span class="bit-dots"><i class="on"></i><i></i><i class="on"></i></span></button>
+    </div>
+  </div>
   <button type="button" role="menuitemradio" data-debug="none"><span class="t">None</span><span class="b">Just the Blinks</span></button>
   <button type="button" role="menuitemradio" data-debug="tooltip"><span class="t">Tooltip</span><span class="b">Hover a Blink to see what each face sends and hears</span></button>
   <button type="button" role="menuitemradio" data-debug="comms"><span class="t">Comms</span><span class="b">Show the value every face is sending, and datagrams as bubbles</span></button>

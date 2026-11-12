@@ -23,6 +23,7 @@ const state = {
   view: saved.view === 'blocks' ? 'blocks' : 'code',
   live: saved.live ?? true,
   debug: DEBUG_MODES.includes(saved.debug) ? saved.debug : saved.faces ? 'comms' : 'tooltip',
+  bits: saved.bits === true,        // face values shown as bits (dots) instead of numbers
   drift: typeof saved.drift === 'number' && saved.drift >= DRIFT.min && saved.drift <= DRIFT.max ? saved.drift : DRIFT.typical,
   consoleOpen: saved.consoleOpen ?? true,
   split: saved.split ?? null,
@@ -43,7 +44,7 @@ function saveState() {
   saveTimer = setTimeout(() => {
     try {
       localStorage.setItem(STORE, JSON.stringify({
-        code: state.code, name: state.name, view: state.view, live: state.live, debug: state.debug, drift: state.drift,
+        code: state.code, name: state.name, view: state.view, live: state.live, debug: state.debug, bits: state.bits, drift: state.drift,
         consoleOpen: state.consoleOpen, split: state.split, source: state.source,
         cells: world.blinks.map(b => [b.q, b.r, b.rot]),
       }));
@@ -585,7 +586,17 @@ function setDebug(mode) {
   saveState();
 }
 setDebug(state.debug);
+// face values as numbers or as bits, in the tooltip and on the Blinks
+function setBits(on) {
+  state.bits = on;
+  board.bits = on;
+  for (const b of document.querySelectorAll('#debugPop [data-bits]')) b.setAttribute('aria-checked', b.dataset.bits === (on ? '1' : '0'));
+  saveState();
+}
+setBits(state.bits);
 $('#debugPop').addEventListener('click', e => {
+  const bits = e.target.closest('[data-bits]');
+  if (bits) { setBits(bits.dataset.bits === '1'); return; }
   const b = e.target.closest('[data-debug]');
   if (!b) return;
   closePopovers();
@@ -730,7 +741,7 @@ function updateInspector(now) {
   const quiet = isQuiet(b);
   const rows = b.faces.map((f, i) => {
     const linked = !quiet && !(f.expireTime < b.now);
-    return `<tr><td>${i}</td><td class="${quiet ? 'off' : ''}">${quiet ? '—' : f.outValue}</td><td class="${linked ? '' : 'off'}">${linked ? f.inValue : '—'}</td></tr>`;
+    return `<tr><td>${i}</td><td class="${quiet ? 'off' : ''}">${quiet ? '—' : faceValue(f.outValue)}</td><td class="${linked ? '' : 'off'}">${linked ? faceValue(f.inValue) : '—'}</td></tr>`;
   }).join('');
   const mode = { run: '', sleeping: ' · going to sleep', sleep: ' · asleep', waking: ' · waking up', crashed: ' · stopped', seeding: ' · sharing', seedspin: ' · hold to share', idle: '' }[b.mode] || '';
   const rate = (world.clockRate(b) - 1) * 100;
@@ -741,6 +752,13 @@ function updateInspector(now) {
   insp.hidden = false;
   placeInspector(b);
   if (fresh) inspectorIn();
+}
+// A face value (0 to 63): its number, or its six bits as dots, the highest first
+const faceValue = v => (state.bits ? bitDots(v) : v);
+function bitDots(v) {
+  let dots = '';
+  for (let bit = 5; bit >= 0; bit--) dots += `<i class="${(v >> bit) & 1 ? 'on' : ''}"></i>`;
+  return `<span class="bit-dots" title="${v}">${dots}</span>`;
 }
 // Float the card above the Blink with its caret pointing down at it (below, if there's no room above)
 function placeInspector(b) {
@@ -753,6 +771,23 @@ function placeInspector(b) {
   insp.style.left = left + 'px';
   insp.style.top = (below ? y + reach : y - reach - h) + 'px';
   insp.style.setProperty('--caret', Math.max(16, Math.min(w - 16, x - left)) + 'px');
+}
+
+// ---------------- comms value tip (hover a face's value) ----------------
+// In the comms view, hovering a face's value shows it the other way: a number's bits, or bits' number
+const chipTip = $('#chipTip');
+let chipShown = '';
+function updateChipTip() {
+  const hc = state.debug === 'comms' && !board.dragging ? board.hoverChip : null;
+  const ch = hc && world.blinks.includes(hc.b) && !isQuiet(hc.b) ? board.commsChips(hc.b)[hc.f] : null;
+  if (!ch) { chipTip.hidden = true; chipShown = ''; return; }
+  const shown = `${state.bits}:${ch.v}`;
+  if (shown !== chipShown) { chipShown = shown; chipTip.innerHTML = state.bits ? String(ch.v) : bitDots(ch.v); }
+  chipTip.hidden = false;
+  // just above the chip, however it's turned
+  const reach = Math.abs(ch.w / 2 * Math.sin(ch.rot)) + Math.abs(ch.h / 2 * Math.cos(ch.rot)) + 8;
+  chipTip.style.left = (ch.x - chipTip.offsetWidth / 2) + 'px';
+  chipTip.style.top = (ch.y - reach - chipTip.offsetHeight) + 'px';
 }
 
 // ---------------- flags (paused / slowed) ----------------
@@ -799,6 +834,7 @@ function frame(now) {
   }
   board.draw(now);
   updateInspector(now);
+  updateChipTip();
   checkModes(now);
   requestAnimationFrame(frame);
 }
@@ -824,7 +860,7 @@ function showHelp() {
       <li>Press the center of a Blink to press its button. <kbd>Space</kbd> presses the last Blink you touched.</li>
       <li>Drag a Blink by its rim to move it. Drop it on the bin to remove it. Double-click the table to add one.</li>
       <li>Right-click or press <kbd>R</kbd> to rotate a Blink. Real Blinks can be turned any way, so test your game with rotated Blinks.</li>
-      <li>The debug button under the table picks what you see: <b>Tooltip</b> shows what each face sends and hears when you hover a Blink, <b>Comms</b> shows every face's value on the Blinks themselves (blue when a neighbor hears it), and each datagram as a bubble showing its bytes. It ends in a green check when the neighbor gets it, a red X when it's dropped because the last one wasn't read yet, and is grey when nobody is there.</li>
+      <li>The debug button under the table picks what you see: <b>Tooltip</b> shows what each face sends and hears when you hover a Blink, <b>Comms</b> shows every face's value on the Blinks themselves (blue when a neighbor hears it), and each datagram as a bubble showing its bytes. It ends in a green check when the neighbor gets it, a red X when it's dropped because the last one wasn't read yet, and is grey when nobody is there. The switch at the top right of that menu shows face values as numbers or as six dots, their bits, highest first: a lit dot is a 1.</li>
       <li>Real Blinks don't keep exactly the same time: each one's clock runs a little fast or slow. The simulator does the same, so timers on different Blinks drift apart. The speed menu (under the table) has a slider to make the drift bigger or smaller.</li>
     </ul>
     <h3>When it says no</h3>

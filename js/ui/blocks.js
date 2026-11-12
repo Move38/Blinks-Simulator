@@ -1151,10 +1151,6 @@ function defineBlocks(Blockly) {
       tooltip: 'Runs once when the Blink starts (the body of setup()).' },
     { type: 'bk_loop', message0: 'forever', ...hat, style: 'bk_events',
       tooltip: 'Runs again and again, many times a second (the body of loop()).' },
-    { type: 'bk_when_button', message0: 'when button %1', args0: [{ type: 'field_dropdown', name: 'EVENT', options: BUTTON_EVENTS }],
-      ...hat, style: 'bk_events', tooltip: 'Runs when the button does this.' },
-    { type: 'bk_when_timer', message0: 'when timer %1 %2 finishes', args0: [timerField, timerAt], ...hat, style: 'bk_events', ...timerItem,
-      tooltip: 'Runs every loop while the timer is done. Set the timer again inside to make it repeat.' },
 
     // Light
     { type: 'bk_color', message0: '%1', args0: [{ type: 'field_blink_color', name: 'COLOR', value: 'RED' }],
@@ -3097,7 +3093,7 @@ function sortedVars(ws) {
 const DEFINES_SETUP = /\bvoid\s+setup\s*\(\s*(void\s*)?\)\s*\{/;
 const DEFINES_LOOP = /\bvoid\s+loop\s*\(\s*(void\s*)?\)\s*\{/;
 
-// The whole sketch: header, globals, top-level C, setup(), loop() (events first), then functions
+// The whole sketch: header, globals, top-level C, setup(), loop(), then functions
 function generateProgram(ws, G) {
   G.init(ws);
   const tops = ws.getTopBlocks(true).filter(b => b.isEnabled());
@@ -3196,21 +3192,9 @@ function generateProgram(ws, G) {
     parts.push(setups.map(hatComment).join('') + 'void setup() {\n' + setups.map(hatBody).join('') + '}');
   }
 
-  // Events become ifs at the top of loop(); the same event twice shares one if (a button flag clears when read)
-  const events = new Map();
-  for (const hat of of('bk_when_button', 'bk_when_timer')) {
-    const cond = hat.type === 'bk_when_button' ? hat.getFieldValue('EVENT') + '()' : G.timer_(hat) + '.isExpired()';
-    if (!events.has(cond)) events.set(cond, []);
-    events.get(cond).push(hat);
-  }
-  let eventCode = '';
-  for (const [cond, hats] of events) {
+  if (loops.length || !DEFINES_LOOP.test(rawText)) {
     fresh();
-    eventCode += hats.map(hatComment).join('') + `if (${cond}) {\n` + hats.map(hatBody).join('') + '}\n';
-  }
-  if (loops.length || events.size || !DEFINES_LOOP.test(rawText)) {
-    fresh();
-    parts.push(loops.map(hatComment).join('') + 'void loop() {\n' + G.prefixLines(eventCode, G.INDENT) + loops.map(hatBody).join('') + '}');
+    parts.push(loops.map(hatComment).join('') + 'void loop() {\n' + loops.map(hatBody).join('') + '}');
   }
 
   // A function input in C. A list is `byte name[]` and a grid `byte name[][6]` (C needs a grid's
@@ -3810,7 +3794,7 @@ class Importer {
       const m = this.mark();
       try {
         if (fn.name === 'setup') { setupHat = this.convertSetup(fn); piece.blocks = [setupHat]; }
-        else if (fn.name === 'loop') { const r = this.convertLoop(fn); loopHat = r.forever; piece.blocks = r.events; piece.forever = r.forever; }
+        else if (fn.name === 'loop') { loopHat = this.convertLoop(fn); piece.blocks = [loopHat]; }
         else piece.blocks = [this.convertProc(fn)];
       } catch (e) {
         if (!(e instanceof Unsupported)) throw e;
@@ -3874,7 +3858,6 @@ class Importer {
       } else {
         flush();
         if (p.blocks) tops.push(...p.blocks);
-        if (p.forever) tops.push(p.forever);
       }
     }
     flush();
@@ -3883,10 +3866,6 @@ class Importer {
       tops.push({ type: 'bk_setup' }, { type: 'bk_loop' });
     }
     this.attachComments(tops);
-    // loop() with only events needs no empty "forever"
-    if (loopHat && !loopHat.next && !loopHat.icons && tops.some(b => b.type === 'bk_when_button' || b.type === 'bk_when_timer')) {
-      tops.splice(tops.indexOf(loopHat), 1);
-    }
     return this.finish(tops);
   }
 
@@ -4027,38 +4006,11 @@ class Importer {
 
   convertLoop(fn) {
     const ctx = this.ctxFor(fn, 'void');
-    const groups = this.groups(fn.body.body, fn.body.endLine);
-    const blocks = [];
-    const seen = new Set();
-    let k = 0;
-    for (; k < groups.length; k++) {
-      const g = groups[k];
-      const s = g.nodes[0];
-      if (g.nodes.length !== 1 || s.kind !== 'If' || s.else) break;
-      const ev = this.eventOf(s.cond, ctx);
-      if (!ev || seen.has(ev.key)) break;
-      seen.add(ev.key);
-      const hat = this.anchor(s, ev.json);
-      const inner = this.body(s.then, g.end, ctx, hat);
-      if (inner) hat.next = { block: inner };
-      blocks.push(hat);
-    }
     const forever = this.anchor(fn, { type: 'bk_loop' });
-    const first = chain(this.convertGroups(groups.slice(k), ctx));
+    const first = chain(this.convertGroups(this.groups(fn.body.body, fn.body.endLine), ctx));
     this.anchors.push({ line: this.realLine(fn.body.endLine), target: forever });
     if (first) forever.next = { block: first };
-    return { events: blocks, forever };
-  }
-
-  eventOf(cond, ctx) {
-    const e = stripParens(cond);
-    if (e.kind !== 'Call' || e.args.length) return null;
-    if (e.callee.kind === 'Ident' && BUTTON_EVENTS.some(b => b[1] === e.callee.name) && !this.lookup(e.callee.name, ctx)) {
-      return { key: e.callee.name, json: { type: 'bk_when_button', fields: { EVENT: e.callee.name } } };
-    }
-    const t = this.timerOf(e.callee, 'isExpired', ctx);
-    if (t && !t.index && this.globals.get(t.v.name) === t.v) return { key: 'timer:' + t.v.name, json: { type: 'bk_when_timer', fields: { TIMER: { id: t.v.id } } } };
-    return null;
+    return forever;
   }
 
   convertProc(fn) {
@@ -4811,8 +4763,12 @@ const STARTER = {
     languageVersion: 0,
     blocks: [
       { type: 'bk_setup', x: 0, y: 0, next: { block: { type: 'bk_set_color', inputs: { COLOR: { shadow: colorBlock('BLUE') } } } } },
-      { type: 'bk_when_button', x: 0, y: 100, fields: { EVENT: 'buttonSingleClicked' },
-        next: { block: { type: 'bk_set_color', inputs: { COLOR: { shadow: colorBlock('RED'), block: { type: 'bk_random_color' } } } } } },
+      { type: 'bk_loop', x: 0, y: 100, next: { block: {
+        type: 'controls_if', inputs: {
+          IF0: { block: { type: 'bk_button', fields: { EVENT: 'buttonSingleClicked' } } },
+          DO0: { block: { type: 'bk_set_color', inputs: { COLOR: { shadow: colorBlock('RED'), block: { type: 'bk_random_color' } } } } },
+        },
+      } } },
     ],
   },
 };
@@ -4876,7 +4832,7 @@ function toolbox() {
     kind: 'categoryToolbox',
     contents: [
       cat('Events', 'events', [
-        block('bk_setup'), block('bk_loop'), block('bk_when_button'), block('bk_when_timer'),
+        block('bk_setup'), block('bk_loop'),
       ]),
       cat('Light', 'light', [
         call('bk_set_color'), call('bk_set_face_color'),
