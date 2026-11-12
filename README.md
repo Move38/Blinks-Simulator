@@ -36,7 +36,7 @@ Your sketch runs through a small C++ compiler written for this project (`js/comp
 
 The simulator also tells you about things that would go wrong on a Blink: compile errors, `delay()` (Blinks don't have it), a loop that never ends, an array index out of range, face numbers above 5, and globals that won't fit in the ~330 bytes of RAM blinklib leaves for your sketch.
 
-Not simulated: the IR transfer time and collisions of real infrared, flash size limits, and multi-file sketches (paste headers into the sketch).
+Not simulated: the IR transfer time and collisions of real infrared, flash size limits, and multi-file sketches (paste headers into the sketch). [docs/SIMULATION.md](docs/SIMULATION.md) explains how the simulation works and lists every known difference from hardware.
 
 ## Run locally
 
