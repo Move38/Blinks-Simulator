@@ -83,7 +83,7 @@ void loop() {
   if (!isWaiting) {
     byte nextColorIndex = (currentColorIndex + 1) % 3;
     byte face = (faceStartIndex + faceIndex - 1) % FACE_COUNT;
-    setFaceColor( face, colors[nextColorIndex] );
+    setColorOnFace( colors[nextColorIndex], face );
   }
 }
 
