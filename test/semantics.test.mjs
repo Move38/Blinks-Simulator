@@ -213,6 +213,54 @@ test('each sent datagram records whether it was received, dropped or lost', () =
   assert.equal(a.faces[linked].lastDg.result, 'dropped');   // the first one is still unread
 });
 
+test('datagrams take airtime by length, and are lost if the Blinks part on the way', async () => {
+  const { airtime } = await import('../js/runtime/world.js');
+  const dg = n => airtime({ k: 'dgram', data: new Uint8Array(n) });
+  assert.equal(airtime({ k: 'value' }), 6);
+  assert.equal(dg(1), 18);
+  assert.equal(dg(16), 86);
+  // the first Blink sends one datagram of each length when clicked; the second prints when it lands
+  const src = `
+    byte len = 0;
+    void setup(){}
+    void loop(){
+      if (buttonPressed()) { byte d[16] = {}; len = len == 1 ? 16 : 1; FOREACH_FACE(f) sendDatagramOnFace(d, len, f); }
+      FOREACH_FACE(f) if (isDatagramReadyOnFace(f)) { Serial.println(getDatagramLengthOnFace(f)); markDatagramReadOnFace(f); }
+    }`;
+  const { w, log } = sim(src, [[0, 0], [1, 0]]);
+  w.advance(300);
+  const [a, b] = w.blinks;
+  const f = [0, 1, 2, 3, 4, 5].find(i => w.neighbor(a, i));
+  // press, wait for the datagram to go out on the linked face, then time how long until it lands
+  const timeToLand = () => {
+    const before = a.faces[f].lastDg;
+    a.press(true);
+    while (a.faces[f].lastDg === before) w.advance(1);
+    a.press(false);
+    const t0 = w.time;
+    while (!log.length && w.time - t0 < 500) w.advance(1);
+    log.length = 0;
+    return w.time - t0;
+  };
+  const one = timeToLand();
+  w.advance(100);
+  const sixteen = timeToLand();
+  assert.ok(one >= 18 && one < 26, `1 byte took ${one} ms`);
+  assert.ok(sixteen >= 86 && sixteen < 94, `16 bytes took ${sixteen} ms`);
+  // pull them apart while a datagram is on its way: it's lost
+  w.advance(200);
+  const before = a.faces[f].lastDg;
+  a.press(true);
+  while (a.faces[f].lastDg === before) w.advance(1);
+  a.press(false);
+  w.advance(5);
+  assert.equal(a.faces[f].lastDg.result, null, 'still on its way');
+  w.lift(b); w.place(b, 3, 0);
+  w.advance(80);
+  assert.equal(a.faces[f].lastDg.result, 'lost');
+  assert.deepEqual(log, []);
+});
+
 test('(x * C1) / C2 folds like avr-gcc -Os, so overflow in x * C1 matches a Blink', () => {
   // Expected values are what avr-gcc 7.3 -Os computes (checked against its gimple output)
   const src = `

@@ -29,7 +29,7 @@ Your sketch runs through a small C++ compiler written for this project (`js/comp
 - `int` is 16 bits, `long` is 32, `float` and `double` are both 32-bit floats, and arithmetic overflows the same way.
 - Structs, unions and bitfields use the AVR layout, so `sizeof`, pointer casts and datagrams of structs work as on hardware. Arduino's `min()`, `max()`, `abs()` and friends are the real macros.
 - The button follows the BlinkBIOS state machine: 20 ms debounce, a 330 ms click window, long press at 1.2 s. Holding a Blink that is alone for 3 s shares its game, and 6 s puts the group to sleep with a blue fade that ripples from Blink to Blink; a press wakes them with a white one.
-- IR follows blinklib: faces ping-pong values, probe every 150 ms when alone, and expire 200 ms after the last message. `getLastValueReceivedOnFace()` keeps its old value, and an unread datagram blocks the next one.
+- IR follows blinklib: faces ping-pong values (each taking about 6 ms to cross), probe every 150 ms when alone, and expire 200 ms after the last message. `getLastValueReceivedOnFace()` keeps its old value, and an unread datagram blocks the next one.
 - `random()` is blinklib's xorshift with the same seed on every Blink until `randomize()` is called, which takes about half a second, just like hardware.
 - Colors are 5 bits per channel, `millis()` is frozen for the whole of `loop()`, and Blinks warm-sleep after 10 minutes without a button press.
 - Every Blink keeps its own time. Real Blinks have no crystal, so each clock runs a little fast or slow, and the simulator gives each Blink its own clock speed (±2% by default; the speed menu has a slider to change it). Timers on different Blinks slowly drift apart, as they do on a table.
@@ -37,7 +37,7 @@ Your sketch runs through a small C++ compiler written for this project (`js/comp
 
 The simulator also tells you about things that would go wrong on a Blink: compile errors, `delay()` (Blinks don't have it), a loop that never ends, an array index out of range, face numbers above 5, and globals that won't fit in the ~330 bytes of RAM blinklib leaves for your sketch.
 
-Not simulated: the IR transfer time and collisions of real infrared, flash size limits, and multi-file sketches (paste headers into the sketch). [docs/SIMULATION.md](docs/SIMULATION.md) explains how the simulation works and lists every known difference from hardware.
+IR messages take time to arrive, about 3 ms a byte as on hardware, and datagrams a little longer to make up for the ones a real table loses. Not simulated: collisions and lost messages of real infrared, flash size limits, and multi-file sketches (paste headers into the sketch). [docs/SIMULATION.md](docs/SIMULATION.md) explains how the simulation works and lists every known difference from hardware.
 
 ## Run locally
 
