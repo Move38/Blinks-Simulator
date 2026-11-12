@@ -102,6 +102,8 @@
 .bk-host .bkMono.blocklyText,
 .bk-host text.bkMono { font-family: var(--bk-mono); font-weight: 500; }
 .bk-host .bkCodeTitle.blocklyText { fill-opacity: .7; font-size: 11px; }
+/* "list" or "grid" before a function input's name */
+.bk-host .bkInputKind.blocklyText { fill-opacity: .7; }
 /* Typing in a block's text box keeps it the white box it was (the page's dark color scheme would
    otherwise make it dark) */
 .blocklyWidgetDiv .blocklyHtmlInput { color-scheme: light; background: #fff; color: #575e75; }

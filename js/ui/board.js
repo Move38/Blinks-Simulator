@@ -358,7 +358,7 @@ export class Board {
   }
 
   // Comms view: the value each face is sending, on the rim of that face. Chips sit just inside
-  // the rim so the values of two touching Blinks don't overlap. Orange means a neighbor hears it.
+  // the rim so the values of two touching Blinks don't overlap. Blue means a neighbor hears it.
   drawComms(c, b) {
     const [x, y] = this.pos(b), S = this.view.S;
     const a0 = this.angle(b);
@@ -372,7 +372,7 @@ export class Board {
       const w = Math.max(h, c.measureText(txt).width + h * 0.5);
       const linked = !b.lifted && this.world.neighbor(b, f);
       rrect(c, px - w / 2, py - h / 2, w, h, h / 2);
-      c.fillStyle = linked ? 'rgba(250,70,22,.95)' : 'rgba(28,24,38,.82)';
+      c.fillStyle = linked ? `rgba(${HEARD},.95)` : 'rgba(28,24,38,.82)';
       c.fill();
       c.fillStyle = linked ? '#fff' : 'rgba(255,255,255,.72)';
       c.fillText(txt, px, py + 0.5);
@@ -386,7 +386,7 @@ export class Board {
 // (the neighbor hadn't read its last one yet).
 const DG_RISE = 420, DG_POP = 280, DG_BADGE_AT = DG_RISE + DG_POP * 0.4, DG_BADGE = 700;
 const DG_COLOR = { ok: '48,196,104', dropped: '255,72,92', lost: '150,140,170' };
-const DG_ORANGE = '250,70,22';
+const HEARD = '67,121,237';   // #4379ED: a neighbor hears it
 
 Board.prototype.trackDatagrams = function (now) {
   const comms = this.debug === 'comms';
@@ -429,8 +429,8 @@ Board.prototype.drawDatagrams = function (c, now) {
       rrect(c, -w / 2, -h / 2, w, h, h / 2);
       c.fillStyle = nobody ? 'rgba(226,223,234,.92)' : 'rgba(255,255,255,.96)'; c.fill();
       c.restore();
-      c.lineWidth = 1.5; c.strokeStyle = `rgba(${nobody ? DG_COLOR.lost : DG_ORANGE},.95)`; c.stroke();
-      c.fillStyle = nobody ? '#7d748f' : '#c4360d';
+      c.lineWidth = 1.5; c.strokeStyle = `rgba(${nobody ? DG_COLOR.lost : HEARD},.95)`; c.stroke();
+      c.fillStyle = nobody ? '#7d748f' : '#2a5bc4';
       c.fillText(d.label, 0, 0.5);
       c.restore();
     } else if (t < DG_RISE + DG_POP) {
