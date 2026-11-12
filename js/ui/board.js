@@ -28,10 +28,12 @@ export class Board {
     this.view = { S: 48, OX: 0, OY: 0 };
     this.target = { S: 48, OX: 0, OY: 0 };
     this.debug = 'tooltip';     // 'none' | 'tooltip' | 'comms'
+    this.bits = false;          // face values as six dots (bits) instead of numbers
     this.bubbles = [];          // datagrams in flight, for the comms view
     this.seenDg = new WeakMap(); // face -> last datagram we started a bubble for
     this.presses = new Map();
     this.hover = null;
+    this.hoverChip = null;      // { b, f }: the comms value chip under the pointer
     this.lastTouched = null;
     this.dragging = null;
     this.bin = hooks.bin;
@@ -116,6 +118,7 @@ export class Board {
       if (!pr) {
         const h = this.hit(x, y);
         this.hover = h ? h.b : null;
+        this.hoverChip = this.chipAt(x, y);
         this.hoverPt = [x, y];
         cv.style.cursor = h ? (h.rim ? 'grab' : 'pointer') : 'default';
         return;
@@ -139,7 +142,7 @@ export class Board {
     };
     cv.addEventListener('pointerup', end);
     cv.addEventListener('pointercancel', end);
-    cv.addEventListener('pointerleave', () => { this.hover = null; });
+    cv.addEventListener('pointerleave', () => { this.hover = null; this.hoverChip = null; });
     cv.addEventListener('contextmenu', e => {
       e.preventDefault();
       const [x, y] = this.ptr(e);
@@ -359,23 +362,72 @@ export class Board {
 
   // Comms view: the value each face is sending, on the rim of that face. Chips sit just inside
   // the rim so the values of two touching Blinks don't overlap. Blue means a neighbor hears it.
-  drawComms(c, b) {
-    const [x, y] = this.pos(b), S = this.view.S;
+  // Where each face's value chip sits on Blink b: its center, size and turn. As bits, six dots
+  // (the highest bit first, in two threes) lie along their face, turned so they never read upside
+  // down; a number stays upright.
+  commsChips(b) {
+    const c = this.ctx, [x, y] = this.pos(b), S = this.view.S;
     const a0 = this.angle(b);
     const h = Math.max(10, S * 0.24);
+    const r = Math.max(1.2, h * 0.14), step = r * 2.7, gap = r * 1.4;
+    const dotsW = 5 * step + gap;
     c.font = `600 ${Math.max(7, Math.round(S * 0.165))}px "JetBrains Mono", monospace`;
-    c.textAlign = 'center'; c.textBaseline = 'middle';
+    const chips = [];
     for (let f = 0; f < 6; f++) {
       const ang = -Math.PI / 2 + a0 + f * Math.PI / 3;
-      const px = x + Math.cos(ang) * S * 0.66, py = y + Math.sin(ang) * S * 0.66;
-      const txt = String(b.faces[f].outValue);
-      const w = Math.max(h, c.measureText(txt).width + h * 0.5);
+      const v = b.faces[f].outValue;
+      let rot = 0;
+      if (this.bits) {
+        rot = ang + Math.PI / 2;
+        if (Math.cos(rot) < -1e-6 || (Math.abs(Math.cos(rot)) < 1e-6 && Math.sin(rot) < 0)) rot += Math.PI;
+      }
+      chips.push({
+        b, f, v, rot, h, r, step, gap, dotsW,
+        x: x + Math.cos(ang) * S * 0.66, y: y + Math.sin(ang) * S * 0.66,
+        w: this.bits ? dotsW + h * 0.75 : Math.max(h, c.measureText(String(v)).width + h * 0.5),
+      });
+    }
+    return chips;
+  }
+
+  // The value chip under a point in the comms view, if any
+  chipAt(x, y) {
+    if (this.debug !== 'comms') return null;
+    for (const b of this.world.blinks) {
+      if (isQuiet(b) || b.drag) continue;
+      for (const ch of this.commsChips(b)) {
+        const dx = x - ch.x, dy = y - ch.y, cs = Math.cos(ch.rot), sn = Math.sin(ch.rot);
+        if (Math.abs(dx * cs + dy * sn) <= ch.w / 2 && Math.abs(-dx * sn + dy * cs) <= ch.h / 2) return { b, f: ch.f };
+      }
+    }
+    return null;
+  }
+
+  drawComms(c, b) {
+    const chips = this.commsChips(b);
+    c.textAlign = 'center'; c.textBaseline = 'middle';
+    for (const { f, v, x, y, w, h, rot, r, step, gap, dotsW } of chips) {
       const linked = !b.lifted && this.world.neighbor(b, f);
-      rrect(c, px - w / 2, py - h / 2, w, h, h / 2);
+      c.save();
+      c.translate(x, y);
+      c.rotate(rot);
+      rrect(c, -w / 2, -h / 2, w, h, h / 2);
       c.fillStyle = linked ? `rgba(${HEARD},.95)` : 'rgba(28,24,38,.82)';
       c.fill();
-      c.fillStyle = linked ? '#fff' : 'rgba(255,255,255,.72)';
-      c.fillText(txt, px, py + 0.5);
+      if (!this.bits) {
+        c.fillStyle = linked ? '#fff' : 'rgba(255,255,255,.72)';
+        c.fillText(String(v), 0, 0.5);
+      } else {
+        for (let i = 0; i < 6; i++) {
+          const on = (v >> (5 - i)) & 1;
+          c.beginPath();
+          c.arc(-dotsW / 2 + i * step + (i > 2 ? gap : 0), 0, r, 0, TAU);
+          // a 0 sinks into the chip (darker than the blue), a 1 is lit
+          c.fillStyle = on ? (linked ? '#fff' : 'rgba(255,255,255,.85)') : (linked ? 'rgba(16,32,96,.5)' : 'rgba(255,255,255,.14)');
+          c.fill();
+        }
+      }
+      c.restore();
     }
   }
 }
