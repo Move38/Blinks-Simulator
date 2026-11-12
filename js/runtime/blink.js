@@ -69,7 +69,7 @@ export class Blink {
     this.subMs = 0;
     this.faces = Array.from({ length: 6 }, () => ({
       inValue: 0, outValue: 0, expireTime: 0, sendTime: 0, prevValue: 0,
-      inDgLen: 0, outDgLen: 0, outDg: new Uint8Array(DATAGRAM_LEN), rx: null,
+      inDgLen: 0, outDgLen: 0, outDg: new Uint8Array(DATAGRAM_LEN), rx: null, busyUntil: 0,
       lastDg: null,     // last datagram sent, for the comms view (its .result says what happened to it)
     }));
     this.btn = { down: 0, bitflags: 0, clickcount: 0, debounce: 0, clickWindow: 0, pending: 0, longReg: 0, pressCountup: 0 };
@@ -251,7 +251,7 @@ export class Blink {
   txFaces() {
     for (let f = 0; f < 6; f++) {
       const face = this.faces[f];
-      if (face.sendTime > this.now) continue;
+      if (face.sendTime > this.now || this.world.time < face.busyUntil) continue;   // a packet is on its way
       let pkt;
       if (face.outDgLen) {
         pkt = { k: 'dgram', data: face.outDg.slice(0, face.outDgLen), result: null };

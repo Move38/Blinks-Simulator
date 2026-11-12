@@ -18,6 +18,19 @@ const LOOP_PERIOD_MS = 2;
 // so no two Blinks keep quite the same time. The typical amount is an estimate.
 export const DRIFT = { typical: 0.02, min: 0.005, max: 0.1 };
 
+// IR packets take time to send. The BlinkBIOS bootloader times a 32-byte block at 98 ms, about
+// 3 ms a byte. Every packet starts with the BIOS packet type byte; a face value is one more byte
+// (6 ms), a sleep or wake packet two (9 ms), and a datagram a header byte, its payload and a
+// checksum. Datagrams are made half again as slow (18 ms for 1 byte, 86 ms for 16): here they
+// always get through, and the slowdown stands in for the ones a real table loses and a game has
+// to send again. While a packet is on its way, neither end of the link sends anything else on
+// that face.
+export const IR = { BYTE_MS: 3, DATAGRAM_SLOWDOWN: 1.5 };
+export function airtime(pkt) {
+  if (pkt.k === 'dgram') return Math.round((pkt.data.length + 3) * IR.BYTE_MS * IR.DATAGRAM_SLOWDOWN);
+  return (pkt.k === 'value' ? 2 : 3) * IR.BYTE_MS;
+}
+
 export class World {
   constructor(events = {}) {
     this.blinks = [];
@@ -29,6 +42,7 @@ export class World {
     this.events = events;
     this.warned = new Map();
     this.seeding = new Seeding(this);
+    this.inflight = [];         // datagrams on their way: { from, f, to, face, pkt, at }
     this.drift = 0;             // each Blink's clock runs up to this much fast or slow (0.02 = ±2%)
   }
 
@@ -47,12 +61,14 @@ export class World {
     };
     this.warned.clear();
     this.seeding.clear();
+    this.inflight = [];
     for (const b of this.blinks) b.powerUp(0, this.program);
   }
 
   restart() {
     this.warned.clear();
     this.seeding.clear();
+    this.inflight = [];
     for (const b of this.blinks) b.powerUp(0, this.program);
   }
 
@@ -70,7 +86,7 @@ export class World {
     this.blinks = this.blinks.filter(x => x !== b);
     if (this.grid.get(key(b.q, b.r)) === b) this.grid.delete(key(b.q, b.r));
   }
-  clear() { this.blinks = []; this.grid.clear(); this.nextId = 1; this.seeding.clear(); }
+  clear() { this.blinks = []; this.grid.clear(); this.nextId = 1; this.seeding.clear(); this.inflight = []; }
   at(q, r) { return this.grid.get(key(q, r)) || null; }
   lift(b) {
     if (b.lifted) return;
@@ -126,6 +142,7 @@ export class World {
           if (++b.loopTick >= LOOP_PERIOD_MS) { b.loopTick = 0; b.pass(); passes++; passed = true; }
         }
       }
+      if (this.inflight.length) this.land();
       if (passed) this.deliver();
       if (this.seeding.active) this.seeding.tick();
     }
@@ -143,12 +160,28 @@ export class World {
         const pkt = out[i + 1];
         const n = this.neighbor(b, out[i]);
         if (!n) { if (pkt.k === 'dgram') pkt.result = 'lost'; continue; }
-        const face = n.blink.faces[n.face];
-        if (!face.rx) face.rx = pkt;   // a full buffer drops the packet, as on hardware
-        else if (pkt.k === 'dgram') pkt.result = 'dropped';
+        const at = this.time + airtime(pkt);
+        b.faces[out[i]].busyUntil = n.blink.faces[n.face].busyUntil = at;
+        this.inflight.push({ from: b, f: out[i], to: n.blink, face: n.face, pkt, at });
       }
       out.length = 0;
     }
+  }
+
+  // Packets whose airtime is up reach the neighbor, if it's still there. A full receive buffer
+  // drops the packet, as on hardware.
+  land() {
+    const list = this.inflight;
+    let keep = 0;
+    for (const d of list) {
+      if (d.at > this.time) { list[keep++] = d; continue; }
+      const n = this.neighbor(d.from, d.f);
+      const dg = d.pkt.k === 'dgram';
+      if (!n || n.blink !== d.to || n.face !== d.face) { if (dg) d.pkt.result = 'lost'; }   // moved apart on the way
+      else if (!d.to.faces[d.face].rx) d.to.faces[d.face].rx = d.pkt;
+      else if (dg) d.pkt.result = 'dropped';
+    }
+    list.length = keep;
   }
 
   // ---------- game sharing (see seed.js) ----------
