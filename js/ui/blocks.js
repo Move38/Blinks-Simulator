@@ -1645,10 +1645,10 @@ function defineIfBlock(Blockly) {
   Blockly.Extensions.registerMutator('controls_if_mutator', mixin, function () { this.updateShape_(); });
 }
 
-// The kinds of input a function can have (Blockly variable types: '' is a number), and names for new ones
-const INPUT_KINDS = [['number', ''], ['true/false', 'bool'], ['color', 'Color'],
-  ['list of numbers', 'int[]'], ['list of true/false', 'bool[]'], ['list of colors', 'Color[]'],
-  ['grid of numbers', 'int[][]'], ['grid of true/false', 'bool[][]'], ['grid of colors', 'Color[][]']];
+// The kinds of input a function can have (Blockly variable types: '' is a number), and names for new
+// ones. A list or grid then asks what it holds.
+const INPUT_KINDS = [['number', ''], ['true/false', 'bool'], ['color', 'Color'], ['list…', '[]'], ['grid…', '[][]']];
+const INPUT_ITEMS = [['numbers', 'int'], ['true/false', 'bool'], ['colors', 'Color']];
 const INPUT_NAMES = { num: ['x', 'y', 'z', 'a', 'b', 'c', 'n', 'm'], bool: ['on', 'yes', 'flag'], color: ['color', 'tint', 'shade'],
   list: ['list', 'values', 'items'], grid: ['grid', 'cells', 'board'] };
 
@@ -1825,12 +1825,17 @@ function defineFunctionInputs(Blockly) {
         Blockly.Events.enable();
       }
     },
-    // + asks what kind of input to add
+    // + asks what kind of input to add, and for a list or grid, then what it holds
     chooseInput_() {
       if (this.isInFlyout || !this.isEditable()) return;
       const r = this.getField('ADD').getSvgRoot().getBoundingClientRect();
-      const at = new PointerEvent('pointerdown', { clientX: r.left, clientY: r.bottom + 4 });
-      Blockly.ContextMenu.show(at, INPUT_KINDS.map(([text, type]) => ({ text, enabled: true, callback: () => this.addInput_(type) })), this.RTL, this.workspace);
+      const menu = options => Blockly.ContextMenu.show(new PointerEvent('pointerdown', { clientX: r.left, clientY: r.bottom + 4 }),
+        options.map(([text, callback]) => ({ text, enabled: true, callback })), this.RTL, this.workspace);
+      menu(INPUT_KINDS.map(([text, type]) => [text, () => {
+        if (!type.startsWith('[')) return this.addInput_(type);
+        // (once the first menu has closed)
+        setTimeout(() => menu(INPUT_ITEMS.map(([what, item]) => [`${type === '[]' ? 'list' : 'grid'} of ${what}`, () => this.addInput_(item + type)])), 0);
+      }]));
     },
     addInput_(type = '') {
       if (this.isInFlyout || !this.isEditable()) return;
@@ -5273,6 +5278,7 @@ export async function createBlocksEditor(container, { onChange } = {}) {
       if (e.type === Blockly.Events.COMMENT_CREATE) setTimeout(() => decorateWorkspaceComment(Blockly, ws.getCommentById(e.commentId)), 0);
     });
   }
+  const spacing = ws.rendered ? keepSpacing(Blockly, ws, () => loading) : { measure() {} };
   ws.addChangeListener(e => {
     if (loading || e.isUiEvent) {
       if (e.type === Blockly.Events.CLICK && e.targetType === 'block' && !loading) {
@@ -5305,6 +5311,7 @@ export async function createBlocksEditor(container, { onChange } = {}) {
       ws.clearUndo();
       loading = false;
     }
+    spacing.measure();
   };
   load(STARTER);
 
@@ -5332,6 +5339,7 @@ export async function createBlocksEditor(container, { onChange } = {}) {
         loading = true;
         Blockly.Events.disable();
         try { layout(ws); } finally { Blockly.Events.enable(); loading = false; }
+        spacing.measure();
       }
     },
     focus() {
@@ -6051,6 +6059,57 @@ function addMinimap(Blockly, ws, host) {
     canvas.addEventListener('pointerup', up, { once: true });
     canvas.addEventListener('pointercancel', up, { once: true });
   });
+}
+
+// When a block changes shape (a function's inputs, an if's parts, a return type, and the calls that
+// follow along), the blocks and comments below it on the canvas move with its bottom edge, so they
+// keep their spacing instead of being covered or left far below. Only the ones in its column move,
+// and the moves are part of the change, to undo with it.
+function keepSpacing(Blockly, ws, isLoading) {
+  let boxes = new Map();
+  const items = () => [...ws.getTopBlocks(false), ...ws.getTopComments(false)];
+  const idOf = item => item.id;
+  const measure = () => { boxes = new Map(items().map(item => [idOf(item), item.getBoundingRectangle()])); };
+  const respace = group => {
+    const now = new Map(items().map(item => [idOf(item), item]));
+    const grown = [];
+    for (const [id, item] of now) {
+      const was = boxes.get(id), box = item.getBoundingRectangle();
+      if (was && Math.abs(box.top - was.top) < 1 && Math.abs(box.bottom - was.bottom) >= 1) grown.push({ id, was, by: box.bottom - was.bottom });
+    }
+    if (!grown.length) return;
+    const across = (a, b) => a.left < b.right && a.right > b.left;
+    Blockly.Events.setGroup(group || true);
+    try {
+      for (const [id, item] of now) {
+        const was = boxes.get(id);
+        if (!was) continue;   // (a block just set aside stays where it was put)
+        const dy = grown.filter(g => g.id !== id && was.top >= g.was.bottom - 1 && across(was, g.was)).reduce((sum, g) => sum + g.by, 0);
+        if (dy) item.moveBy(0, dy);
+      }
+    } finally {
+      Blockly.Events.setGroup(false);
+    }
+  };
+  let due = false, group = null, timer = null;
+  ws.addChangeListener(e => {
+    if (isLoading() || e.isUiEvent) return;
+    // a change of shape the person made (an undo puts the blocks back itself)
+    if (e.recordUndo && ((e.type === Blockly.Events.BLOCK_CHANGE && e.element === 'mutation') || e.type === 'bk_call_numbers')) {
+      due = true;
+      group = group || e.group || null;
+    }
+    // once the change is drawn: respace if it's due, and measure for next time
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
+      if (Blockly.renderManagement && Blockly.renderManagement.finishQueuedRenders) await Blockly.renderManagement.finishQueuedRenders();
+      if (due) respace(group);
+      due = false;
+      group = null;
+      measure();
+    }, 0);
+  });
+  return { measure };
 }
 
 function layout(ws) {
