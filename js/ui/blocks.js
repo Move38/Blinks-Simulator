@@ -187,6 +187,8 @@ const CALL_BLOCKS = [
     'Let go of the datagram on this face. Until you do, the next one from that neighbor is dropped.'],
   ['bk_millis', 'time', 'milliseconds since start', 'millis', [], N,
     'How long this Blink has been running, in milliseconds (1000 per second).'],
+  ['bk_woken', 'time', 'just woke up?', 'hasWoken', [], B,
+    'True once after the Blink wakes from sleep. A Blink falls asleep after 10 minutes with nothing happening, or when its button is held for 6 seconds.'],
   ['bk_random', 'math', 'pick random 0 to %1', 'random', [['MAX', N, 10]], N,
     'A random whole number from 0 up to and including the limit.'],
   ['bk_map', 'math', 'map %1 from %2 – %3 to %4 – %5', 'map', [['X', N, 128], ['FROM_LOW', N, 0], ['FROM_HIGH', N, 255], ['TO_LOW', N, 0], ['TO_HIGH', N, 5]], N,
@@ -266,6 +268,7 @@ function install(Blockly) {
   registerRenderer(Blockly);
   registerIcons(Blockly);
   registerVariableMenu(Blockly);
+  registerCollapseMenu(Blockly);
   // a disabled block keeps its colors (no hatching) and is ghostly instead, like the ones in the trash
   Blockly.blockRendering.PathObject.prototype.updateDisabled_ = function (disabled) { this.setClass_('blocklyDisabled', disabled); };
   setMessages(Blockly);
@@ -294,8 +297,12 @@ function registerIcons(Blockly) {
       if (was && !visible) await animateBubble(this.getBubble(), false);
       await super.setBubbleVisible(visible);
       if (visible && !was) {
-        addBubbleGrip(Blockly, this.getBubble());
-        animateBubble(this.getBubble(), true);
+        const bubble = this.getBubble();
+        fitCommentBubble(Blockly, bubble);
+        const ta = bubble && bubble.getSvgRoot().querySelector('textarea');
+        if (ta) ta.addEventListener('input', () => fitCommentBubble(Blockly, bubble, true));
+        addBubbleGrip(Blockly, bubble);
+        animateBubble(bubble, true);
       }
     }
   }
@@ -453,6 +460,34 @@ function fitWorkspaceComment(Blockly, comment, keepWidth = false) {
   if (Math.abs(h - comment.getSize().height) > 1) comment.setSize(new Blockly.utils.Size(w, h));
 }
 
+// A block's comment opens sized to its text, as wide as its longest line and as tall as its lines,
+// up to a size that still leaves the blocks around it in view; only a longer comment scrolls
+const BUBBLE_MIN_W = 160, BUBBLE_MAX_W = 360, BUBBLE_MAX_H = 300;
+function fitCommentBubble(Blockly, bubble, keepWidth = false) {
+  const root = bubble && bubble.getSvgRoot && bubble.getSvgRoot();
+  const ta = root && root.querySelector('textarea'), fo = root && root.querySelector('foreignObject');
+  if (!ta || !fo) return;
+  const cs = getComputedStyle(ta);
+  // the space around the text area inside the bubble
+  const insetW = bubble.getSize().width - parseFloat(fo.getAttribute('width'));
+  const insetH = bubble.getSize().height - parseFloat(fo.getAttribute('height'));
+  const padW = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight) + parseFloat(cs.borderLeftWidth) + parseFloat(cs.borderRightWidth);
+  let w = bubble.getSize().width;
+  if (!keepWidth) {
+    measureCtx = measureCtx || document.createElement('canvas').getContext('2d');
+    measureCtx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+    const text = Math.max(0, ...ta.value.split('\n').map(l => measureCtx.measureText(l).width));
+    w = Math.round(Math.max(BUBBLE_MIN_W, Math.min(BUBBLE_MAX_W, text + padW + insetW + 4)));
+    if (Math.abs(w - bubble.getSize().width) > 1) bubble.setSize(new Blockly.utils.Size(w, bubble.getSize().height), true);
+  }
+  const was = ta.style.height;
+  ta.style.height = '0px';
+  const content = ta.scrollHeight + parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth);
+  ta.style.height = was;
+  const h = Math.ceil(Math.min(BUBBLE_MAX_H, content + insetH + 1));
+  if (Math.abs(h - bubble.getSize().height) > 1) bubble.setSize(new Blockly.utils.Size(w, h), true);
+}
+
 // A bubble grows out of its icon with a little overshoot, and shrinks back into it when it closes
 function animateBubble(bubble, open) {
   const root = bubble && bubble.getSvgRoot && bubble.getSvgRoot();
@@ -477,10 +512,14 @@ const BUTTON_PAD = 8;   // a block's padding at its sides, kept under a bottom r
 function registerRenderer(Blockly) {
   if (!Blockly.zelos || Blockly.registry.hasItem(Blockly.registry.Type.RENDERER, 'bk_zelos')) return;
   class Info extends Blockly.zelos.RenderInfo {
+    // a collapsed value block's name isn't tucked into its round ends: it stays where it is open
+    getNegativeSpacing_(elem) { return this.isCollapsed ? 0 : super.getNegativeSpacing_(elem); }
     getSpacerRowHeight_(prev, next) {
       const h = super.getSpacerRowHeight_(prev, next);
       const laterCase = this.block_.type === 'bk_switch' && next.elements && next.elements.some(e => e.input && /^CASE[1-9]/.test(e.input.name));
       if (laterCase) return h + SWITCH_GAP;
+      // a function call's inputs follow its name ("name with") like the next line of a sentence
+      if (/^procedures_call/.test(this.block_.type) && prev.elements && prev.elements.some(e => e.parentInput && e.parentInput.name === 'TOPROW')) return 0;
       // nothing between a bottom row of buttons and the block's bottom edge (see createRows_)
       return Blockly.blockRendering.Types.isBottomRow(next) && this.isButtonRow_(prev) ? 0 : h;
     }
@@ -492,6 +531,14 @@ function registerRenderer(Blockly) {
     }
     createRows_() {
       super.createRows_();
+      // a collapsed block (a variable folded to its name, a define on one line) has no jagged edge
+      // (Zelos doesn't draw one anyway): its text sits in the middle instead of 8px to the left
+      if (this.isCollapsed) {
+        for (const r of this.rows) {
+          r.elements = r.elements.filter(e => !Blockly.blockRendering.Types.isJaggedEdge(e));
+          r.hasJaggedEdge = false;
+        }
+      }
       const row = this.rows.find(r => this.isButtonRow_(r));
       // (the bottom row adds its own height below, and a button's field is a pixel taller than its picture)
       if (row) row.minHeight = Math.min(row.minHeight, Math.max(...row.elements.map(e => e.height)) - 2 + 2 * (BUTTON_PAD - this.constants_.BOTTOM_ROW_MIN_HEIGHT));
@@ -601,8 +648,18 @@ function defineFields(Blockly) {
     render_() {
       const v = this.getValue();
       this.swatch_.setAttribute('fill', colorCss(v));
-      this.swatch_.setAttribute('stroke', v === 'WHITE' ? 'rgba(0,0,0,.25)' : 'rgba(255,255,255,.35)');
+      // (on the white of the color block, a light color still has an edge)
+      this.swatch_.setAttribute('stroke', this.isWholeBlock_() ? 'rgba(0,0,0,.18)' : v === 'WHITE' ? 'rgba(0,0,0,.25)' : 'rgba(255,255,255,.35)');
       this.size_ = new Blockly.utils.Size(22, 22);
+    }
+    // the color block is white around its swatch, like a number block around its number
+    isWholeBlock_() {
+      const b = this.getSourceBlock();
+      return !!b && b.type === 'bk_color';
+    }
+    applyColour() {
+      const b = this.getSourceBlock();
+      if (b && this.isWholeBlock_() && b.pathObject) b.pathObject.svgPath.setAttribute('fill', this.getConstants().FIELD_BORDER_RECT_COLOUR);
     }
     getText_() {
       const v = this.getValue();
@@ -1273,6 +1330,7 @@ function defineBlocks(Blockly) {
   defineIfBlock(Blockly);
   defineFunctionInputs(Blockly);
   defineReturnTypes(Blockly);
+  defineCollapsedText(Blockly);
 }
 
 // switch: a value, cases (each ends by itself, as if with break), and "default" for the rest
@@ -1376,22 +1434,11 @@ function defineSwitchAndEnum(Blockly) {
     toggleLayout_() {
       if (this.isInFlyout) return;
       const before = JSON.stringify(this.saveExtraState());
-      const ws = this.workspace, top = this.getRelativeToSurfaceXY().y;
-      const box = this.getBoundingRectangle();
+      // (what sits below moves with the block's new height: keepSpacing does that for any change of shape)
       Blockly.Events.setGroup(true);
       try {
         this.setColumn_(!this.column_);
         fire(this, before);
-        if (this.rendered) this.render();
-        // what sits below moves with the block's new height, so a column doesn't cover it
-        const grow = this.getBoundingRectangle().bottom - box.bottom;
-        if (grow) {
-          for (const item of [...ws.getTopBlocks(false), ...ws.getTopComments(false)]) {
-            if (item === this) continue;
-            const r = item.getBoundingRectangle();
-            if (r.top >= box.bottom - 1 && r.left < box.right && r.right > box.left && r.top > top) item.moveBy(0, grow);
-          }
-        }
       } finally {
         Blockly.Events.setGroup(false);
       }
@@ -1564,7 +1611,41 @@ function moveAside(Blockly, owner, aside) {
   }
 }
 
-// if: + buttons along the bottom add an "else if" or the "else", and a − on each takes it away
+// Collapsed, a define or a const shows all of itself (not cut short with …), and an enum lists its
+// names with commas
+function defineCollapsedText(Blockly) {
+  const whole = function (maxLength, emptyToken) { return Blockly.Block.prototype.toString.call(this, undefined, emptyToken); };
+  Blockly.Blocks.bk_define.toString = whole;
+  Blockly.Blocks.bk_const.toString = whole;
+  Blockly.Blocks.bk_enum.toString = function () {
+    const names = [];
+    for (let i = 0; this.getInput('ITEM' + i); i++) names.push(this.getFieldValue('ITEM' + i));
+    const name = this.getFieldValue('NAME');
+    return `enum ${name ? name + ': ' : ''}${names.join(', ')}`;
+  };
+}
+
+// Right-click the canvas to fold every variable block down to its name, and to open them again, in
+// one step to undo. The names an enum or define makes, and true/false, fold with them: they look and
+// read alike.
+const FOLDING_VARS = new Set([...Object.values(GETTER), 'bk_face_var', 'bk_enum_value', 'bk_define_value', 'bk_bool']);
+function registerCollapseMenu(Blockly) {
+  const R = Blockly.ContextMenuRegistry.registry;
+  if (R.getItem('bk_collapse_vars')) return;
+  const blocks = ws => ws.getAllBlocks(false).filter(b => FOLDING_VARS.has(b.type));
+  R.register({
+    id: 'bk_collapse_vars', weight: 5.1, scopeType: Blockly.ContextMenuRegistry.ScopeType.WORKSPACE,
+    displayText: scope => `${blocks(scope.workspace).some(b => !b.isCollapsed()) ? 'Collapse' : 'Expand'} variables`,
+    preconditionFn: scope => (scope.workspace && !scope.workspace.isFlyout && blocks(scope.workspace).length ? 'enabled' : 'hidden'),
+    callback: scope => {
+      const list = blocks(scope.workspace), fold = list.some(b => !b.isCollapsed());
+      Blockly.Events.setGroup(true);
+      try { for (const b of list) b.setCollapsed(fold); } finally { Blockly.Events.setGroup(false); }
+    },
+  });
+}
+
+// if: a + along the bottom adds an "else if" or the "else", and a − on each takes it away
 // (instead of Blockly's gear). The blocks in a part that's taken away are set aside.
 function defineIfBlock(Blockly) {
   const button = (sign, tip, onClick) => new Blockly.FieldImage(PLUS_MINUS(sign), 18, 18, tip, onClick);
@@ -1603,13 +1684,20 @@ function defineIfBlock(Blockly) {
             this.elseCount_ = 0;
           })));
       }
-      const tail = this.appendDummyInput('TAIL')
-        .appendField(button('+', 'add an "else if": another test, tried when the ones above are false', () => this.change_(() => { this.elseifCount_++; })))
-        .appendField(Blockly.Msg.CONTROLS_IF_MSG_ELSEIF);
-      if (!this.elseCount_) {
-        tail.appendField(' ').appendField(button('+', 'add an "else": blocks to run when every test is false', () => this.change_(() => { this.elseCount_ = 1; })))
-          .appendField(Blockly.Msg.CONTROLS_IF_MSG_ELSE);
-      }
+      this.appendDummyInput('TAIL').appendField(button('+', this.elseCount_
+        ? 'add an "else if": another test, tried when the ones above are false'
+        : 'add an "else if" (another test) or an "else" (blocks to run when every test is false)', () => this.chooseArm_()), 'ADD');
+    },
+    // + asks whether to add an "else if" or the "else"; once there's an "else", it just adds an "else if"
+    chooseArm_() {
+      if (this.isInFlyout || !this.isEditable()) return;
+      const addElseIf = () => this.change_(() => { this.elseifCount_++; });
+      if (this.elseCount_) return addElseIf();
+      const r = this.getField('ADD').getSvgRoot().getBoundingClientRect();
+      Blockly.ContextMenu.show(new PointerEvent('pointerdown', { clientX: r.left, clientY: r.bottom + 4 }), [
+        { text: Blockly.Msg.CONTROLS_IF_MSG_ELSEIF, enabled: true, callback: addElseIf },
+        { text: Blockly.Msg.CONTROLS_IF_MSG_ELSE, enabled: true, callback: () => this.change_(() => { this.elseCount_ = 1; }) },
+      ], this.RTL, this.workspace);
     },
     // the parts below a removed "else if" move up into its place
     removeElseIf_(i) {
@@ -2864,11 +2952,21 @@ function makeGenerator(Blockly) {
     for (let i = 0; block.getInput('CASE' + i); i++) {
       const labels = caseLabels(block, 'CASE' + i);
       if (!labels.length) continue;
-      code += labels.map(l => `${I}case ${l}:\n`).join('') + G.prefixLines(body(block, 'DO' + i), I) + `${I}${I}break;\n`;
+      code += labels.map(l => `${I}case ${l}:`).join('\n') + caseBody('DO' + i);
     }
-    const other = body(block, 'DEFAULT');
-    if (other) code += `${I}default:\n` + G.prefixLines(other, I) + `${I}${I}break;\n`;
+    if (block.getInputTargetBlock('DEFAULT')) code += `${I}default:` + caseBody('DEFAULT');
     return code + '}\n';
+    // a case that makes a local (or has C code, which might) gets braces, so the local stays in
+    // that case: C++ won't let a jump to a later case skip past it
+    function caseBody(name) {
+      const made = new Set();
+      G.scopes_.push(made);
+      let code;
+      try { code = statementToCode(block, name); } finally { G.scopes_.pop(); }
+      let braced = made.size > 0;
+      for (let b = block.getInputTargetBlock(name); b && !braced; b = b.getNextBlock()) braced = b.type === 'bk_c_stmt' || b.type === 'bk_c_wrap';
+      return braced ? ` {\n${G.prefixLines(code, I)}${I}${I}break;\n${I}}\n` : `\n${G.prefixLines(code, I)}${I}${I}break;\n`;
+    }
   };
   // outside a switch case, "or" means either is true
   F.bk_case_or = block => [`${v(block, 'A', ORDER.OR + 1, '0')} || ${v(block, 'B', ORDER.OR, '0')}`, ORDER.OR];
@@ -3619,7 +3717,9 @@ class Importer {
         // a long enum lists its names in a column
         const json = { type: 'bk_enum', extraState: { items: names.length, ...(names.length > 5 ? { column: true } : {}) }, fields: { NAME: it.type.def.tag || '' } };
         names.forEach((n, k) => { json.fields['ITEM' + k] = n; });
-        this.anchors.push({ line: this.realLine(it.line), target: json });
+        // the comments on its names, inside its braces, are its own, each labeled with its name
+        const named = it.type.def.items.map(x => ({ name: x.name, line: this.realLine(x.line) }));
+        this.anchors.push({ line: this.realLine(it.line), end: this.realLine(ends[i]), named, target: json });
         pieces.push({ lo: it.line, hi: ends[i], blocks: [json] });
         return;
       }
@@ -3851,6 +3951,13 @@ class Importer {
     for (const c of list) {
       let best = null;
       if (!c.bol) best = this.anchors.find(a => a.line === c.line);
+      // inside a block that spans lines (an enum's names): a comment after a name, or on its own
+      // line just before one, is about that name
+      if (!best) {
+        best = this.anchors.find(a => a.end != null && c.line > a.line && c.line <= a.end);
+        const about = best && best.named && (c.bol ? best.named.find(x => x.line > c.endLine) : best.named.findLast(x => x.line === c.line));
+        if (about) { add(best.target, `${about.name}: ${c.text}`); continue; }
+      }
       if (!best) {
         const line = c.bol ? c.endLine : c.line + 1;
         for (const a of this.anchors) if (a.line >= line && (!best || a.line < best.line)) best = a;
@@ -4110,11 +4217,21 @@ class Importer {
       }
     }
     if (!groups.length) throw new Unsupported('empty switch');
+    // a case body in braces, case A: { … break; } or case A: { … } break;, keeps its locals to
+    // itself, as each case of the block does anyway: what's inside the braces is the body
+    for (const g of groups) {
+      const [inner, after] = g.stmts;
+      if (inner && inner.kind === 'Block' && (g.stmts.length === 1 || (g.stmts.length === 2 && after.kind === 'Break'))) {
+        g.stmts = inner.body.filter(x => x.kind !== 'Empty');
+        g.braceEnd = inner.endLine;
+        g.broke = !!after;
+      }
+    }
     groups.forEach((g, i) => {
       const last = g.stmts[g.stmts.length - 1];
-      g.end = i + 1 < groups.length ? groups[i + 1].labels[0].line : node.body.endLine;
+      g.end = g.braceEnd ?? (i + 1 < groups.length ? groups[i + 1].labels[0].line : node.body.endLine);
       if (last && last.kind === 'Break') { g.end = last.line; g.stmts.pop(); }
-      else if (i + 1 < groups.length && !(last && (last.kind === 'Return' || last.kind === 'Continue'))) throw new Unsupported('falls through');
+      else if (!g.broke && i + 1 < groups.length && !(last && (last.kind === 'Return' || last.kind === 'Continue'))) throw new Unsupported('falls through');
       if (g.labels.some(l => l.kind === 'Default') && g.labels.length > 1) throw new Unsupported('default shares a case');
     });
     if (groups.filter(g => g.labels[0].kind === 'Default').length > 1) throw new Unsupported('two defaults');
@@ -4780,7 +4897,7 @@ function toolbox() {
       ]),
       cat('Time', 'time', [
         block('bk_timer_set', { inputs: { MS: num(1000) } }), block('bk_timer_done'), block('bk_timer_left'),
-        block('bk_timer_add', { inputs: { MS: num(1000) } }), block('bk_timer_never'), call('bk_millis'),
+        block('bk_timer_add', { inputs: { MS: num(1000) } }), block('bk_timer_never'), call('bk_millis'), call('bk_woken'),
       ]),
       cat('Control', 'control', [
         block('controls_if', { inputs: { IF0: bool } }),
@@ -6062,9 +6179,9 @@ function addMinimap(Blockly, ws, host) {
 }
 
 // When a block changes shape (a function's inputs, an if's parts, a return type, and the calls that
-// follow along), the blocks and comments below it on the canvas move with its bottom edge, so they
-// keep their spacing instead of being covered or left far below. Only the ones in its column move,
-// and the moves are part of the change, to undo with it.
+// follow along, or collapsing and expanding), the blocks and comments below it on the canvas move
+// with its bottom edge, so they keep their spacing instead of being covered or left far below. Only
+// the ones in its column move, and the moves are part of the change, to undo with it.
 function keepSpacing(Blockly, ws, isLoading) {
   let boxes = new Map();
   const items = () => [...ws.getTopBlocks(false), ...ws.getTopComments(false)];
@@ -6095,7 +6212,7 @@ function keepSpacing(Blockly, ws, isLoading) {
   ws.addChangeListener(e => {
     if (isLoading() || e.isUiEvent) return;
     // a change of shape the person made (an undo puts the blocks back itself)
-    if (e.recordUndo && ((e.type === Blockly.Events.BLOCK_CHANGE && e.element === 'mutation') || e.type === 'bk_call_numbers')) {
+    if (e.recordUndo && ((e.type === Blockly.Events.BLOCK_CHANGE && (e.element === 'mutation' || e.element === 'collapsed')) || e.type === 'bk_call_numbers')) {
       due = true;
       group = group || e.group || null;
     }

@@ -451,7 +451,7 @@ void displayInjured(byte face) {
 
  // brighten the sides with neighbors
  if ( injuryBrightness > 32 ) {
-   setFaceColor( face, dim( RED, injuryBrightness) );
+   setColorOnFace( dim( RED, injuryBrightness), face );
  }
 
 }
@@ -467,14 +467,14 @@ void displayGhost() {
  if ( gameState == PLAY ) {
    FOREACH_FACE(f) {
 
-     setFaceColor(f, dim( RED, 64 + 32 * sin_d( (60 * f + millis() / 8) % 360)));  // slow dim rotation, just take my word for it :)
+     setColorOnFace(dim( RED, 64 + 32 * sin_d( (60 * f + millis() / 8) % 360)), f);  // slow dim rotation, just take my word for it :)
 
    }
  }
  else if (gameState == WAITING ) {
 
    setColor( dim(teamColor( team ), 92) );
-   setFaceColor( 1, dim( teamColor( team ), 159 + 96 * sin_d( ( millis() / 4) % 360) ) );
+   setColorOnFace( dim( teamColor( team ), 159 + 96 * sin_d( ( millis() / 4) % 360) ), 1 );
 
  }
  else if (gameState == START ) {
@@ -490,7 +490,7 @@ void displayEnguarde() {
 
  setColor( OFF );
 
- setFaceColor( (millis() / 100) % FACE_COUNT, teamColor( team ) );
+ setColorOnFace( teamColor( team ), (millis() / 100) % FACE_COUNT );
 
 }
 
@@ -501,7 +501,7 @@ void displayAttack() {
 
  setColor( OFF );
 
- setFaceColor( random(FACE_COUNT), teamColor( team ) );
+ setColorOnFace( teamColor( team ), random(FACE_COUNT) );
 
 }
 /*

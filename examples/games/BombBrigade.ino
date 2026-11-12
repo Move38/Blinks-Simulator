@@ -268,21 +268,21 @@ void loop() {
         if ( bombCountDownCount == 0 ) {
           // when done with the countdown, no need to have the cool wipe effect :)
           byte prevFace = (FACE_COUNT + bombTickFace - 1) % FACE_COUNT;
-          setFaceColor( prevFace, OFF);
-          setFaceColor( bombTickFace, ORANGE );
+          setColorOnFace( OFF, prevFace);
+          setColorOnFace( ORANGE, bombTickFace );
 
           // flicker if we are paused and showing face
           if (!bombShowFaceTimer.isExpired()) {
-            setFaceColor( bombTickFace, dim( YELLOW, random(255)));  // flicker YELLOW
+            setColorOnFace( dim( YELLOW, random(255)), bombTickFace);  // flicker YELLOW
           }
         }
         else {
           switch (bombCountDownCount) {
-            case 5: setFaceColor( bombTickFace, makeColorRGB(255, 255, 150) ); break; // WHITE-YELLOW
-            case 4: setFaceColor( bombTickFace, makeColorRGB(255, 235,  75) ); break; // --
-            case 3: setFaceColor( bombTickFace, makeColorRGB(255, 215,  30) ); break; // --
-            case 2: setFaceColor( bombTickFace, makeColorRGB(255, 195,   0) ); break; // --
-            case 1: setFaceColor( bombTickFace, makeColorRGB(255, 175,   0) ); break; // YELLOW-ORANGE
+            case 5: setColorOnFace( makeColorRGB(255, 255, 150), bombTickFace ); break; // WHITE-YELLOW
+            case 4: setColorOnFace( makeColorRGB(255, 235,  75), bombTickFace ); break; // --
+            case 3: setColorOnFace( makeColorRGB(255, 215,  30), bombTickFace ); break; // --
+            case 2: setColorOnFace( makeColorRGB(255, 195,   0), bombTickFace ); break; // --
+            case 1: setColorOnFace( makeColorRGB(255, 175,   0), bombTickFace ); break; // YELLOW-ORANGE
           }
         }
       }
@@ -290,15 +290,15 @@ void loop() {
         if ( bExplode ) {
           if ( bExplodeIntoShield ) {
             FOREACH_FACE( f ) {
-              setFaceColor( f, GREEN);         // show that we are safe
+              setColorOnFace( GREEN, f);         // show that we are safe
             }
-            setFaceColor( bombTickFace, dim( ORANGE, random(255)));  // flicker YELLOW
+            setColorOnFace( dim( ORANGE, random(255)), bombTickFace);  // flicker YELLOW
           }
           else {
             FOREACH_FACE( f ) {
-              setFaceColor( f, makeColorHSB(random(25), 255, random(1) * 255));         // show that we are out... huge explosion
+              setColorOnFace( makeColorHSB(random(25), 255, random(1) * 255), f);         // show that we are out... huge explosion
             }
-            setFaceColor( bombTickFace, WHITE );
+            setColorOnFace( WHITE, bombTickFace );
           }
           // show white if safe
           // red if out....
@@ -315,13 +315,13 @@ void loop() {
 
         if ( isAlone() ) {
           // rotating rainbow now that we have a token
-          setFaceColor( (millis() / 40) % 6, makeColorHSB( ( millis() / 5) % 255, 255, 255) ); // ROTATING RAINBOW
+          setColorOnFace( makeColorHSB( ( millis() / 5) % 255, 255, 255), (millis() / 40) % 6 ); // ROTATING RAINBOW
         }
         else {
           // disco explosion
           setColor(OFF);
-          setFaceColor( random(5), makeColorHSB( ( millis() / 5) % 255, 255, 255) ); // ROTATING RAINBOW
-          setFaceColor( random(5), makeColorHSB( ( (millis() + 127) / 5) % 255, 255, 255) ); // ROTATING RAINBOW
+          setColorOnFace( makeColorHSB( ( millis() / 5) % 255, 255, 255), random(5) ); // ROTATING RAINBOW
+          setColorOnFace( makeColorHSB( ( (millis() + 127) / 5) % 255, 255, 255), random(5) ); // ROTATING RAINBOW
         }
       }
       else {
@@ -506,13 +506,13 @@ Color getShieldColor( byte health ) {
 */
 void shareExplosion( byte face ) {
 
-  setFaceColor( shareExplosionFace, makeColorHSB(random(25), 255, 255 - ((millis() / 2) % 255) ) );
+  setColorOnFace( makeColorHSB(random(25), 255, 255 - ((millis() / 2) % 255) ), shareExplosionFace );
 
   // use the neighboring faces as well
   byte prevFace = (FACE_COUNT + face - 1) % FACE_COUNT;
   byte nextFace = (face + 1) % FACE_COUNT;
 
-  setFaceColor( prevFace, makeColorHSB(random(25), 255, 255 - (((millis() - 40) / 2) % 255) ) );
-  setFaceColor( nextFace, makeColorHSB(random(25), 255, 255 - (((millis() - 40) / 2) % 255) ) );
+  setColorOnFace( makeColorHSB(random(25), 255, 255 - (((millis() - 40) / 2) % 255) ), prevFace );
+  setColorOnFace( makeColorHSB(random(25), 255, 255 - (((millis() - 40) / 2) % 255) ), nextFace );
 
 }

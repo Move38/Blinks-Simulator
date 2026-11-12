@@ -58,7 +58,7 @@ class fadingIndicator_t {
     }
 
     inline void show() {
-      setFaceColor( face , dim( color ,  get_current_brightness() ) ); 
+      setColorOnFace( dim( color ,  get_current_brightness() ), face ); 
     }
   
       

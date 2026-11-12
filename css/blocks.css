@@ -209,11 +209,14 @@
 .blocklyDropDownDiv .blocklyMenu {
   font-family: Figtree, system-ui, sans-serif;
 }
-.blocklyWidgetDiv .blocklyContextMenu {
+.blocklyWidgetDiv .blocklyContextMenu,
+.blocklyWidgetDiv .blocklyContextMenu:focus {
   background: #2a2337;
-  border: 1px solid #3a3149;
+  /* the edge is a shadow, not a border: Blockly sizes the menu from its scrollHeight,
+     which leaves a border out, and a short menu would scroll by those 2px */
+  border: none;
   border-radius: 10px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, .45);
+  box-shadow: inset 0 0 0 1px #3a3149, 0 10px 30px rgba(0, 0, 0, .45);
   padding: 4px;
 }
 .blocklyWidgetDiv .blocklyContextMenu .blocklyMenuItem { color: #eee9f5; border-radius: 6px; }
