@@ -162,6 +162,14 @@ li.CodeMirror-hint-active .sig { color: rgba(255,255,255,.8); }
 #pauseBtn .pl { display: none; fill: currentColor; stroke: none; }
 #pauseBtn.paused .pl { display: block; }
 #pauseBtn.paused .pz { display: none; }
+#fullBtn .back, .app.full #fullBtn .go { display: none; }
+.app.full #fullBtn .back { display: block; }
+
+/* full screen: just the table */
+.app.full .editor-pane, .app.full .splitter, .app.full .console { display: none; }
+.app.full .work { display: flex; }
+.app.full .table-pane { flex: 1; }
+.app.full .board-wrap { flex: 1; height: auto; min-height: 0; }
 #stepBtn svg path { fill: none; }
 .count { min-width: 26px; text-align: center; font: 600 13px var(--f-mono); color: var(--text); }
 .sep { width: 1px; height: 20px; background: var(--line-2); margin: 0 5px; flex: none; }
