@@ -67,7 +67,7 @@ const world = new World({
     setStatus('err', err.line ? `Stopped on line ${err.line}` : 'Stopped: runtime error');
   },
   onWarn: (b, message, line) => con.add('warn', message, { who: b.id, line }),
-  onSeed: b => con.add('info', `Blink #${b.id} is sharing its game. Put other Blinks next to it to send them the game.`),
+  onSeed: b => con.add('info', `Blink #${b.id} is sharing its game. Put it next to other Blinks within 5 s to send them the game.`),
   onSeedDone: (b, n) => con.add('info', n ? `Game shared with ${n} Blink${n === 1 ? '' : 's'}. They restarted with startState() = START_STATE_DOWNLOAD_SUCCESS.` : 'Game sharing ended.'),
   onSleep: () => {},
 });

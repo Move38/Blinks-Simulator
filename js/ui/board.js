@@ -582,8 +582,9 @@ function badge(c, x, y, r, col, txt) {
   c.fillText(txt, x, y + 1);
 }
 
-// Asleep (or fading in or out of sleep), a Blink sends no face values and hears none
-export const isQuiet = b => b.mode === 'sleep' || b.mode === 'sleeping' || b.mode === 'waking';
+// Asleep (or fading in or out of sleep), or sharing a game, a Blink sends no face values and hears none
+const QUIET = new Set(['sleep', 'sleeping', 'waking', 'seedspin', 'seeding']);
+export const isQuiet = b => QUIET.has(b.mode);
 
 // Arrangements for the layout buttons (axial hex coordinates)
 export const LAYOUTS = {

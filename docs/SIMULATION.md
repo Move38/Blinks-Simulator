@@ -4,7 +4,7 @@ This document explains how the Blinks Playground runs a sketch on simulated Blin
 
 The playground is an **emulator of the software stack**, not of the chip. A sketch is compiled to JavaScript that follows AVR C++ rules. It then runs against a JavaScript copy of blinklib and the BlinkBIOS. The ATmega168PB's instructions, cycles, interrupts and IR hardware are not emulated. Because of that, anything a game does through the Blinks API behaves like hardware. Anything that depends on how *long* things take on the real chip does not.
 
-The reference for blinklib behavior is the Move38 SDK 1.2.0 (`blinklib.cpp`, `blinklib.h`, `shared/blinkbios_shared_*.h`), the version Arduino installs as `move38:avr`. The button timings come from the BlinkBIOS source.
+The reference for blinklib behavior is the Move38 SDK 1.2.0 (`blinklib.cpp`, `blinklib.h`, `shared/blinkbios_shared_*.h`), the version Arduino installs as `move38:avr`. The button timings and game sharing come from the BlinkBIOS source (`bigjosh/Move38-BlinkBIOS`, `bootloader.cpp`).
 
 ```
  sketch.ino ──► preprocess ──► parse ──► codegen ──► JS factory
@@ -111,10 +111,27 @@ Randomness is blinklib's: xorshift32 with the same seed on every Blink until `ra
 
 Each Blink starts with its millisecond counter and loop phase at random offsets, so Blinks never run in lockstep.
 
-**Game sharing** (`startSeeding`, `seedTick`):
-- Starting from the root, the game spreads to any touching Blink that isn't sharing yet.
-- A receiving Blink shows a green spin for 0.9 s, then starts sharing onward.
-- After 4 s with no new Blinks, every Blink in the share restarts: the root with `startState()` = 1 (`WE_ARE_ROOT`), the others with 2 (`DOWNLOAD_SUCCESS`).
+**Game sharing** ([seed.js](../js/runtime/seed.js)) follows the bootloader's `download_and_seed_mode()`. It uses links and blocks instead of SEED/PULL/PUSH packets.
+
+- **Searching.** Every Blink in the share seeds one face at a time, clockwise.
+  - The root starts at face 0. A downloading Blink starts at the face after the one it downloads from.
+  - The face being seeded shows full blue.
+  - A face where nobody answers is given up after three tries, about 200 ms. The search therefore looks like a blue face stepping around the Blink.
+  - The root doesn't give up on any face for its first 5 s, so it can be put down into a group after being held alone.
+- **Downloading.**
+  - A Blink there that isn't sharing yet starts downloading, block by block.
+  - Both ends of the link show blue stepping up with each block (block × 4, wrapping every 8 blocks).
+  - The new Blink starts its own clockwise search right away and passes each block on as soon as it has it. A line of Blinks therefore downloads together, each a block behind the one before, like a game of telephone.
+- **Finishing a link.**
+  - When a neighbor has the whole game, both ends of the link turn half green. The seeder moves on to its next face, and keeps coming back to check on that neighbor.
+  - The link turns full green once the neighbor, and everything past it, is done. The end of a line finishes first, then the green works back toward the root.
+- **Starting the game.**
+  - When all of the root's faces are done, it starts the game (`startState()` = 1, `WE_ARE_ROOT`).
+  - A LETSGO passes out along the links, 50 ms a hop, and each Blink starts with `startState()` = 2 (`DOWNLOAD_SUCCESS`).
+- **Stopping.**
+  - A press stops sharing on that Blink and passes LETSGO on.
+  - A Blink without the whole game shows half red until it is pressed again, then runs the game it already had.
+  - A link that goes quiet, for example because a Blink was picked up, is given up after 360 ms. The Blink downloading on it waits until it is pressed.
 
 **The page** ([app.js](../js/app.js), `frame()`) calls `advance()` every animation frame with the elapsed time times the speed setting. One frame covers at most 100 ms. Simulation work is capped at about 12 ms per frame. With too many Blinks or a heavy sketch, simulated time runs slower than real time and the page says so ("Running at 0.6×…"). Simulated time never skips ahead.
 
@@ -126,6 +143,10 @@ Each Blink starts with its millisecond counter and loop phase at random offsets,
 | Click window | 330 ms | BlinkBIOS |
 | Long press | 1200 ms | BlinkBIOS |
 | Seed (share) hold | 3 s, only when alone | BlinkBIOS flag + `run()` |
+| Seed tries per face | 3 (~200 ms a face) | `SEND_TRY_COUNT`, `TIMEOUT_COLD_SEND_MS` |
+| Root's first try window | 5 s | `TIMEOUT_ROOT_STARTUP_MS` |
+| Game transfer per link | ~2 s (32 blocks of 62 ms) | **simulator only** |
+| SEED answer, LETSGO hop | 50 ms | **simulator only** |
 | Force-sleep hold | 6 s | BlinkBIOS flag + `run()` |
 | Face value range | 0–63 (larger values send 63) | `IR_DATA_VALUE_MAX` |
 | Datagram length | ≤ 16 bytes (longer ones are ignored) | `IR_DATAGRAM_LEN` |
@@ -197,7 +218,11 @@ The items are ordered roughly by how likely they are to make a game behave diffe
 
 ### Power, sleep and game sharing
 
-- **Game sharing is a stand-in.** On hardware the bootloader sends the program over IR, page by page, with checksums. That takes noticeably longer and can fail and retry. Here the timing (0.9 s per hop, ending after 4 s of quiet) is made up so the spread is easy to watch. The end state matches: every Blink runs the game, with the right `startState()`.
+- **Game sharing is faster here.**
+  - The order, the colors and the rules for giving up follow the bootloader. The transfer itself is shortened: 32 blocks in about 2 s per link.
+  - On hardware a game is 176 blocks of 32 bytes (5.5 KB). Each block takes about 100 ms of IR time, so a link takes roughly 17 s, and the blocks are checked and burned to flash.
+  - No blocks are lost or retried.
+  - The root also skips the moment it spends copying and checksumming its game before the first SEED.
 - **There is no cold sleep.** On hardware, a Blink left in warm sleep long enough is put into deep sleep by the BIOS. After that, only its own button wakes it, and `hasWoken()` reports that wake too. Here a warm-sleeping Blink can always be woken by a neighbor.
 - **The sleep wave is slowed.** A Blink put to sleep by a neighbor waits 50 ms before its own fade, so the wave is visible. On hardware the only gap is the time the packets take.
 - **There are no batteries.** Low voltage, brown-outs and power-up order aren't modeled. Restart powers every Blink on at once, with up to 40 ms of random offset.

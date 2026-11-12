@@ -7,6 +7,7 @@
  */
 
 import { Blink } from './blink.js';
+import { Seeding } from './seed.js';
 
 export const DIRS = [[0, -1], [1, -1], [1, 0], [0, 1], [-1, 1], [-1, 0]];
 const key = (q, r) => q + ',' + r;
@@ -27,7 +28,7 @@ export class World {
     this.program = null;
     this.events = events;
     this.warned = new Map();
-    this.seeding = null;
+    this.seeding = new Seeding(this);
     this.drift = 0;             // each Blink's clock runs up to this much fast or slow (0.02 = ±2%)
   }
 
@@ -45,13 +46,13 @@ export class World {
       },
     };
     this.warned.clear();
-    this.seeding = null;
+    this.seeding.clear();
     for (const b of this.blinks) b.powerUp(0, this.program);
   }
 
   restart() {
     this.warned.clear();
-    this.seeding = null;
+    this.seeding.clear();
     for (const b of this.blinks) b.powerUp(0, this.program);
   }
 
@@ -69,7 +70,7 @@ export class World {
     this.blinks = this.blinks.filter(x => x !== b);
     if (this.grid.get(key(b.q, b.r)) === b) this.grid.delete(key(b.q, b.r));
   }
-  clear() { this.blinks = []; this.grid.clear(); this.nextId = 1; }
+  clear() { this.blinks = []; this.grid.clear(); this.nextId = 1; this.seeding.clear(); }
   at(q, r) { return this.grid.get(key(q, r)) || null; }
   lift(b) {
     if (b.lifted) return;
@@ -126,7 +127,7 @@ export class World {
         }
       }
       if (passed) this.deliver();
-      if (this.seeding) this.seedTick();
+      if (this.seeding.active) this.seeding.tick();
     }
     return passes;
   }
@@ -150,41 +151,10 @@ export class World {
     }
   }
 
-  // ---------- game sharing ----------
+  // ---------- game sharing (see seed.js) ----------
   startSeeding(root) {
-    root.mode = 'seeding';
-    this.seeding = { root, started: this.time, last: this.time, members: new Map([[root, { state: 'seed', t: this.time }]]) };
+    this.seeding.start(root);
     this.events.onSeed?.(root);
-  }
-
-  seedTick() {
-    const s = this.seeding;
-    for (const [b, st] of s.members) {
-      if (!this.blinks.includes(b)) { s.members.delete(b); continue; }
-      const age = this.time - st.t;
-      b.display.fill(0);
-      if (st.state === 'download') {
-        b.display[Math.floor(age / 40) % 6] = 0x07c1; // green spin
-        if (age > 900) { st.state = 'seed'; st.t = this.time; s.last = this.time; }
-        continue;
-      }
-      b.display[Math.floor(age / 25) % 6] = 0xf801;     // blue spin
-      if (st.state !== 'seed') continue;
-      for (let f = 0; f < 6; f++) {
-        const n = this.neighbor(b, f);
-        if (n && !s.members.has(n.blink)) {
-          n.blink.mode = 'seeding';
-          s.members.set(n.blink, { state: 'download', t: this.time });
-          s.last = this.time;
-        }
-      }
-    }
-    // the root keeps seeding while new Blinks arrive; quiet for 4 s ends it
-    if (this.time - s.last > 4000) {
-      for (const [b] of s.members) b.powerUp(b === s.root ? 1 : 2, this.program);
-      this.seeding = null;
-      this.events.onSeedDone?.(s.root, s.members.size - 1);
-    }
   }
 
   // ---------- events from Blinks ----------
