@@ -401,7 +401,7 @@ function loadSketch(code, name, layout) {
   $('#sketchName').value = name;
   editor.setValue(code);
   con.clear();
-  if (layout) setCells(LAYOUTS[layout](world.blinks.length).map(([q, r]) => [q, r, 0]));
+  if (layout) setCells(Array.isArray(layout) ? layout : LAYOUTS[layout](world.blinks.length).map(([q, r]) => [q, r, 0]));
   runtimeDiags.clear();
   run(true);
   if (state.view === 'blocks') { state.view = 'code'; setView('blocks'); }
@@ -430,6 +430,10 @@ $('#menuPop').addEventListener('click', async e => {
     const url = await shareLink();
     try { await navigator.clipboard.writeText(url); toast('Link copied — anyone with it can open this sketch'); }
     catch (err) { prompt('Copy this link:', url); }
+  } else if (a === 'arrangement') {
+    const text = arrangementText();
+    try { await navigator.clipboard.writeText(text); toast('Arrangement copied: paste it into an example in js/examples.js'); }
+    catch (err) { prompt('Copy this arrangement:', text); }
   } else if (a === 'help') {
     showHelp();
   }
@@ -519,6 +523,14 @@ function openGitHub() {
   d.showModal();
   input.focus();
   input.select();
+}
+
+// The Blinks on the table as an example's layout: [q, r] or [q, r, rotation] each, centered on 0, 0
+function arrangementText() {
+  const bs = world.blinks, n = bs.length || 1;
+  const dq = Math.round(bs.reduce((s, b) => s + b.q, 0) / n), dr = Math.round(bs.reduce((s, b) => s + b.r, 0) / n);
+  const cells = bs.map(b => [b.q - dq, b.r - dr, b.rot]).sort((a, b) => a[1] - b[1] || a[0] - b[0]);
+  return `layout: [${cells.map(([q, r, rot]) => `[${q}, ${r}${rot ? ', ' + rot : ''}]`).join(', ')}]`;
 }
 
 // ---------------- share links ----------------

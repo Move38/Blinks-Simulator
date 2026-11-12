@@ -28,3 +28,19 @@ for (const group of EXAMPLES) {
     });
   }
 }
+
+test('every example names a known layout, or lists Blinks that fit on the grid', async () => {
+  const { LAYOUTS } = await import('../js/ui/board.js');
+  for (const group of EXAMPLES) {
+    for (const ex of group.items) {
+      if (!Array.isArray(ex.layout)) { assert.ok(LAYOUTS[ex.layout], `${ex.title}: no layout called '${ex.layout}'`); continue; }
+      assert.ok(ex.layout.length, `${ex.title}: an empty layout`);
+      const seen = new Set();
+      for (const c of ex.layout) {
+        assert.ok((c.length === 2 || c.length === 3) && c.every(Number.isInteger) && (c[2] ?? 0) >= 0 && (c[2] ?? 0) < 6, `${ex.title}: bad cell ${JSON.stringify(c)}`);
+        assert.ok(!seen.has(c[0] + ',' + c[1]), `${ex.title}: two Blinks at ${c[0]}, ${c[1]}`);
+        seen.add(c[0] + ',' + c[1]);
+      }
+    }
+  }
+});
