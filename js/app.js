@@ -67,7 +67,7 @@ const world = new World({
     setStatus('err', err.line ? `Stopped on line ${err.line}` : 'Stopped: runtime error');
   },
   onWarn: (b, message, line) => con.add('warn', message, { who: b.id, line }),
-  onSeed: b => con.add('info', `Blink #${b.id} is sharing its game. Put other Blinks next to it to send them the game.`),
+  onSeed: b => con.add('info', `Blink #${b.id} is sharing its game. Put it next to other Blinks within 5 s to send them the game.`),
   onSeedDone: (b, n) => con.add('info', n ? `Game shared with ${n} Blink${n === 1 ? '' : 's'}. They restarted with startState() = START_STATE_DOWNLOAD_SUCCESS.` : 'Game sharing ended.'),
   onSleep: () => {},
 });
@@ -620,6 +620,25 @@ function setPaused(p) {
   renderFlags();
 }
 $('#stepBtn').addEventListener('click', () => world.advance(16));
+// full screen: hide the code and the console, and fill the screen if the browser lets us
+const fullBtn = $('#fullBtn');
+fullBtn.addEventListener('click', () => setFull(!$('#app').classList.contains('full')));
+function setFull(on) {
+  $('#app').classList.toggle('full', on);
+  fullBtn.setAttribute('aria-pressed', on);
+  fullBtn.setAttribute('aria-label', on ? 'Exit full screen' : 'Full screen');
+  fullBtn.title = on ? 'Show the code and console (F)' : 'Full screen: just the Blinks (F)';
+  const el = document.documentElement;
+  if (on && !document.fullscreenElement) el.requestFullscreen?.().catch(() => {});
+  if (!on && document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+}
+// leaving the browser's full screen (Esc) leaves ours too
+document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement) setFull(false); });
+window.addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.target.closest('input, textarea, select, [contenteditable], .editor-pane, dialog')) return;
+  if (e.key === 'f' || e.key === 'F') { e.preventDefault(); setFull(!$('#app').classList.contains('full')); }
+  else if (e.key === 'Escape' && $('#app').classList.contains('full') && !document.querySelector('.popover:not([hidden])')) setFull(false);
+}, true);   // before the handler that closes popovers on Escape, so Escape closes an open popover first
 // time menu: the speed, and how far apart the Blinks' clocks drift
 const speedLabel = s => (s === 0.25 ? '¼' : s === 0.5 ? '½' : s) + '×';
 function setSpeed(s, init) {
@@ -862,6 +881,7 @@ function showHelp() {
       <li>Right-click or press <kbd>R</kbd> to rotate a Blink. Real Blinks can be turned any way, so test your game with rotated Blinks.</li>
       <li>The debug button under the table picks what you see: <b>Tooltip</b> shows what each face sends and hears when you hover a Blink, <b>Comms</b> shows every face's value on the Blinks themselves (blue when a neighbor hears it), and each datagram as a bubble showing its bytes. It ends in a green check when the neighbor gets it, a red X when it's dropped because the last one wasn't read yet, and is grey when nobody is there. The switch at the top right of that menu shows face values as numbers or as six dots, their bits, highest first: a lit dot is a 1.</li>
       <li>Real Blinks don't keep exactly the same time: each one's clock runs a little fast or slow. The simulator does the same, so timers on different Blinks drift apart. The speed menu (under the table) has a slider to make the drift bigger or smaller.</li>
+      <li>The full screen button at the end of the controls under the table, or <kbd>F</kbd>, hides the code and the console so the table fills the screen. Press it again, or <kbd>Esc</kbd>, to come back.</li>
     </ul>
     <h3>When it says no</h3>
     <p>If something would not work on a real Blink, the simulator tells you: code that doesn't compile, a loop that never ends, an array index out of range, or a face number above 5.</p>`;

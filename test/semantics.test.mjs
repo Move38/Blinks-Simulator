@@ -306,6 +306,42 @@ test('holding a lone Blink for 3 s shares the game; startState() reports it', ()
   assert.ok(log.includes('2:2'), 'receiver restarts with START_STATE_DOWNLOAD_SUCCESS');
 });
 
+test('a shared game travels down a line of Blinks; a press stops it', () => {
+  const src = `void setup(){ Serial.println(startState()); } void loop(){ setColor(GREEN); }`;
+  const { w, log } = sim(src, [[-3, 0], [1, 0], [2, 0], [3, 0]], { tag: true });
+  w.advance(300);
+  const [root, a, b, c] = w.blinks;
+  root.press(true); w.advance(3300); root.press(false); w.advance(100);
+  // the root searches clockwise from face 0, a face every ~200 ms: blue on face 0, then face 1
+  assert.deepEqual(rgb(root.display[0]), [0, 0, 31]);
+  w.advance(200);
+  assert.deepEqual(rgb(root.display[1]), [0, 0, 31]);
+  w.lift(root); w.place(root, 0, 0);
+  // each Blink passes blocks on as it gets them, so the line downloads together
+  w.advance(1500);
+  assert.ok([a, b, c].every(x => x.mode === 'seeding'));
+  assert.ok(colorB(b.display[5]) > 0 || colorB(c.display[5]) > 0, 'blue steps on the links');
+  // the end of the line has it all: half green toward the Blink it got it from
+  w.advance(2000);
+  assert.deepEqual(rgb(c.display[5]), [0, 15, 0]);
+  w.advance(3000);
+  assert.ok(w.blinks.every(x => x.mode === 'run'));
+  assert.deepEqual(log.slice(-4).sort(), ['1:1', '2:2', '3:2', '4:2']);
+
+  // a press part way through: that Blink stops sharing, half red until pressed again
+  log.length = 0;
+  w.lift(root); w.place(root, -3, 0); w.advance(300);
+  root.press(true); w.advance(3300); root.press(false); w.advance(100);
+  w.lift(root); w.place(root, 0, 0);
+  w.advance(1000);
+  assert.equal(a.mode, 'seeding');
+  click(w, a);
+  assert.deepEqual(rgb(a.display[0]), [15, 0, 0]);
+  click(w, a);
+  assert.equal(a.mode, 'run');
+  assert.ok(log.includes('2:0'), 'it restarts the game it had');
+});
+
 test('holding for 6 s in a group puts everyone to sleep; a press wakes them', () => {
   const src = `void setup(){} void loop(){ setColor(RED); if (hasWoken()) Serial.println("woke"); }`;
   const { w, log } = sim(src, [[0, 0], [1, 0], [2, -1]]);

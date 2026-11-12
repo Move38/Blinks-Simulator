@@ -337,10 +337,13 @@ export class Blink {
   // ---------------- game sharing (seed mode) ----------------
   seedSpinPass() {
     const b = this.btn;
+    // blinklib spins one blue face around as fast as the chip can go, far faster than the eye
+    // (or a screen) can follow, so it looks like a sparkle on all six faces. A face in order
+    // every pass would land on the same few faces at the screen's frame rate: pick one at random.
     if (b.down && !(b.bitflags & F.SEC6)) {
       this.display.fill(0);
+      this.spinFace = (this.spinFace + 1 + Math.floor(Math.random() * 5)) % 6;
       this.display[this.spinFace] = H.color5(0, 0, 31, 1);
-      this.spinFace = (this.spinFace + 1) % 6;
       return;
     }
     if (b.bitflags & F.SEC6) {
