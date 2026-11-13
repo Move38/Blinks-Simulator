@@ -55,7 +55,7 @@ export class Blink {
     // where it is in its loop cycle. Both belong to the chip, so they survive restarts.
     this.clockSkew = Math.random() * 2 - 1;
     this.clockAcc = Math.random();
-    this.loopTick = Math.floor(Math.random() * 2);
+    this.passWait = Math.random() * 7.68;   // ms until its next loop pass (FRAME_MS in world.js)
     this.powerUp(0, null);
   }
 

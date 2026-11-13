@@ -224,13 +224,14 @@ test('datagrams take airtime by length, and are lost if the Blinks part on the w
     byte len = 0;
     void setup(){}
     void loop(){
-      if (buttonPressed()) { byte d[16] = {}; len = len == 1 ? 16 : 1; FOREACH_FACE(f) sendDatagramOnFace(d, len, f); }
+      if (buttonPressed()) { byte d[16] = {}; len = len == 1 ? 16 : 1; FOREACH_FACE(f) if (!isValueReceivedOnFaceExpired(f)) sendDatagramOnFace(d, len, f); }
       FOREACH_FACE(f) if (isDatagramReadyOnFace(f)) { Serial.println(getDatagramLengthOnFace(f)); markDatagramReadOnFace(f); }
     }`;
   const { w, log } = sim(src, [[0, 0], [1, 0]]);
   w.advance(300);
   const [a, b] = w.blinks;
   const f = [0, 1, 2, 3, 4, 5].find(i => w.neighbor(a, i));
+  const g = w.neighbor(a, f).face;
   // press, wait for the datagram to go out on the linked face, then time how long until it lands
   const timeToLand = () => {
     const before = a.faces[f].lastDg;
@@ -238,22 +239,24 @@ test('datagrams take airtime by length, and are lost if the Blinks part on the w
     while (a.faces[f].lastDg === before) w.advance(1);
     a.press(false);
     const t0 = w.time;
-    while (!log.length && w.time - t0 < 500) w.advance(1);
+    while (b.faces[g].rx?.k !== 'dgram' && w.time - t0 < 500) w.advance(1);
+    w.advance(20);
     log.length = 0;
-    return w.time - t0;
+    return w.time - 20 - t0;
   };
+  // a Blink sends on one face after another, so the five empty faces' probes can go out first
   const one = timeToLand();
   w.advance(100);
   const sixteen = timeToLand();
-  assert.ok(one >= 18 && one < 26, `1 byte took ${one} ms`);
-  assert.ok(sixteen >= 86 && sixteen < 94, `16 bytes took ${sixteen} ms`);
+  assert.ok(one >= 18 && one <= 18 + 5 * 6, `1 byte took ${one} ms`);
+  assert.ok(sixteen >= 86 && sixteen <= 86 + 5 * 6, `16 bytes took ${sixteen} ms`);
   // pull them apart while a datagram is on its way: it's lost
   w.advance(200);
   const before = a.faces[f].lastDg;
   a.press(true);
   while (a.faces[f].lastDg === before) w.advance(1);
   a.press(false);
-  w.advance(5);
+  w.advance(10);
   assert.equal(a.faces[f].lastDg.result, null, 'still on its way');
   w.lift(b); w.place(b, 3, 0);
   w.advance(80);
@@ -286,7 +289,7 @@ test('(x * C1) / C2 folds like avr-gcc -Os, so overflow in x * C1 matches a Blin
     }
     void loop(){}`;
   const { w, log } = sim(src);
-  w.advance(5);
+  w.advance(10);
   assert.deepEqual(log.join('\n').split(/\s+/).filter(Boolean), [
     '-305', '1050', '-310', '10000000', '-103', '1000', '0', '-1000', '7000', '1000', '-1000', '-384', '344', '10', '990',
   ]);
@@ -294,24 +297,24 @@ test('(x * C1) / C2 folds like avr-gcc -Os, so overflow in x * C1 matches a Blin
 
 test("Arduino's binary constants (B101) and 0b literals", () => {
   const { w, log } = sim(prog('Serial.println(B101); Serial.println(B11111111); Serial.println(0b1010 | B1); byte x = B0; Serial.println(x);'));
-  w.advance(5);
+  w.advance(10);
   assert.deepEqual(log.join('\n').split(/\s+/).filter(Boolean), ['5', '255', '11', '0']);
 });
 
 test('infinite loops and recursion are caught', () => {
   let r = sim(`void setup(){} void loop(){ while (true) { } }`);
-  r.w.advance(5);
+  r.w.advance(10);
   assert.equal(r.errors.length, 1);
   assert.match(r.errors[0].message, /never ends/);
   assert.equal(r.errors[0].line, 1);
   r = sim(`int f(int n){ return f(n + 1) + 1; }\nvoid setup(){ f(0); } void loop(){}`);
-  r.w.advance(5);
+  r.w.advance(10);
   assert.match(r.errors[0].message, /Out of memory/);
 });
 
 test('out of range array index is reported', () => {
   const r = sim(`byte a[6];\nvoid setup(){}\nvoid loop(){ for (byte i = 0; i <= 6; i++) a[i] = 1; }`);
-  r.w.advance(5);
+  r.w.advance(10);
   assert.equal(r.warns.length, 1);
   assert.equal(r.warns[0].l, 3);
 });
@@ -437,7 +440,8 @@ test('each Blink keeps its own time when clocks drift', () => {
   assert.ok(Math.abs(fast.millis - m1[0] - 10200) <= 1, `fast clock: ${fast.millis - m1[0]}`);
   assert.ok(Math.abs(slow.millis - m1[1] - 9800) <= 1, `slow clock: ${slow.millis - m1[1]}`);
   // loop() runs on each Blink's own clock too
-  assert.ok(Math.abs((fast.loops - l1[0]) - 5100) <= 1 && Math.abs((slow.loops - l1[1]) - 4900) <= 1);
+  const ratio = (fast.loops - l1[0]) / (slow.loops - l1[1]);
+  assert.ok(Math.abs(ratio - 1.02 / 0.98) < 0.01, `loop ratio: ${ratio}`);
   // so the fast Blink's timer fires more often
   const count = id => log.filter(x => x.startsWith(id + ':')).length;
   assert.ok(count(fast.id) > count(slow.id), log.join(' '));
