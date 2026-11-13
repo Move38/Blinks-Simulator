@@ -20,6 +20,7 @@ const saved = loadState();
 const urlEngine = new URLSearchParams(location.search).has('hardware') ? 'hardware' : null;
 const state = {
   engine: urlEngine ?? (saved.engine === 'hardware' ? 'hardware' : 'sim'),   // sim: the JS simulator; hardware: emulated chips (js/hardware)
+  hwExplained: saved.hwExplained === true,   // "Don't show this again" on the hardware-exact explainer
   code: saved.code ?? STARTER,
   name: saved.name ?? 'My sketch',
   view: saved.view === 'blocks' ? 'blocks' : 'code',
@@ -46,7 +47,7 @@ function saveState() {
   saveTimer = setTimeout(() => {
     try {
       localStorage.setItem(STORE, JSON.stringify({
-        code: state.code, name: state.name, view: state.view, live: state.live, debug: state.debug, bits: state.bits, drift: state.drift, engine: state.engine,
+        code: state.code, name: state.name, view: state.view, live: state.live, debug: state.debug, bits: state.bits, drift: state.drift, engine: state.engine, hwExplained: state.hwExplained,
         consoleOpen: state.consoleOpen, split: state.split, source: state.source,
         cells: world.blinks.map(b => [b.q, b.r, b.rot]),
       }));
@@ -284,7 +285,22 @@ async function hardwareBuild(load, force) {
   showCompile(res, true);
   if (state.paused) setStatus('paused', 'Paused');
 }
-$('#hwBtn').addEventListener('click', () => setEngine(state.engine === 'hardware' ? 'sim' : 'hardware'));
+// Turning it on explains the trade-offs first, since it works the computer much harder,
+// unless the user has asked not to see that again
+$('#hwBtn').addEventListener('click', async () => {
+  if (state.engine === 'hardware') return setEngine('sim');
+  if (!state.hwExplained && !await ask('Your sketch is compiled with avr-gcc, the compiler the Arduino IDE uses, and every Blink becomes an emulated ATmega168PB running the real BlinkBIOS and blinklib.', 'Switch to hardware-exact', {
+    title: 'Hardware-exact mode',
+    points: [
+      'Timing, IR, sleep and game sharing come from the real firmware, and the console shows the flash and RAM your game really uses.',
+      'It downloads about 6 MB the first time, and keeps it for next time. The simulator keeps running while it loads.',
+      'It runs slower: a big table may fall behind real time.',
+      'The simulator’s checks (loops that never end, array indexes, face numbers) don’t happen, just as on a real Blink.',
+    ],
+    optOut: () => { state.hwExplained = true; saveState(); },
+  })) return;
+  setEngine('hardware');
+});
 
 // ---------------- code / blocks views ----------------
 async function getBlocks() {
@@ -459,15 +475,24 @@ function modified() {
 
 // In-app confirm: the browser's own confirm dialog is blocked in some embedded browsers,
 // which silently cancelled every example load.
-function ask(message, okLabel) {
+// An optional title and list of points turn it into a short explainer. With `optOut`, a
+// "Don't show this again" box; if it's ticked when OK is chosen, optOut() is called.
+function ask(message, okLabel, { title = '', points = [], optOut = null } = {}) {
   const d = $('#confirmDialog');
-  d.innerHTML = `<form method="dialog"><p></p><div class="actions">
+  d.innerHTML = `<form method="dialog">${title ? '<h2></h2>' : ''}<p></p>${points.length ? '<ul></ul>' : ''}<div class="actions">
+    ${optOut ? '<label class="opt-out"><input type="checkbox"> Don’t show this again</label>' : ''}
     <button class="btn ghost" value="cancel">Cancel</button>
     <button class="btn primary" value="ok"></button></div></form>`;
+  if (title) d.querySelector('h2').textContent = title;
   d.querySelector('p').textContent = message;
+  for (const point of points) d.querySelector('ul').appendChild(document.createElement('li')).textContent = point;
   d.querySelector('.primary').textContent = okLabel;
   return new Promise(resolve => {
-    d.addEventListener('close', () => resolve(d.returnValue === 'ok'), { once: true });
+    d.addEventListener('close', () => {
+      const ok = d.returnValue === 'ok';
+      if (ok && optOut && d.querySelector('.opt-out input').checked) optOut();
+      resolve(ok);
+    }, { once: true });
     d.onclick = e => { if (e.target === d) d.close(); };
     d.returnValue = '';
     d.showModal();

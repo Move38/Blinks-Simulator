@@ -299,7 +299,15 @@ dialog.help code { font: 12.5px var(--f-mono); background: var(--panel-2); paddi
 dialog.help .close { position: absolute; right: 14px; top: 12px; }
 dialog.confirm { max-width: 420px; padding: 22px 24px 18px; }
 dialog.confirm p { margin: 0 0 18px; font-size: 14.5px; }
+dialog.confirm h2 { font-size: 20px; margin: 0 0 10px; }
+dialog.confirm p:has(+ ul) { margin-bottom: 8px; }
+dialog.confirm ul { margin: 0 0 18px; }
+dialog.confirm li { margin: 4px 0; }
 dialog.confirm .actions { display: flex; justify-content: flex-end; gap: 8px; }
+dialog.confirm:has(.opt-out) { max-width: 480px; }
+dialog.confirm .opt-out { margin-right: auto; display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 13px; cursor: pointer; white-space: nowrap; }
+dialog.confirm .opt-out input { accent-color: var(--blinks); margin: 0; }
+@media (max-width: 520px) { dialog.confirm .actions { flex-wrap: wrap; } dialog.confirm .opt-out { flex: 1 0 100%; margin-bottom: 6px; } }
 dialog.confirm .btn.primary { padding: 0 16px; }
 dialog.help[open] { animation: dlg-in .18s cubic-bezier(.2,.8,.2,1); }
 @keyframes dlg-in { from { opacity: 0; transform: translateY(8px) scale(.98); } }
