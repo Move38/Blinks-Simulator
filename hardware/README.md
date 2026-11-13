@@ -81,9 +81,43 @@ IR collisions come from the firmware itself. In a line of six Blinks with clocks
 
 ## Getting this into the playground
 
-1. **Compiling in the browser** is the big open question. Today the fixtures are built with the Arduino IDE's `arduino-cli` (see below). The options are a compile server, a WebAssembly build of avr-gcc (large), or clang's AVR backend in WebAssembly.
+1. **Compiling in the browser with avr-gcc built for WebAssembly.** This is the chosen path. Real Blinks games are built with avr-gcc 7.3.0, so this produces the same code, which clang wouldn't. See [Compiling in the browser](#compiling-in-the-browser) below.
 2. **Speed**: a faster decoder, plus web workers for big tables. IR needs Blinks to stay within a few microseconds of each other, so workers would need to share a slice clock.
 3. **The table UI** already has what the hardware model needs: neighbors, a button and LED colors. A "hardware-exact" switch could swap `js/runtime/blink.js` for `AvrBlink` and keep the JavaScript engine for big tables and its learner-friendly errors.
+
+## Compiling in the browser
+
+A browser can't run the `avr-gcc` driver, because it starts other programs. So [build-sketch.mjs](build-sketch.mjs) does the driver's job itself:
+
+1. Run `cc1plus` on blinklib and the sketch. These are the same flags the Move38 platform uses, minus LTO, plus `-fno-rtti` and the defines the device specs would add.
+2. Run `cc1plus -E -lang-asm` on `startup.S`.
+3. Run `as`, then `ld` with the SDK's link script and `-nostartfiles` layout, then `objcopy` to the built-in address.
+4. Lay the BlinkBIOS over the result.
+
+Every path is on a virtual file system, so the same steps run with either set of tools:
+- [native-tools.mjs](native-tools.mjs) uses the Arduino IDE's avr-gcc 7.3.0.
+- [wasm-tools.mjs](wasm-tools.mjs) uses avr-gcc 7.3.0 and binutils 2.42 built for WebAssembly by [@horang-corp/avr-gcc-wasm](https://github.com/horang-corp/avr-gcc-wasm) 0.2.0. Each tool is compiled once and gets a fresh instance per run.
+
+`-fno-rtti` is needed because without LTO, classes with virtual methods, like `Serial`, need type info from a C++ runtime that isn't linked.
+
+### Results, for all 46 of the playground's examples
+
+| | |
+| --- | --- |
+| WebAssembly vs native avr-gcc | **45 of 46 byte-identical.** Widgets differs by 11 bytes in one function, where `r28` and `r29` swap and one `mov` moves: the same length and timing. |
+| Size without LTO | Between 619 bytes smaller and 225 bytes bigger than the IDE's build. None goes over 5888 bytes, but SpeedRacer reaches 5884. |
+| Running | Every one boots on an emulated Blink and keeps its interrupts running, and D-SerialTest's serial output comes through. Six start dark, and the IDE's builds of the same six do too. |
+| Time per edit, in Node | Compiling the sketch, then `as`, `ld` and `objcopy`: **42 ms median, 91 ms at most**. Compiling blinklib as well takes about 0.6 s the first time. |
+
+blinklib never changes, so it can be compiled once and shipped as `.o` files. Each edit then only rebuilds the sketch.
+
+### What shipping it needs
+
+- **Download size.** The four tools are 5.4 MB gzipped, or 4.2 MB with brotli; `cc1plus.wasm` alone is 13.2 MB raw and 4.3 MB gzipped. Load them only when the hardware-exact mode is turned on.
+- **Files the package lacks.** We would serve the headers, the SDK's blinklib and link scripts, and four files the package doesn't ship: gcc's `include-fixed/limits.h` and `libatmega168pb.a` / `libatmega328pb.a`. For now, wasm-tools.mjs borrows those from the Arduino IDE.
+- **Licensing.** The tools are GPL v3, so serving them from learn.move38.com means also offering their source and build scripts. Building them ourselves from the package's approach, in CI, would give us both, and wouldn't depend on someone else's binaries.
+- **LTO.** The WebAssembly build has no `lto1`, so games are compiled without LTO. That costs code size: SpeedRacer comes within 4 bytes of the limit, so some games may not fit without it. Adding `lto1` to the WebAssembly build, or compiling the sketch and blinklib as one file, would close that gap.
+- **Sketch preprocessing.** The tests use arduino-cli's preprocessing, which adds `#include <Arduino.h>` and function prototypes. The playground's own preprocessor would have to do the same.
 
 ## Rebuilding the fixtures
 

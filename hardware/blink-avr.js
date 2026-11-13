@@ -128,13 +128,14 @@ export function parseHex(text, size) {
 }
 
 export class AvrBlink {
-  constructor({ chip = 'atmega168pb', hex, clockScale = 1, idleSkip = true, lazyTimers = true }) {
+  // Pass either `hex` (an Intel HEX image) or `flash` (the bytes of flash)
+  constructor({ chip = 'atmega168pb', hex, flash, clockScale = 1, idleSkip = true, lazyTimers = true }) {
     const c = CHIPS[chip];
     if (!c) throw new Error(`unknown chip ${chip}`);
     this.chip = c;
     this.clockScale = clockScale;   // this Blink's oscillator error (1.02 = 2% fast)
-    const flash = parseHex(hex, c.flashBytes);
-    this.cpu = new CPU(new Uint16Array(flash.buffer), c.sramBytes);
+    const image = flash ? Uint8Array.from(flash) : parseHex(hex, c.flashBytes);
+    this.cpu = new CPU(new Uint16Array(image.buffer), c.sramBytes);
     const cpu = this.cpu;
     // avr8js runs one due clock event per instruction, and removes it from the
     // queue after running it, which loses any event the callback moves. Run

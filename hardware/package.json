@@ -4,6 +4,7 @@
   "type": "module",
   "description": "Spike: run real Blink firmware (BlinkBIOS + blinklib + sketch) on an emulated AVR",
   "dependencies": {
+    "@horang-corp/avr-gcc-wasm": "0.2.0",
     "avr8js": "0.21.1"
   },
   "scripts": {

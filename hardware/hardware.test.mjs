@@ -87,3 +87,50 @@ test('lazy timers and idle skipping give exactly the same machine state as plain
   }
   assert.ok(fast.blinks[0].skipped > 0, 'idle skipping happened');
 });
+
+// The build a browser would run: cc1plus, as, ld and objcopy with no gcc driver.
+// Here the tools are the Arduino IDE's avr-gcc 7.3.0; skipped if it isn't installed.
+test('a sketch built without the gcc driver runs, and talks between a 168PB and a 328PB', async (t) => {
+  const { existsSync } = await import('node:fs');
+  const { nativeTools, GCC, SDK } = await import('./native-tools.mjs');
+  if (!existsSync(GCC) || !existsSync(SDK)) return t.skip('needs the Arduino IDE with avr-gcc 7.3.0 and the Move38 SDK 1.3.0');
+  const { buildSketch, withBios, BOARDS } = await import('./build-sketch.mjs');
+  const sketch = '#include <Arduino.h>\n#line 1 "Neighbors.ino"\n' + readFileSync(new URL('fixtures/Neighbors/Neighbors.ino', import.meta.url), 'utf8');
+  const table = new AvrTable();
+  for (const [board, chip] of [['blink', 'atmega168pb'], ['blink328', 'atmega328pb']]) {
+    const { gameHex, gameBytes } = await buildSketch(nativeTools(), sketch, board);
+    assert.ok(gameBytes > 1000 && gameBytes < 5888, `${gameBytes} bytes`);
+    const bios = readFileSync(`${SDK}/bootloaders/${BOARDS[board].bios}`, 'utf8');
+    table.add(new AvrBlink({ chip, flash: withBios(gameHex, bios, board) }));
+  }
+  table.connect(0, 0, 1, 3);
+  table.run(1e9);
+  table.blinks.forEach((b) => b.takeColors());
+  table.run(100e6);
+  const green = (b) => b.takeColors().map(([, g]) => g > 0.5);
+  assert.deepEqual(green(table.blinks[0]), [true, false, false, false, false, false]);
+  assert.deepEqual(green(table.blinks[1]), [false, false, false, true, false, false]);
+});
+
+// The same build with avr-gcc 7.3.0 and binutils built for WebAssembly, as a
+// browser would run it. Skipped unless the package and the IDE's tools (which
+// it borrows limits.h and the device libraries from) are installed.
+test('avr-gcc in WebAssembly builds the same bytes as the IDE\'s avr-gcc', async (t) => {
+  const { existsSync } = await import('node:fs');
+  const { nativeTools, GCC, SDK } = await import('./native-tools.mjs');
+  if (!existsSync(GCC) || !existsSync(SDK) || !existsSync(new URL('node_modules/@horang-corp/avr-gcc-wasm/tools/cc1plus.wasm', import.meta.url))) {
+    return t.skip('needs @horang-corp/avr-gcc-wasm, the Arduino IDE with avr-gcc 7.3.0 and the Move38 SDK 1.3.0');
+  }
+  const { wasmTools } = await import('./wasm-tools.mjs');
+  const { buildSketch, withBios, BOARDS } = await import('./build-sketch.mjs');
+  const wasm = await wasmTools();
+  for (const name of ['Spin', 'Neighbors']) {
+    const sketch = `#include <Arduino.h>\n#line 1 "${name}.ino"\n` + readFileSync(new URL(`fixtures/${name}/${name}.ino`, import.meta.url), 'utf8');
+    for (const board of ['blink', 'blink328']) {
+      const w = await buildSketch(wasm, sketch, board);
+      const n = await buildSketch(nativeTools(), sketch, board);
+      const bios = readFileSync(`${SDK}/bootloaders/${BOARDS[board].bios}`, 'utf8');
+      assert.deepEqual(withBios(w.gameHex, bios, board), withBios(n.gameHex, bios, board), `${name} on ${board}`);
+    }
+  }
+});
