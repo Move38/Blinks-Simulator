@@ -1,6 +1,6 @@
 # Blinks Playground
 
-Write code for [Blinks](https://move38.com) in C or with Scratch-style blocks, and watch it run on simulated Blinks right in your browser. **[Open the playground](https://move38.github.io/Blinks-Simulator/)**
+Write code for [Blinks](https://move38.com) in C or with Scratch-style blocks, and watch it run on simulated Blinks right in your browser. **[Open the playground](https://learn.move38.com/)**
 
 - **Code or blocks.** Switch between the C code you'd load onto a Blink and a block editor. Changes in one show up in the other. Blocks cover light (named colors or your own red/green/blue mix), the button, neighbors (values and datagrams), timers, math, bits (shifts and masks, drawn as a strip of bits), logic, switch, variables (global or local), lists (C arrays, including lists of timers), grids (2D arrays, shown row by row), constants (#define and enum) and your own functions; anything else stays as editable C.
 - **Live.** Your sketch recompiles and restarts as you type, so you see every change right away.
