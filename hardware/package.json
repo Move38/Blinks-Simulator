@@ -1,0 +1,14 @@
+{
+  "name": "blinks-hardware-exact",
+  "private": true,
+  "type": "module",
+  "description": "Spike: run real Blink firmware (BlinkBIOS + blinklib + sketch) on an emulated AVR",
+  "dependencies": {
+    "avr8js": "0.21.1"
+  },
+  "scripts": {
+    "test": "node --test",
+    "bench": "node bench.mjs",
+    "profile": "node profile.mjs"
+  }
+}
