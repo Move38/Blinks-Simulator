@@ -79,7 +79,7 @@ This follows `run()` in `blinklib.cpp` step by step:
    - A datagram is accepted only if the last one has been read. Otherwise it is dropped, as on hardware.
 6. Snapshot the button. `buttonDown()` and the `button…()` flags read this snapshot and are cleared when read.
 7. Run `loop()`.
-8. Copy the pixel buffer to the display.
+8. Copy the pixel buffer to the display. On hardware this waits for the LEDs to finish their frame.
 9. **TX** (`txFaces`). Every face whose `sendTime` has passed sends one packet: a pending datagram if there is one, otherwise the face value. Then `sendTime = now + 150 ms + face`. The 150 ms is the "probe" when nobody answers; a neighbor's reply resets it to 0.
 10. If 10 minutes have passed with no button press, warm sleep.
 
@@ -106,18 +106,22 @@ Randomness is blinklib's: xorshift32 with the same seed on every Blink until `ra
    - `clockSkew` is fixed per Blink, between −1 and 1.
    - `drift` is the table-wide setting, ±2% by default.
    - So a Blink with a fast clock occasionally ticks twice in one true millisecond, and a slow one occasionally skips.
-2. Every 2 ms of its own time (`LOOP_PERIOD_MS`), a Blink runs one `pass()`.
+2. When its pass is due, a Blink runs one `pass()`, then waits at least one LED frame of its own time (`FRAME_MS`, 7.68 ms) before the next.
+   - On hardware, `run()` calls `loop()`, waits for the LEDs to finish the frame they are showing, then sends IR. The BIOS lights one face at a time, five 256 µs steps a face, so a frame is 6 × 5 × 256 µs = 7.68 ms, and `loop()` runs at most ~130 times a second.
+   - Sending blocks the chip, one face after another. `passFrames()` adds up the airtime of the packets the pass sent and rounds up to whole frames: one 6 ms value fits in the frame, two spill into a second.
+   - Faces without a neighbor only send every 150 ms, while faces with one answer every pass. So a Blink alone, or with one neighbor, runs about 110 passes a second, with 3 neighbors about 85, and surrounded by 6 about 35.
 3. After any pass, `deliver()` puts each outgoing packet in flight toward the face it touches, for its **airtime**:
    - Airtime is 3 ms a byte, from the bootloader's figure of 98 ms for a 32-byte block.
    - Every packet starts with the BIOS packet type byte. A face value adds one more byte (6 ms) and a sleep or wake packet two (9 ms).
    - A datagram adds a header byte, its payload and a checksum, and is made half again as slow: 18 ms for 1 byte, 86 ms for 16. Datagrams always get through here, and the slowdown stands in for the ones a real table loses and a game has to send again.
+   - A Blink sends on one face after another, so each packet in a pass leaves when the one before it is done.
    - Until a packet lands, neither end of the link sends anything else on that face.
 4. When the airtime is up, `land()` puts the packet in the receiver's slot.
    - If the slot is still full, the packet is dropped.
    - If the Blinks were moved apart on the way, it is lost.
    - Each datagram records what happened to it (`ok`, `dropped` or `lost`) for the Comms view.
 
-Each Blink starts with its millisecond counter and loop phase at random offsets, so Blinks never run in lockstep.
+Each Blink starts with its millisecond counter and frame phase at random offsets, so Blinks never run in lockstep.
 
 **Game sharing** ([seed.js](../js/runtime/seed.js)) follows the bootloader's `download_and_seed_mode()`. It uses links and blocks instead of SEED/PULL/PUSH packets.
 
@@ -166,7 +170,7 @@ Each Blink starts with its millisecond counter and loop phase at random offsets,
 | Warm sleep timeout | 10 min | `WARM_SLEEP_TIMEOUT_MS` |
 | Sleep/wake fade | 5 rounds × 6 faces, brightness 200 → 0 | `warm_sleep_cycle()` |
 | `randomize()` pause | 512 ms | 32 watchdog ticks of 16 ms |
-| Loop period | 2 ms | **simulator only** |
+| LED frame (`loop()` at most once a frame) | 7.68 ms, ~130 Hz | BIOS pixel timer: 6 faces × 5 × 256 µs |
 | Sleep relay delay | 50 ms | **simulator only** |
 | Clock drift | ±2% (0.5–10% on the slider) | **estimate** |
 | User RAM budget | 330 bytes | **estimate** (1024 − 694) |
@@ -177,13 +181,11 @@ The items are ordered roughly by how likely they are to make a game behave diffe
 
 ### Timing and speed (the biggest gap)
 
-- **`loop()` runs every 2 ms, whatever it does.**
-  - On a Blink, a pass of `run()` takes as long as the code in it. That includes `loop()`, writing the LEDs, and sending IR on every face that is due.
-  - In the simulator, code costs no simulated time. A sketch that does heavy float math, or loops over large arrays, keeps the same pace here but slows down on hardware. Its animations and its replies to neighbors slow with it.
-  - Code that counts loop passes as a clock (`if (++frames == 500)`) runs at 500 passes per second here. On hardware the rate depends on the sketch.
-- **Airtime doesn't slow the sender.**
-  - Packets take airtime here, about 3 ms a byte as on hardware, and datagrams half again as long. A value round trip between two Blinks is therefore about 15 ms.
-  - On hardware, sending blocks the Blink until the packet is out, so a Blink sending on several faces runs its loop more slowly. Here it keeps running while its packets are on their way.
+- **Your code takes no time.**
+  - Here `loop()` runs once an LED frame (7.68 ms), more slowly when its IR sends spill over, as on hardware (see [Time](#3-the-table)). Only the sends count, though.
+  - On a Blink, the code in `loop()` takes time too. A sketch that does heavy float math, or loops over large arrays, keeps the same pace here but slows down on hardware once a pass takes longer than a frame. Its animations and its replies to neighbors slow with it.
+  - Code that counts loop passes as a clock (`if (++frames == 100)`) runs at about the same rate here as on hardware: ~110 passes a second alone, ~35 surrounded. The exact rates on a real Blink haven't been measured.
+- **Sending doesn't hold up receiving.** On hardware, the chip is busy while it sends and the BIOS refuses to start a send on a face that is receiving. Here packets in flight and a Blink's own sends don't get in each other's way.
 - **Sending never fails.** On hardware, `blinkbios_irdata_send_packet()` refuses to send while that face is receiving, and blinklib retries on the next pass. A pending datagram stays queued until a send succeeds. Here every send goes through on the first try.
 - **A long loop is treated as infinite.** 3 million loop iterations in one call stop the Blink with an error. On hardware the loop would eventually finish, after freezing the Blink for seconds.
 - **Clock drift is an estimate.** The ±2% default and each Blink's fixed skew are guesses about the internal RC oscillator. Real drift also changes with battery voltage and temperature over time.

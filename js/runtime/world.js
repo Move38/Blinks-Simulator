@@ -11,7 +11,14 @@ import { Seeding } from './seed.js';
 
 export const DIRS = [[0, -1], [1, -1], [1, 0], [0, 1], [-1, 1], [-1, 0]];
 const key = (q, r) => q + ',' + r;
-const LOOP_PERIOD_MS = 2;
+
+// blinklib's run() calls loop(), then waits for the LEDs to finish the frame they are showing
+// before it copies the new colors over, then sends IR. The BIOS lights one face at a time, five
+// 256 us steps a face, so a frame is 6 x 5 x 256 us = 7.68 ms: loop() runs at most ~130 times a
+// second. Sending blocks the chip, one face after another, so a pass that sends 12 ms of packets
+// misses the next frame and waits for the one after. A Blink alone sends little and runs near
+// 130 Hz; one in a group answers its neighbors every pass and slows to ~25-45 Hz.
+export const FRAME_MS = 7.68;
 
 // How far each Blink's clock can run fast or slow. A Blink's clock is an RC oscillator in its
 // chip, not a crystal, and its speed shifts with the battery's voltage and the temperature,
@@ -124,7 +131,8 @@ export class World {
   // ---------- time ----------
   // Advance simulated time by dt milliseconds. Returns the number of loop passes run.
   // Every Blink keeps its own time: its millisecond ticks come at its own clock's rate, and it
-  // runs loop() every LOOP_PERIOD_MS of its own time, so Blinks slowly slide in and out of step.
+  // runs loop() once a frame of its own time (more when it sent a lot), so Blinks slowly slide in
+  // and out of step.
   advance(dt) {
     this.acc += dt;
     let passes = 0;
@@ -139,7 +147,11 @@ export class World {
         while (b.clockAcc >= 1) {
           b.clockAcc -= 1;
           b.tick1ms();
-          if (++b.loopTick >= LOOP_PERIOD_MS) { b.loopTick = 0; b.pass(); passes++; passed = true; }
+          if (--b.passWait <= 0) {
+            b.pass();
+            b.passWait += this.passFrames(b) * FRAME_MS;
+            passes++; passed = true;
+          }
         }
       }
       if (this.inflight.length) this.land();
@@ -149,6 +161,16 @@ export class World {
     return passes;
   }
 
+  // How many LED frames the pass just run takes: one, plus however many its IR sends spill into.
+  // (Sleep and wake fades keep their own pace.)
+  passFrames(b) {
+    if (b.mode !== 'run') return 1;
+    const out = b.outbox;
+    let ms = 0;
+    for (let i = 1; i < out.length; i += 2) ms += airtime(out[i]);
+    return Math.max(1, Math.ceil(ms / FRAME_MS));
+  }
+
   // This Blink's clock compared with true time, e.g. 1.013 runs 1.3% fast
   clockRate(b) { return 1 + b.clockSkew * this.drift; }
 
@@ -156,11 +178,12 @@ export class World {
     for (const b of this.blinks) {
       const out = b.outbox;
       if (!out.length) continue;
+      let at = this.time;   // a Blink sends on one face at a time, so each packet goes out after the last
       for (let i = 0; i < out.length; i += 2) {
         const pkt = out[i + 1];
+        at += airtime(pkt);
         const n = this.neighbor(b, out[i]);
         if (!n) { if (pkt.k === 'dgram') pkt.result = 'lost'; continue; }
-        const at = this.time + airtime(pkt);
         b.faces[out[i]].busyUntil = n.blink.faces[n.face].busyUntil = at;
         this.inflight.push({ from: b, f: out[i], to: n.blink, face: n.face, pkt, at });
       }
