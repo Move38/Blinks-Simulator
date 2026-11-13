@@ -1,7 +1,7 @@
 // Where does a hardware Blink spend its cycles?
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { AvrBlink } from './blink-avr.js';
+import { AvrBlink } from '../js/hardware/blink-avr.js';
 const dir = 'fixtures/Neighbors/build/move38.avr.blink/';
 const b = new AvrBlink({ chip: 'atmega168pb', hex: readFileSync(dir + 'Neighbors.ino.with_bootloader.hex', 'utf8') });
 b.runUntil(500e6);

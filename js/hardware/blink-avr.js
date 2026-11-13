@@ -17,7 +17,7 @@ import {
   AVRIOPort, portBConfig, portCConfig, portDConfig, portEConfig, PinState,
   AVRADC, adcConfig, AVRUSART, usart0Config, AVRWatchdog, watchdogConfig,
   AVREEPROM, EEPROMMemoryBackend, eepromConfig,
-} from 'avr8js';
+} from './vendor/avr8js/index.js';
 
 export const CHIPS = {
   // Original Blinks. Boot section is 1K words (BOOTSZ=00, efuse 0xF8).
@@ -41,6 +41,8 @@ const OP_SPM = 0x95e8, OP_SPM_INC = 0x95f8, OP_SLEEP = 0x9588;
 const ANODES = [['B', 6], ['E', 0], ['B', 7], ['E', 1], ['D', 4], ['D', 2]];
 const RED = 6, GREEN = 5, BLUE = 3;   // PORTD sinks, driven low (by timer PWM) to light
 const BUTTON = 7;                     // PORTD, pulled up, low when pressed
+const PHASE_CYCLES = 256 * 8;         // one PWM phase: timer0 counts 256 steps at clk/8
+const STALE_CYCLES = 200_000;         // 25 ms at 8 MHz: about three LED frames
 
 // avr8js wakes each timer on every tick, every 8 cycles for the pixel timers.
 // A lazy timer instead sleeps until the next tick where something happens (a
@@ -171,7 +173,8 @@ export class AvrBlink {
     this.adc.avcc = 3.0;    // a fresh CR2032
     this.usart = new AVRUSART(cpu, usart0Config, F_BASE);
     this.serial = '';
-    this.usart.onByteTransmit = (b) => { this.serial += String.fromCharCode(b); };
+    this.onSerial = null;       // (byte) => void, for each byte the sketch prints
+    this.usart.onByteTransmit = (b) => { this.serial += String.fromCharCode(b); this.onSerial?.(b); };
     // The watchdog runs from its own 128 kHz oscillator, so it needs the CPU clock to convert
     this.watchdog = new AVRWatchdog(cpu, watchdogConfig, { get frequency() { return F_BASE / blink.prescaler; } });
     this.eeprom = new AVREEPROM(cpu, new EEPROMMemoryBackend(c.eepromBytes), eepromConfig);
@@ -218,6 +221,18 @@ export class AvrBlink {
   // Time this Blink has lived, in its own nanoseconds
   get ns() {
     return this.nsBase + ((this.cpu.cycles - this.cyclesBase) * this.prescaler * 1e9) / (F_BASE * this.clockScale);
+  }
+
+  // Make this Blink's clock run faster or slower from now on
+  setClockScale(scale) {
+    this.nsBase = this.ns;
+    this.cyclesBase = this.cpu.cycles;
+    this.clockScale = scale;
+  }
+
+  // A byte arriving on the service port's serial line. False if the last one hasn't been read yet.
+  sendSerial(byte) {
+    return this.usart.writeByte(byte);
   }
 
   // The cycle count at which this Blink's clock reaches `ns`, at the current clock speed
@@ -330,12 +345,15 @@ export class AvrBlink {
   }
 
   // ---------- Pixels ----------
-  // The BIOS lights one pixel at a time: it raises that pixel's anode and PWMs
-  // the red, green and blue sinks low. We add up how long each color is lit on
-  // each pixel, which is what an eye (or a camera) sees.
+  // The BIOS lights one pixel at a time: it raises that pixel's anode, then
+  // gives each color one 2048-cycle timer phase in which its sink is PWMed
+  // low. A pixel's color is how much of its phase each color was lit, from
+  // its latest turn: steady from frame to frame, like what an eye sees.
 
   initPixels() {
-    this.light = Array.from({ length: 6 }, () => [0, 0, 0]);
+    this.visit = [0, 0, 0];     // cycles each color has been lit in the current pixel's turn
+    this.shown = Array.from({ length: 6 }, () => [0, 0, 0]);
+    this.shownAt = new Array(6).fill(0);
     this.lightSince = 0;
     this.pixelState = { anode: -1, r: false, g: false, b: false };
     const update = () => this.pixelChange();
@@ -346,19 +364,28 @@ export class AvrBlink {
 
   pixelChange() {
     const now = this.cpu.cycles;
-    const s = this.pixelState;
+    const s = this.pixelState, v = this.visit;
     if (s.anode >= 0) {
       const dt = now - this.lightSince;
-      const acc = this.light[s.anode];
-      if (s.r) acc[0] += dt;
-      if (s.g) acc[1] += dt;
-      if (s.b) acc[2] += dt;
+      if (s.r) v[0] += dt;
+      if (s.g) v[1] += dt;
+      if (s.b) v[2] += dt;
     }
     this.lightSince = now;
-    s.anode = -1;
+    let anode = -1;
     for (let i = 0; i < 6; i++) {
       const [p, bit] = ANODES[i];
-      if (this.ports[p].pinState(bit) === PinState.High) { s.anode = i; break; }
+      if (this.ports[p].pinState(bit) === PinState.High) { anode = i; break; }
+    }
+    if (anode !== s.anode) {
+      if (s.anode >= 0) {
+        // that pixel's turn is over
+        const out = this.shown[s.anode];
+        for (let c = 0; c < 3; c++) out[c] = Math.min(1, v[c] / PHASE_CYCLES);
+        this.shownAt[s.anode] = now;
+      }
+      v.fill(0);
+      s.anode = anode;
     }
     const d = this.ports.D;
     s.r = d.pinState(RED) === PinState.Low;
@@ -366,17 +393,12 @@ export class AvrBlink {
     s.b = d.pinState(BLUE) === PinState.Low;
   }
 
-  // Average brightness (0..1) of each color on each pixel since the last call,
-  // scaled so a pixel lit for its whole slot reads 1.
+  // Each pixel's brightness (0..1) per color, from its latest turn. A pixel the
+  // BIOS hasn't lit for a few frames (asleep, or stopped) is dark.
   takeColors() {
     this.pixelChange();
-    const total = this.cpu.cycles - (this.colorsSince ?? 0);
-    this.colorsSince = this.cpu.cycles;
-    // Each pixel has 5 timer phases per frame and each color gets one of them
-    const slot = total / 6 / 5;
-    const out = this.light.map((acc) => acc.map((v) => (slot > 0 ? Math.min(1, v / slot) : 0)));
-    this.light.forEach((acc) => acc.fill(0));
-    return out;
+    const now = this.cpu.cycles;
+    return this.shown.map((rgb, i) => (now - this.shownAt[i] > STALE_CYCLES ? [0, 0, 0] : rgb.slice()));
   }
 
   // ---------- IR ----------

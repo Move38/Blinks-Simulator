@@ -177,6 +177,8 @@ Each Blink starts with its millisecond counter and frame phase at random offsets
 
 ## 5. Where it differs from real Blinks
 
+Hardware-exact mode (the chip button under the table) avoids most of what follows: it runs the real BlinkBIOS and blinklib, compiled by avr-gcc, on emulated chips. See [hardware/README.md](../hardware/README.md).
+
 The items are ordered roughly by how likely they are to make a game behave differently on a table.
 
 ### Timing and speed (the biggest gap)

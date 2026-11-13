@@ -203,7 +203,7 @@ li.CodeMirror-hint-active .sig { color: rgba(255,255,255,.8); }
 .console.collapsed #toggleConsole svg { transform: rotate(180deg); }
 .console-head { display: flex; align-items: center; gap: 10px; padding: 6px 8px 6px 14px; border-bottom: 1px solid var(--line); min-height: 39px; }
 .console-title { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; font-weight: 700; color: var(--muted); }
-.ram { margin-left: auto; font: 500 11.5px var(--f-mono); color: var(--muted); display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.ram { margin-left: auto; font: 500 11.5px var(--f-mono); color: var(--muted); display: flex; align-items: center; gap: 8px; white-space: nowrap; min-width: 0; overflow: hidden; }
 .ram .bar { width: 64px; height: 5px; border-radius: 99px; background: var(--panel-2); overflow: hidden; }
 .ram .bar i { display: block; height: 100%; background: var(--ok); border-radius: 99px; }
 .ram.high .bar i { background: var(--warn); }
@@ -329,7 +329,7 @@ dialog.help[open] { animation: dlg-in .18s cubic-bezier(.2,.8,.2,1); }
   #examplesBtn { padding: 0 9px; font-size: 0; gap: 0; }
   #examplesBtn svg { width: 20px; height: 20px; }
   .layouts button:nth-child(n+4) { display: none; }
-  .ram .bar { display: none; }
+  .ram .bar, .ram .of { display: none; }
   .pane-head { flex-wrap: wrap; }
   .sketch-name { order: 3; flex-basis: 100%; }
   .status { max-width: none; margin-left: auto; }

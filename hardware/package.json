@@ -10,6 +10,8 @@
   "scripts": {
     "test": "node --test",
     "bench": "node bench.mjs",
-    "profile": "node profile.mjs"
+    "profile": "node profile.mjs",
+    "toolchain": "node make-toolchain.mjs",
+    "vendor": "node vendor-avr8js.mjs"
   }
 }

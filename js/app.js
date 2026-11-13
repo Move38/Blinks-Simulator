@@ -17,7 +17,9 @@ const STORE = 'blinks.playground.v2';
 // ---------------- state ----------------
 const DEBUG_MODES = ['none', 'tooltip', 'comms'];
 const saved = loadState();
+const urlEngine = new URLSearchParams(location.search).has('hardware') ? 'hardware' : null;
 const state = {
+  engine: urlEngine ?? (saved.engine === 'hardware' ? 'hardware' : 'sim'),   // sim: the JS simulator; hardware: emulated chips (js/hardware)
   code: saved.code ?? STARTER,
   name: saved.name ?? 'My sketch',
   view: saved.view === 'blocks' ? 'blocks' : 'code',
@@ -44,7 +46,7 @@ function saveState() {
   saveTimer = setTimeout(() => {
     try {
       localStorage.setItem(STORE, JSON.stringify({
-        code: state.code, name: state.name, view: state.view, live: state.live, debug: state.debug, bits: state.bits, drift: state.drift,
+        code: state.code, name: state.name, view: state.view, live: state.live, debug: state.debug, bits: state.bits, drift: state.drift, engine: state.engine,
         consoleOpen: state.consoleOpen, split: state.split, source: state.source,
         cells: world.blinks.map(b => [b.q, b.r, b.rot]),
       }));
@@ -56,7 +58,7 @@ function saveState() {
 const con = new Console($('#consoleBody'), { onJump: line => { setView('code'); editor.focusLine(line); } });
 const runtimeDiags = new Map();
 
-const world = new World({
+const events = {
   onSerial: (b, text) => con.add('out', text, { who: b.id }),
   onError: (b, err) => {
     con.add('err', err.message, { who: b.id, line: err.line });
@@ -70,7 +72,9 @@ const world = new World({
   onSeed: b => con.add('info', `Blink #${b.id} is sharing its game. Put it next to other Blinks within 5 s to send them the game.`),
   onSeedDone: (b, n) => con.add('info', n ? `Game shared with ${n} Blink${n === 1 ? '' : 's'}. They restarted with startState() = START_STATE_DOWNLOAD_SUCCESS.` : 'Game sharing ended.'),
   onSleep: () => {},
-});
+};
+// The table: the JS simulator, or in hardware-exact mode a HardwareWorld (loaded on demand, see setEngine)
+let world = new World(events);
 
 const board = new Board($('#board'), world, {
   bin: $('#bin'),
@@ -126,6 +130,7 @@ function markDirty() {
 
 // compile only, to show errors while typing (Live off)
 function check() {
+  if (hardwareActive()) { hardwareBuild(false); return; }
   const r = compile(state.code);
   showCompile(r, false);
   return r;
@@ -143,7 +148,7 @@ function showCompile(r, ran) {
     $('#serialForm').hidden = !r.serialInput;
     if (ran) setStatus('ok', runningText());
     else if (!state.live) setStatus('busy', state.dirty ? 'Changed — press Run' : 'Ready');
-    showRam(r.ram);
+    showRam(r.ram, r.flash);
   }
   lastDiags = diags;
   refreshDiagnostics();
@@ -154,6 +159,7 @@ function refreshDiagnostics() {
 
 function run(force) {
   clearTimeout(buildTimer);
+  if (hardwareActive()) { hardwareBuild(true, force); return true; }
   const r = compile(state.code);
   if (!r.ok) {
     showCompile(r, false);
@@ -178,15 +184,107 @@ function setStatus(kind, text) {
 }
 $('#status').addEventListener('click', () => { if ($('#status').classList.contains('err') && statusLine) { setView('code'); editor.focusLine(statusLine); } });
 
-function showRam(ram) {
+function showRam(ram, flash) {
   const el = $('#ram');
   const pct = ram.used / ram.budget;
   el.className = 'ram' + (pct > 1 ? ' over' : pct > 0.8 ? ' high' : '');
-  el.innerHTML = `<span>RAM ${ram.used} / ${ram.budget} B</span><span class="bar"><i style="width:${Math.min(100, pct * 100).toFixed(1)}%"></i></span>`;
+  const bar = p => `<span class="bar"><i style="width:${Math.min(100, p * 100).toFixed(1)}%"></i></span>`;
+  if (flash) {
+    // hardware-exact: what avr-gcc's build really uses, counted like the Arduino IDE (blinklib and the BIOS's shared memory included)
+    // on a narrow screen the budgets (.of) are hidden
+    el.innerHTML = `<span>Flash ${flash.used}<span class="of"> / ${flash.budget} B</span></span>${bar(flash.used / flash.budget)}<span>RAM ${ram.used}<span class="of"> / ${ram.budget} B</span></span>${bar(pct)}`;
+    el.title = 'Flash: the game\'s code and constants, out of the space a Blink keeps for a game. RAM: global variables, blinklib\'s and the BIOS\'s included; the rest is left for the stack.';
+    return;
+  }
+  el.innerHTML = `<span>RAM ${ram.used} / ${ram.budget} B</span>${bar(pct)}`;
   el.title = pct > 1
     ? 'Your global variables use more memory than a Blink has left after blinklib. This sketch would not fit on a real Blink.'
     : 'Memory used by your global variables (and strings), out of about what a Blink has left after blinklib.';
 }
+
+// ---------------- hardware-exact mode ----------------
+// The real BlinkBIOS and blinklib on emulated ATmega168PB chips, with the sketch compiled by
+// avr-gcc in a worker (js/hardware). None of it is downloaded until the switch is turned on;
+// the simulator keeps the table running while it loads.
+let hw = null;                // { HardwareWorld, toolchain } once loaded
+let hwLoading = null;
+let buildSeq = 0;
+const hardwareActive = () => !!hw && world instanceof hw.HardwareWorld;
+
+function loadHardware() {
+  if (!hwLoading) {
+    hwLoading = (async () => {
+      const [{ HardwareWorld }, { Toolchain }] = await Promise.all([import('./hardware/world.js'), import('./hardware/toolchain.js')]);
+      const toolchain = new Toolchain();
+      await toolchain.load(p => { if (state.engine === 'hardware') setStatus('busy', `Loading avr-gcc… ${Math.round(p * 100)}%`); });
+      return (hw = { HardwareWorld, toolchain });
+    })();
+    hwLoading.catch(() => { hwLoading = null; });
+  }
+  return hwLoading;
+}
+
+// Swap the table's engine, keeping the Blinks where they are
+async function setEngine(engine) {
+  state.engine = engine;
+  const btn = $('#hwBtn');
+  btn.classList.toggle('on', engine === 'hardware');
+  btn.setAttribute('aria-pressed', engine === 'hardware');
+  saveState();
+  renderFlags();
+  if (engine === 'hardware' && !hw) {
+    setStatus('busy', 'Loading avr-gcc… 0%');
+    try { await loadHardware(); }
+    catch (e) {
+      con.add('err', `Hardware-exact mode didn't load: ${e.message}`);
+      toast('Hardware-exact mode didn’t load, so the simulator is still running');
+      return setEngine('sim');
+    }
+    if (state.engine !== 'hardware') return;   // switched back while it loaded
+  }
+  if ((engine === 'hardware') === hardwareActive()) return;
+  const cells = world.blinks.map(b => [b.q, b.r, b.rot]);
+  world = engine === 'hardware' ? new hw.HardwareWorld(events) : new World(events);
+  board.world = world;
+  board.hover = board.hoverChip = board.lastTouched = null;
+  world.drift = state.drift;
+  for (const [q, r, rot] of cells) world.addBlink(q, r, rot);
+  runtimeDiags.clear();
+  state.compiled = null;
+  state.running = null;
+  if (engine === 'hardware') con.add('info', 'Hardware-exact: each Blink is an emulated ATmega168PB running the real BlinkBIOS and blinklib, with your sketch compiled by avr-gcc 7.3.0.');
+  renderFlags();
+  run(true);
+}
+
+// Compile with avr-gcc in the worker; with `load`, flash the Blinks with the result
+async function hardwareBuild(load, force) {
+  const code = state.code;
+  if (load && !force && state.running === code) return;
+  const seq = ++buildSeq;
+  setStatus('busy', 'Compiling with avr-gcc…');
+  const r = await hw.toolchain.build(code);
+  if (seq !== buildSeq || !hardwareActive()) return;   // a newer build, or the engine changed
+  const diags = r.diagnostics || [];
+  const res = {
+    ok: r.ok,
+    errors: diags.filter(d => d.severity === 'err').map(d => ({ line: d.line, message: d.message })),
+    warnings: diags.filter(d => d.severity === 'warn').map(d => ({ line: d.line, message: d.message })),
+    serialInput: /\bSerial\b/.test(code),
+    ram: { used: r.ramUsed, budget: r.ramBudget },
+    flash: { used: r.flashUsed, budget: r.flashBudget },
+  };
+  if (!r.ok && !res.errors.length) res.errors.push({ line: 0, message: 'avr-gcc couldn\'t build this sketch' });
+  if (!r.ok || !load) { showCompile(res, false); return; }
+  runtimeDiags.clear();
+  state.compiled = res;
+  state.running = code;
+  world.load({ chip: r.chip, flash: r.flash, symbols: r.symbols });
+  markDirty();
+  showCompile(res, true);
+  if (state.paused) setStatus('paused', 'Paused');
+}
+$('#hwBtn').addEventListener('click', () => setEngine(state.engine === 'hardware' ? 'sim' : 'hardware'));
 
 // ---------------- code / blocks views ----------------
 async function getBlocks() {
@@ -833,6 +931,7 @@ function checkModes(now) {
 function renderFlags() {
   const f = $('#simFlags');
   const items = [];
+  if (state.engine === 'hardware') items.push([hardwareActive() ? 'Hardware-exact · ATmega168PB' : 'Hardware-exact · loading', '']);
   if (state.paused) items.push(['Paused', 'warn']);
   const sp = state.speed;
   if (sp !== 1 && !state.paused) items.push([`${sp}× speed`, '']);
@@ -896,7 +995,10 @@ function showHelp() {
       <li>The full screen button at the end of the controls under the table, or <kbd>F</kbd>, hides the code and the console so the table fills the screen. Press it again, or <kbd>Esc</kbd>, to come back.</li>
     </ul>
     <h3>When it says no</h3>
-    <p>If something would not work on a real Blink, the simulator tells you: code that doesn't compile, a loop that never ends, an array index out of range, or a face number above 5.</p>`;
+    <p>If something would not work on a real Blink, the simulator tells you: code that doesn't compile, a loop that never ends, an array index out of range, or a face number above 5.</p>
+    <h3>Hardware-exact</h3>
+    <p>The chip button under the table switches to hardware-exact mode. Your sketch is compiled by avr-gcc, the compiler the Arduino IDE uses for Blinks, and every Blink is an emulated ATmega168PB chip running the real BlinkBIOS and blinklib. Timing, IR and sleep are the real thing, and the console shows how much flash and RAM the game really uses. The first time, it downloads about 6&nbsp;MB.</p>
+    <p>The simulator's checks (loops that never end, array indexes, face numbers) don't happen there, just as on a real Blink, and a big table runs slower than real time. Sharing a game sends all of it over IR, as on real Blinks, so it takes about 20 s. The BIOS allows two Blinks' clocks to be at most 5% apart, so with the clock drift slider above ±2.5% some Blinks can't share.</p>`;
   d.querySelector('.close').onclick = () => d.close();
   d.onclick = e => { if (e.target === d) d.close(); };
   d.showModal();
@@ -930,7 +1032,9 @@ function toast(text) {
   run(true);
   setView(state.view);
   requestAnimationFrame(frame);
+  // hardware-exact mode loads in the background; the simulator runs the sketch meanwhile
+  if (state.engine === 'hardware') setEngine('hardware');
 })();
 
 // handy for poking at the simulation from the browser console
-window.playground = { world, board, state, compile };
+window.playground = { get world() { return world; }, board, state, compile, setEngine };

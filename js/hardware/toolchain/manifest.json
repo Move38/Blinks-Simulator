@@ -1,0 +1,14 @@
+{
+  "version": "ddc43c0e1cdb",
+  "files": {
+    "blinks.pack.gz": 341698,
+    "cc1plus.mjs": 183199,
+    "cc1plus.wasm.gz": 4532447,
+    "avr-as.mjs": 134895,
+    "avr-as.wasm.gz": 312221,
+    "avr-ld.mjs": 142386,
+    "avr-ld.wasm.gz": 388778,
+    "avr-objcopy.mjs": 135032,
+    "avr-objcopy.wasm.gz": 288752
+  }
+}

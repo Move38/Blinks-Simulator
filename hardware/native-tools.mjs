@@ -28,13 +28,16 @@ export function nativeTools() {
   return {
     root,
     run: (tool, args) => {
+      const output = tool === 'objcopy' ? args.at(-1) : args[args.indexOf('-o') + 1];
+      mkdirSync(dirname(real(output)), { recursive: true });
       try {
         execFileSync(bin[tool], args.map(real), { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
       } catch (e) {
-        throw new Error(`${tool} failed:\n${String(e.stderr).replaceAll(root, '')}`);
+        const stderr = String(e.stderr).replaceAll(root, '');
+        throw Object.assign(new Error(`${tool} failed:\n${stderr}`), { stderr });
       }
     },
-    write: (path, data) => writeFileSync(real(path), data),
+    write: (path, data) => { mkdirSync(dirname(real(path)), { recursive: true }); writeFileSync(real(path), data); },
     read: (path) => readFileSync(real(path)),
   };
 }

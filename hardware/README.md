@@ -1,16 +1,33 @@
-# Hardware-exact Blinks (spike)
+# Hardware-exact Blinks
 
-This folder tests whether the playground could run each Blink as real hardware: an emulated AVR running the same `.hex` the Arduino IDE flashes, with the BlinkBIOS, blinklib and the sketch all running as machine code. The main playground emulates the *software stack* in JavaScript instead (see [docs/SIMULATION.md](../docs/SIMULATION.md)).
+The playground's hardware-exact mode (the chip button under the table) runs each Blink as real hardware: an emulated AVR running the BlinkBIOS, blinklib and the sketch as machine code, with the sketch compiled in the browser by avr-gcc. The playground's default engine emulates the *software stack* in JavaScript instead (see [docs/SIMULATION.md](../docs/SIMULATION.md)).
 
-**Result: it works.** The real BIOS checks the battery, switches up to 8 MHz, copies the game into place with `SPM` and starts it. Pixels light, the button works, and Blinks talk to each other over emulated IR, with no Blinks-specific behavior written in JavaScript. One core of an M1 Max runs about **7 Blinks at real speed**.
+The real BIOS checks the battery, switches up to 8 MHz, copies the game into place with `SPM` and starts it. Pixels light, the button works, and Blinks talk to each other over emulated IR, with no Blinks-specific behavior written in JavaScript. One core of an M1 Max runs about **7 Blinks at real speed**.
+
+The mode itself lives in [js/hardware](../js/hardware):
+
+| File | |
+| --- | --- |
+| `blink-avr.js` | one Blink: avr8js plus what a Blink adds (below) |
+| `world.js` | `HardwareWorld`, the table: the same interface as the simulator's `World`, so the board, inspector and debug views work on it |
+| `build.js`, `sketch.js`, `elf.js` | building a sketch without the gcc driver, the `.ino` → `.cpp` step, and reading the result |
+| `tools.js`, `compile-worker.js`, `toolchain.js` | avr-gcc in WebAssembly, run in a worker, and the page's side of it |
+| `toolchain/` | what the browser downloads, built by `make-toolchain.mjs` |
+| `vendor/avr8js/` | [avr8js](https://github.com/wokwi/avr8js) 0.21.1 with `.js` added to its imports, by `vendor-avr8js.mjs` |
+
+This folder holds how it was built and tested:
 
 ```sh
 cd hardware
 npm install
-npm test          # boots every board, checks IR, and checks the speedups change nothing
-npm run bench     # how many Blinks run at real speed on this machine
-npm run profile   # where a Blink's cycles go
+npm test            # boots every board, checks IR, the speedups, and that WebAssembly builds match the IDE's
+npm run bench       # how many Blinks run at real speed on this machine
+npm run profile     # where a Blink's cycles go
+npm run toolchain   # rebuild js/hardware/toolchain (needs the Arduino IDE's avr-gcc and the Move38 SDK 1.3.0)
+npm run vendor      # re-copy avr8js into js/hardware/vendor
 ```
+
+The tests that need nothing installed are in [test/hardware.test.mjs](../test/hardware.test.mjs), with the rest of the playground's.
 
 ## Chips and BIOS versions
 
@@ -32,12 +49,12 @@ On every board, the BIOS lives at the top of flash. The `.hex` puts the game in 
 [avr8js](https://github.com/wokwi/avr8js) (MIT) provides the CPU, timers, ports, ADC, USART, EEPROM and watchdog. A Blink needs more than an Arduino Uno does:
 
 - **Boot**: reset starts at the boot section (the BOOTRST fuse) at 1 MHz (CKDIV8).
-- **`SPM`**, so the BIOS can copy the game into place. Later it could also write games downloaded from a neighbor.
+- **`SPM`**, so the BIOS can copy the game into place, and write games downloaded from a neighbor.
 - **IVSEL**: the BIOS moves the interrupt vectors into the boot section.
 - **PORTE**, which only the PB chips have. It carries two pixel anodes and the blue LED's charge pump.
 - **`SLEEP`**, which skips ahead to the next event.
-- **Pixels**: `takeColors()` adds up how long each pixel's anode is high while each color's PWM sink is low, which is roughly what an eye or camera sees.
-- **IR**: a lit LED (anode high, cathode low) shines on the facing LED of the Blink it touches. A floating, charged cathode that is in that light discharges and reads 0, just as the BIOS expects. Light is timestamped, so each Blink sees it at the right moment on its own clock.
+- **Pixels**: `takeColors()` measures how much of its 2048-cycle PWM phase each color of each pixel was lit on the pixel's latest turn. `HardwareWorld` maps that back through the BIOS's brightness curve (measured: 4/256 at level 0, full from level 30) to the 5-bit color the sketch set.
+- **IR**: a lit LED (anode high, cathode low) shines on the facing LED of the Blink it touches. A floating, charged cathode that is in that light discharges and reads 0, just as the BIOS expects. Light is timestamped and arrives one 5 µs slice later, so every pulse lands at the same moment on the receiver's own clock whichever Blink ran first in the slice.
 - **A clock per Blink** (`clockScale`), so timing drifts between Blinks as it does on a real table.
 
 ## Speed
@@ -70,7 +87,15 @@ The rest of the time is split about evenly between avr8js's instruction decoder 
 
 IR collisions come from the firmware itself. In a line of six Blinks with clocks up to 2% apart, a link sometimes drops for about 150 ms, when both ends probe at once and keep colliding for a few rounds, then comes back. We haven't checked whether real Blinks drop at the same rate.
 
-## Not emulated yet
+## Game sharing
+
+Sharing is the BIOS's own bootloader: SEED, PULL and PUSH packets over IR, with each page written to flash by `SPM`.
+- **Starting.** Hold a Blink that is alone. After 3 s it spins blue, and letting go then starts sharing; at 6 s it goes to sleep instead. Put it beside the other Blinks within 5 s.
+- **How long.** The BIOS always sends the whole game area, whatever the game's size: 0x1700 bytes on the 168PB, in 184 blocks of 32 bytes. Each block takes about 100 ms of IR, so a pair takes 15 to 20 s.
+- **Clocks.** The BIOS's IR timing allows the two clocks to be at most 5% apart (`IR_CLOCK_SPREAD_PCT` in its source). Here sharing works at 6% apart, and at 8% the neighbor never starts downloading. The playground's default drift of ±2% keeps every pair within 4%, but at the slider's ±10% about 4 pairs in 10 can't share.
+- **Tested.** `hardware.test.mjs` checks both: a Blink with Spin built in receives Neighbors byte for byte and runs it, with clocks 4% apart, and nothing happens at 8%.
+
+## Not emulated yet, and known issues
 
 - `SPM` erase and write finish instantly (about 4 ms on hardware), and signature-row reads (`SIGRD`) return nothing.
 - The NFC chip on BlinkNFC. Its BIOS boots about 100 ms later, probably because it times out looking for the chip.
@@ -79,15 +104,9 @@ IR collisions come from the firmware itself. In a line of six Blinks with clocks
 - The battery always reads 3.0 V.
 - IR light is all or nothing between touching faces: no ambient light, no distance or angle, and no light leaking to the faces next door.
 
-## Getting this into the playground
-
-1. **Compiling in the browser with avr-gcc built for WebAssembly.** This is the chosen path. Real Blinks games are built with avr-gcc 7.3.0, so this produces the same code, which clang wouldn't. See [Compiling in the browser](#compiling-in-the-browser) below.
-2. **Speed**: a faster decoder, plus web workers for big tables. IR needs Blinks to stay within a few microseconds of each other, so workers would need to share a slice clock.
-3. **The table UI** already has what the hardware model needs: neighbors, a button and LED colors. A "hardware-exact" switch could swap `js/runtime/blink.js` for `AvrBlink` and keep the JavaScript engine for big tables and its learner-friendly errors.
-
 ## Compiling in the browser
 
-A browser can't run the `avr-gcc` driver, because it starts other programs. So [build-sketch.mjs](build-sketch.mjs) does the driver's job itself:
+Real Blinks games are built with avr-gcc 7.3.0, so the browser uses the same compiler, built for WebAssembly, rather than clang. A browser can't run the `avr-gcc` driver, because it starts other programs. So [build.js](../js/hardware/build.js) does the driver's job itself:
 
 1. Run `cc1plus` on blinklib and the sketch. These are the same flags the Move38 platform uses, minus LTO, plus `-fno-rtti` and the defines the device specs would add.
 2. Run `cc1plus -E -lang-asm` on `startup.S`.
@@ -96,7 +115,7 @@ A browser can't run the `avr-gcc` driver, because it starts other programs. So [
 
 Every path is on a virtual file system, so the same steps run with either set of tools:
 - [native-tools.mjs](native-tools.mjs) uses the Arduino IDE's avr-gcc 7.3.0.
-- [wasm-tools.mjs](wasm-tools.mjs) uses avr-gcc 7.3.0 and binutils 2.42 built for WebAssembly by [@horang-corp/avr-gcc-wasm](https://github.com/horang-corp/avr-gcc-wasm) 0.2.0. Each tool is compiled once and gets a fresh instance per run.
+- [js/hardware/tools.js](../js/hardware/tools.js) uses avr-gcc 7.3.0 and binutils 2.42 built for WebAssembly by [@horang-corp/avr-gcc-wasm](https://github.com/horang-corp/avr-gcc-wasm) 0.2.0. Each tool is compiled once and gets a fresh instance per run. [wasm-tools.mjs](wasm-tools.mjs) loads it in Node, either from the package or from the toolchain the browser downloads.
 
 `-fno-rtti` is needed because without LTO, classes with virtual methods, like `Serial`, need type info from a C++ runtime that isn't linked.
 
@@ -107,17 +126,24 @@ Every path is on a virtual file system, so the same steps run with either set of
 | WebAssembly vs native avr-gcc | **45 of 46 byte-identical.** Widgets differs by 11 bytes in one function, where `r28` and `r29` swap and one `mov` moves: the same length and timing. |
 | Size without LTO | Between 619 bytes smaller and 225 bytes bigger than the IDE's build. None goes over 5888 bytes, but SpeedRacer reaches 5884. |
 | Running | Every one boots on an emulated Blink and keeps its interrupts running, and D-SerialTest's serial output comes through. Six start dark, and the IDE's builds of the same six do too. |
-| Time per edit, in Node | Compiling the sketch, then `as`, `ld` and `objcopy`: **42 ms median, 91 ms at most**. Compiling blinklib as well takes about 0.6 s the first time. |
+| Time per edit | Compiling the sketch, then `as`, `ld` and `objcopy`, with blinklib compiled ahead of time: **36 ms median in Node, about 40 ms in Chrome**. |
+| Sketch preprocessing | [sketch.js](../js/hardware/sketch.js) adds `#include <Arduino.h>` and a prototype for each function, as the IDE does. All 46 build to exactly the same game as with arduino-cli's preprocessing. |
 
-blinklib never changes, so it can be compiled once and shipped as `.o` files. Each edit then only rebuilds the sketch.
+### What the browser downloads
 
-### What shipping it needs
+Only when hardware-exact mode is turned on, and from then on from the browser's Cache Storage, keyed by the toolchain's hash:
 
-- **Download size.** The four tools are 5.4 MB gzipped, or 4.2 MB with brotli; `cc1plus.wasm` alone is 13.2 MB raw and 4.3 MB gzipped. Load them only when the hardware-exact mode is turned on.
-- **Files the package lacks.** We would serve the headers, the SDK's blinklib and link scripts, and four files the package doesn't ship: gcc's `include-fixed/limits.h` and `libatmega168pb.a` / `libatmega328pb.a`. For now, wasm-tools.mjs borrows those from the Arduino IDE.
-- **Licensing.** The tools are GPL v3, so serving them from learn.move38.com means also offering their source and build scripts. Building them ourselves from the package's approach, in CI, would give us both, and wouldn't depend on someone else's binaries.
+| | gzipped |
+| --- | --- |
+| `cc1plus.wasm` | 4.3 MB |
+| `avr-as`, `avr-ld`, `avr-objcopy` | 1.0 MB |
+| their Emscripten glue (`.mjs`) | 0.6 MB, less once the server compresses it |
+| `blinks.pack.gz`: headers, libraries (debug info stripped), link scripts, BIOS images, and blinklib compiled for both chips | 0.3 MB |
+
+The `.wasm` files are stored gzipped and unpacked in the worker with `DecompressionStream`, so the download is the same on any static host, GitHub Pages included. The avr8js engine itself adds about 60 KB, also loaded on demand.
+
+- **Licensing.** The tools are GPL v3; [toolchain/NOTICE.md](../js/hardware/toolchain/NOTICE.md) says where their source is. Building them ourselves in CI, from the package's approach, would remove the dependence on someone else's binaries.
 - **LTO.** The WebAssembly build has no `lto1`, so games are compiled without LTO. That costs code size: SpeedRacer comes within 4 bytes of the limit, so some games may not fit without it. Adding `lto1` to the WebAssembly build, or compiling the sketch and blinklib as one file, would close that gap.
-- **Sketch preprocessing.** The tests use arduino-cli's preprocessing, which adds `#include <Arduino.h>` and function prototypes. The playground's own preprocessor would have to do the same.
 
 ## Rebuilding the fixtures
 

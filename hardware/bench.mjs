@@ -1,6 +1,6 @@
 // How many hardware Blinks can run at real speed on this machine?
 import { readFileSync } from 'node:fs';
-import { AvrBlink, AvrTable } from './blink-avr.js';
+import { AvrBlink, AvrTable } from '../js/hardware/blink-avr.js';
 const hex = readFileSync('fixtures/Neighbors/build/move38.avr.blink/Neighbors.ino.with_bootloader.hex', 'utf8');
 const slice = Number(process.argv[2] ?? 5000);
 for (const n of [1, 2, 6, 12, 24]) {

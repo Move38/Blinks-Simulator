@@ -2,7 +2,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { AvrBlink, AvrTable } from './blink-avr.js';
+import { AvrBlink, AvrTable, CHIPS, parseHex } from '../js/hardware/blink-avr.js';
+import { HardwareWorld } from '../js/hardware/world.js';
 
 const image = (sketch, board) => readFileSync(new URL(`fixtures/${sketch}/build/move38.avr.${board}/${sketch}.ino.with_bootloader.hex`, import.meta.url), 'utf8');
 const BOARDS = { blink: 'atmega168pb', blink328: 'atmega328pb', blink328max: 'atmega328pb', blink328nfc: 'atmega328pb' };
@@ -68,6 +69,44 @@ test('every link in a line of six stays up nearly all of 5 seconds', () => {
   for (let i = 0; i < 5; i++) assert.ok(hears(t.blinks[i], 0) && hears(t.blinks[i + 1], 3), `link ${i}-${i + 1} up at the end`);
 });
 
+// Game sharing is the BIOS's own SEED, PULL and PUSH packets over IR. A Blink running
+// Neighbors is held alone until it spins blue (3 s), let go, and a Blink running Spin is
+// put beside it. The BIOS's IR timing allows the two clocks to be up to 5% apart.
+function share(clockGap, seconds) {
+  const program = (sketch) => ({ chip: 'atmega168pb', flash: parseHex(image(sketch, 'blink'), CHIPS.atmega168pb.flashBytes), symbols: {} });
+  const neighbors = program('Neighbors'), spin = program('Spin');
+  const w = new HardwareWorld();
+  const a = w.addBlink(0, 0, 0), b = w.addBlink(5, 5, 0);
+  a.clockSkew = -1; b.clockSkew = 1;
+  w.drift = clockGap / 2;
+  a.powerUp(neighbors); b.powerUp(spin);
+  const run = (ms) => { for (let t = 0; t < ms; t += 16) w.advance(16); };
+  run(800);
+  a.press(true); run(4000); a.press(false);
+  run(300);
+  w.lift(b); w.place(b, 1, 0);
+  run(seconds * 1000);
+  // The game runs from the bottom 0x1700 bytes of flash; the built-in game is the next 0x1700
+  const game = (flash, at = 0) => [...new Uint16Array(flash.buffer, at, 0x1700 / 2)];
+  const flashB = b.avr.cpu.progMem;
+  return { a, b, received: game(flashB), builtIn: game(flashB, 0x1700), neighbors: game(neighbors.flash, 0x1700), spin: game(spin.flash, 0x1700) };
+}
+
+test('a Blink shares its game with a neighbor whose clock is 4% off', () => {
+  const { a, b, received, builtIn, neighbors, spin } = share(0.04, 25);
+  assert.deepEqual(received, neighbors, 'the neighbor has the whole game');
+  assert.deepEqual(builtIn, spin, 'and still has its own built-in game');
+  // Both run Neighbors: green on the touching faces only
+  const green = (x) => x.avr.takeColors().map(([r, g]) => g > 0.5 && r < 0.2);
+  assert.deepEqual(green(a), [false, false, true, false, false, false]);
+  assert.deepEqual(green(b), [false, false, false, false, false, true]);
+});
+
+test('with clocks 8% apart, past what the BIOS allows, the neighbor never starts downloading', () => {
+  const { received, spin } = share(0.08, 10);
+  assert.deepEqual(received, spin);
+});
+
 test('lazy timers and idle skipping give exactly the same machine state as plain avr8js', () => {
   const hex = image('Neighbors', 'blink');
   const make = (opts) => {
@@ -94,7 +133,7 @@ test('a sketch built without the gcc driver runs, and talks between a 168PB and 
   const { existsSync } = await import('node:fs');
   const { nativeTools, GCC, SDK } = await import('./native-tools.mjs');
   if (!existsSync(GCC) || !existsSync(SDK)) return t.skip('needs the Arduino IDE with avr-gcc 7.3.0 and the Move38 SDK 1.3.0');
-  const { buildSketch, withBios, BOARDS } = await import('./build-sketch.mjs');
+  const { buildSketch, withBios, BOARDS } = await import('../js/hardware/build.js');
   const sketch = '#include <Arduino.h>\n#line 1 "Neighbors.ino"\n' + readFileSync(new URL('fixtures/Neighbors/Neighbors.ino', import.meta.url), 'utf8');
   const table = new AvrTable();
   for (const [board, chip] of [['blink', 'atmega168pb'], ['blink328', 'atmega328pb']]) {
@@ -112,22 +151,20 @@ test('a sketch built without the gcc driver runs, and talks between a 168PB and 
   assert.deepEqual(green(table.blinks[1]), [false, false, false, true, false, false]);
 });
 
-// The same build with avr-gcc 7.3.0 and binutils built for WebAssembly, as a
-// browser would run it. Skipped unless the package and the IDE's tools (which
-// it borrows limits.h and the device libraries from) are installed.
-test('avr-gcc in WebAssembly builds the same bytes as the IDE\'s avr-gcc', async (t) => {
+// The same build with avr-gcc 7.3.0 and binutils built for WebAssembly, from
+// the toolchain the browser downloads (js/hardware/toolchain, with blinklib
+// compiled ahead of time). Skipped unless the IDE's tools are installed to compare with.
+test('the browser toolchain builds the same bytes as the IDE\'s avr-gcc', async (t) => {
   const { existsSync } = await import('node:fs');
   const { nativeTools, GCC, SDK } = await import('./native-tools.mjs');
-  if (!existsSync(GCC) || !existsSync(SDK) || !existsSync(new URL('node_modules/@horang-corp/avr-gcc-wasm/tools/cc1plus.wasm', import.meta.url))) {
-    return t.skip('needs @horang-corp/avr-gcc-wasm, the Arduino IDE with avr-gcc 7.3.0 and the Move38 SDK 1.3.0');
-  }
-  const { wasmTools } = await import('./wasm-tools.mjs');
-  const { buildSketch, withBios, BOARDS } = await import('./build-sketch.mjs');
-  const wasm = await wasmTools();
+  if (!existsSync(GCC) || !existsSync(SDK)) return t.skip('needs the Arduino IDE with avr-gcc 7.3.0 and the Move38 SDK 1.3.0');
+  const { wasmToolsFromPack } = await import('./wasm-tools.mjs');
+  const { buildSketch, withBios, BOARDS } = await import('../js/hardware/build.js');
+  const wasm = await wasmToolsFromPack();
   for (const name of ['Spin', 'Neighbors']) {
     const sketch = `#include <Arduino.h>\n#line 1 "${name}.ino"\n` + readFileSync(new URL(`fixtures/${name}/${name}.ino`, import.meta.url), 'utf8');
     for (const board of ['blink', 'blink328']) {
-      const w = await buildSketch(wasm, sketch, board);
+      const w = await buildSketch(wasm, sketch, board, { prebuiltCore: true });
       const n = await buildSketch(nativeTools(), sketch, board);
       const bios = readFileSync(`${SDK}/bootloaders/${BOARDS[board].bios}`, 'utf8');
       assert.deepEqual(withBios(w.gameHex, bios, board), withBios(n.gameHex, bios, board), `${name} on ${board}`);
