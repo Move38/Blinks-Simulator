@@ -372,7 +372,7 @@ export class Board {
     const h = Math.max(10, S * 0.24);
     const n = this.valueBits;
     const r = Math.max(1.2, h * (n > 8 ? 0.08 : n > 6 ? 0.12 : 0.14)), step = r * 2.7, gap = r * 1.4;
-    const dotsW = (n - 1) * step + gap;
+    const dotsW = (n - 1) * step + (n / bitGroup(n) - 1) * gap;
     c.font = `600 ${Math.max(7, Math.round(S * 0.165))}px "JetBrains Mono", monospace`;
     const chips = [];
     for (let f = 0; f < 6; f++) {
@@ -424,7 +424,7 @@ export class Board {
         for (let i = 0; i < n; i++) {
           const on = (v >> (n - 1 - i)) & 1;
           c.beginPath();
-          c.arc(-dotsW / 2 + i * step + (i >= n / 2 ? gap : 0), 0, r, 0, TAU);
+          c.arc(-dotsW / 2 + i * step + Math.floor(i / bitGroup(n)) * gap, 0, r, 0, TAU);
           // a 0 sinks into the chip (darker than the blue), a 1 is lit
           c.fillStyle = on ? (linked ? '#fff' : 'rgba(255,255,255,.85)') : (linked ? 'rgba(16,32,96,.5)' : 'rgba(255,255,255,.14)');
           c.fill();
@@ -588,6 +588,9 @@ function badge(c, x, y, r, col, txt) {
 // Asleep (or fading in or out of sleep), or sharing a game, a Blink sends no face values and hears none
 const QUIET = new Set(['sleep', 'sleeping', 'waking', 'seedspin', 'seeding']);
 export const isQuiet = b => QUIET.has(b.mode);
+// How a face value's bits group when drawn as dots: Move38's six as two threes, Custom
+// Blinklib's by the byte (no gap in a byte, one between the two of a 16-bit value)
+export const bitGroup = n => (n % 4 ? 3 : 8);
 
 // Arrangements for the layout buttons (axial hex coordinates)
 export const LAYOUTS = {

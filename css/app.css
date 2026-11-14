@@ -276,7 +276,7 @@ li.CodeMirror-hint-active .sig { color: rgba(255,255,255,.8); }
 .bit-dots { display: inline-flex; align-items: center; gap: 2px; vertical-align: middle; }
 .bit-dots i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: .25; }
 .bit-dots i.on { opacity: 1; }
-.bit-dots i:nth-child(3):not(:last-child) { margin-right: 3px; }   /* six bits read as two threes */
+.bit-dots i.gap { margin-right: 3px; }   /* between groups of bits (bitGroup in board.js) */
 .examples-pop { width: min(760px, calc(100vw - 28px)); max-height: min(560px, calc(100vh - 80px)); overflow-y: auto; padding: 16px 18px 18px; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px 20px; scrollbar-width: thin; }
 .ex-group h3 { margin: 6px 0 6px; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--blinks-2); font-weight: 700; }
 .ex-group button { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 6px 9px; margin: 0 -9px; border-radius: 8px; cursor: pointer; width: calc(100% + 18px); }
