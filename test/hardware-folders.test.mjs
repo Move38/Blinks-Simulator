@@ -155,3 +155,12 @@ test('built as one unit, a game and blinklib still work (the fallback for games 
   table.run(100e6);
   assert.deepEqual(table.blinks.map((b) => b.takeColors().map(([, g]) => (g > 0.5 ? 'G' : '.')).join('')), ['G.....', '...G..']);
 });
+
+test('a game over the board’s size is built as one unit even when the linker has room, as on the 328PB', async () => {
+  // a table too big for any build: the 328PB's link script takes it, but it's over 5888 bytes
+  const files = { 'Big.ino': `#include <avr/pgmspace.h>\nconst byte T[6000] PROGMEM = {1};\nvoid setup() {}\nvoid loop() { setColor(makeColorRGB(pgm_read_byte(&T[millis() % 6000]), 0, 0)); }\n` };
+  const r = await build(files, 'Big.ino', { board: 'blink328' });
+  assert.ok(r.ok, r.stderr);
+  assert.equal(r.whole, true, 'tried as one unit');
+  assert.ok(r.gameBytes > target('blink328').maxGame, 'and still too big, for Upload to say so');
+});
