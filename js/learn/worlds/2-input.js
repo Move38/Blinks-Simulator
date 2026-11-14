@@ -150,7 +150,10 @@ void loop() {
 `,
       },
       reflect: {
-        q: 'Without the else, why did the Blink stay RED?',
+        code: `if (buttonDown()) {
+  setColor(RED);
+}`,
+        q: 'You started with this code, with no else. Why did the Blink stay RED?',
         options: ['Nothing in the code set it back to BLUE', 'The button got stuck down', 'An if only runs one time'], answer: 0,
         why: 'A color stays until something changes it. With no else, nothing ever painted the Blink BLUE again.',
       },
@@ -196,7 +199,12 @@ void loop() {
         fill: 'void loop() {\n  if (buttonDown()) {\n    setColor(______);\n  } else {\n    setColor(dim(YELLOW, 80));\n  _\n}',
       },
       reflect: {
-        q: 'What would happen if you swapped the two setColor lines?',
+        code: `if (buttonDown()) {
+  setColor(YELLOW);
+} else {
+  setColor(dim(YELLOW, 80));
+}`,
+        q: 'What would happen if you swapped the two setColor lines here?',
         options: ['Dim while held, bright the rest of the time', 'Nothing would change', 'It would be bright all the time'], answer: 0,
         why: 'The line under the if runs while the button is down. The line under else runs the rest of the time.',
       },
@@ -303,7 +311,14 @@ void loop() {
 `,
       },
       reflect: {
-        q: 'When you let go, which part of the code turns faces 0, 2 and 4 dark?',
+        code: `if (buttonDown()) {
+  setColorOnFace(GREEN, 0);
+  setColorOnFace(GREEN, 2);
+  setColorOnFace(GREEN, 4);
+} else {
+  setColor(OFF);
+}`,
+        q: 'In this code, which part turns faces 0, 2 and 4 dark when you let go?',
         options: ['The else', 'The if', 'setup()'], answer: 0,
         why: 'When the button is not down, the test is false, so the else runs. Its setColor(OFF) turns every face dark.',
       },
@@ -421,7 +436,7 @@ void loop() {
         fill: 'void setup() {\n  setColor(____);\n}\n\nvoid loop() {\n  if (buttonSingleClicked()) {\n    setColor(RED);\n  }\n}',
       },
       reflect: {
-        q: 'Your Blink stays RED now. What can\'t it do yet?',
+        q: 'The Blink stays RED for good now. What can\'t it do yet?',
         options: ['Go back to BLUE on the next click', 'Turn RED when clicked', 'Start out BLUE'], answer: 0,
         why: 'To switch back and forth, a Blink has to remember which color it is on. That is what World 3 is about.',
       },
@@ -486,7 +501,14 @@ void loop() {
 `,
     },
     reflect: {
-      q: 'You hold the lamp while it touches another Blink. Why is it WHITE and not GREEN?',
+      code: `if (buttonDown()) {
+  setColor(WHITE);
+} else if (!isAlone()) {
+  setColor(GREEN);
+} else {
+  setColor(dim(BLUE, 80));
+}`,
+      q: 'With this code, you hold the lamp while it touches another Blink. Why is it WHITE and not GREEN?',
       options: ['The button is tested first, and the first true test wins', 'WHITE is brighter than GREEN', 'isAlone() is true while you press the button'], answer: 0,
       why: 'Both tests are true, but the Blink tries them in order. The first true one runs, and the rest are skipped.',
     },

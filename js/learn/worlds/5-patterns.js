@@ -419,7 +419,8 @@ void loop() {
 `,
       },
       reflect: {
-        q: 'Without the % 6, what would happen when offset gets big?',
+        code: `setColorOnFace(rainbow[(f + offset) % 6], f);`,
+        q: 'Without the % 6 in this line, what would happen when offset gets big?',
         options: ['The code would read past the end of the list', 'The wheel would turn faster', 'Nothing, it would be fine'], answer: 0,
         why: 'The list has six colors, numbered 0 to 5. f + offset soon passes 5. % 6 wraps it back around.',
       },
@@ -486,7 +487,11 @@ void loop() {
 `,
       },
       reflect: {
-        q: 'You want every tail a little brighter. With glow(), how many places do you change?',
+        code: `void glow(Color c, byte f) {
+  setColorOnFace(c, f);
+  setColorOnFace(dim(c, 30), f + 1);
+}`,
+        q: 'You want every tail a little brighter. With a glow() like this one, how many places do you change?',
         options: ['One: the line inside glow()', 'Three: once for each color', 'Six: once for each face'], answer: 0,
         why: 'Every call runs the same lines inside glow(). Change them once and all three tails change.',
       },

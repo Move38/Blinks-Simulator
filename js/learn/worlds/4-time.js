@@ -706,7 +706,8 @@ void loop() {
           fill: 'alarm.set(____);',
         },
         reflect: {
-          q: 'What would happen if alarm.set(2000) were the first line of loop() instead?',
+          code: `alarm.set(2000);`,
+          q: 'What would happen if this line moved out of setup() and into loop()?',
           options: ['It would stay RED forever', 'It would turn GREEN after 2 seconds', 'It would blink'], answer: 0,
           why: 'loop() runs over and over, so the timer would start over every time. It would never reach the end.',
         },
@@ -746,7 +747,12 @@ void loop() {
 `,
       },
       reflect: {
-        q: 'Why did the light stay on face 0?',
+        code: `stepTimer.set(150);
+
+if (stepTimer.isExpired()) {
+  face = (face + 1) % FACE_COUNT;
+}`,
+        q: 'You started with these lines at the top of loop(). Why did the light stay on face 0?',
         options: ['The timer started over every time loop() ran, so it never rang', 'The timer was too short', 'face can\'t be bigger than 0'], answer: 0,
         why: 'set() starts the timer from the beginning. Set it only when it rings, and it gets the chance to finish.',
       },
@@ -825,7 +831,15 @@ void loop() {
 `,
       },
       reflect: {
-        q: 'Your heartbeat has a short flash and a long rest. How does one timer do both?',
+        code: `if (beatTimer.isExpired()) {
+  on = !on;
+  if (on) {
+    beatTimer.set(200);
+  } else {
+    beatTimer.set(800);
+  }
+}`,
+        q: 'This heartbeat has a short flash and a long rest. How does one timer do both?',
         options: ['Each time it rings, it gets set to the next wait', 'It counts to 1000 by itself', 'It needs two loop() functions'], answer: 0,
         why: 'A timer doesn\'t have to wait the same time every time. You choose a new wait each time you call set().',
       },
@@ -932,7 +946,15 @@ void loop() {
 `,
       },
       reflect: {
-        q: 'What happens if you click again while it\'s still glowing?',
+        code: `if (buttonPressed()) {
+  glowTimer.set(3000);
+}
+if (glowTimer.isExpired()) {
+  setColor(BLUE);
+} else {
+  setColor(GREEN);
+}`,
+        q: 'With this code, what happens if you click again while it\'s still glowing?',
         options: ['The timer starts over, so the glow lasts 3 more seconds', 'It turns BLUE right away', 'Nothing, the click is lost'], answer: 0,
         why: 'Each click calls set(3000) again, and set() always starts the timer from the beginning.',
       },

@@ -49,7 +49,18 @@ for (const level of LEVELS.values()) {
       const lines = (level.order ? level.order.scrambled.join('\n') : level.start || '').split('\n').length;
       assert.ok(level.hints.point.line >= 1 && level.hints.point.line <= lines, 'the hint points at a line that exists');
     }
-    if (level.reflect) assert.ok(level.reflect.answer < level.reflect.options.length);
+    if (level.reflect) {
+      const r = level.reflect;
+      assert.ok(r.answer < r.options.length);
+      // learners solve levels in different ways, and the code they started with is gone once they
+      // fix it, so a question that points at code shows that code: lines from the level's start
+      // or goal. A question without code asks about an idea, or quotes the code inline.
+      if (!r.code) assert.doesNotMatch(r.q, /\byour\b|\bthe \w+ lines?\b|\bthe (else|if|sketch)\b|\bthis (code|line|sketch)\b|\bstarted with\b/i, 'a question about code shows the code it means');
+      else {
+        const lines = new Set([level.start, level.goal].join('\n').split('\n').map(l => l.replace(/\s*\/\/.*$/, '').trim()));
+        for (const line of r.code.split('\n')) assert.ok(lines.has(line.trim()), `the question's code is from the level's start or goal: "${line.trim()}"`);
+      }
+    }
   });
 }
 

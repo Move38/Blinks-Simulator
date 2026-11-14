@@ -271,6 +271,8 @@ li.CodeMirror-hint-active { background: var(--blinks); color: #fff; }
 .modal h2 { font: 800 30px/1.05 var(--f-disp); margin: 4px 0 0; }
 .modal .q { background: var(--panel-2); border-radius: 12px; padding: 14px; display: grid; gap: 8px; }
 .modal .q b { font-size: 15px; }
+/* a question about a few lines of code shows them, so it doesn't depend on how the learner wrote theirs */
+.refl-code { margin: 0; padding: 10px 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 9px; font: 12.5px/1.55 var(--f-mono); color: var(--text); white-space: pre; overflow-x: auto; }
 .opt { padding: 9px 11px; border-radius: 9px; background: var(--panel); color: var(--text); display: flex; gap: 10px; align-items: center; border: 1px solid transparent; cursor: pointer; text-align: left; font-size: 14px; }
 .opt:hover:not(:disabled) { border-color: var(--line-2); }
 .opt:disabled { cursor: default; color: var(--muted); }

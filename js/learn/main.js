@@ -659,7 +659,7 @@ function finishModal({ starred, coasting, worldDone }) {
       <div><p class="eyebrow" style="color:${w.color}">Level ${esc(lv.id)}</p><h2>${esc(title)}</h2></div>
       <div style="display:flex;gap:14px">${starred ? '' : skillRows}</div>
     </div>
-    ${refl ? `<div class="q"><b>${rich(refl.q)}</b>${refl.options.map((o, i) => `<button class="opt" data-r="${i}"><span class="l">${'ABC'[i]}</span>${rich(o)}</button>`).join('')}<div id="reflWhy"></div></div>` : ''}
+    ${refl ? `<div class="q">${refl.code ? `<pre class="refl-code">${esc(refl.code)}</pre>` : ''}<b>${rich(refl.q)}</b>${refl.options.map((o, i) => `<button class="opt" data-r="${i}"><span class="l">${'ABC'[i]}</span>${rich(o)}</button>`).join('')}<div id="reflWhy"></div></div>` : ''}
     ${offers.length ? `<div class="offers">${offers.join('')}</div>` : ''}
     <div class="acts">
       <a class="btn ghost" href="#map">Map</a>

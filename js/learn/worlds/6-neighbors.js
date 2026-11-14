@@ -363,6 +363,12 @@ void loop() {
 `,
       },
       reflect: {
+        code: `int count = 0;
+FOREACH_FACE(f) {
+  if (!isValueReceivedOnFaceExpired(f)) {
+    count = count + 1;
+  }
+}`,
         q: 'Four Blinks run this code, and each shows a different color. Why?',
         options: ['Each one counts the neighbors in its own spot', 'Each one got a different program', 'Colors are picked at random'], answer: 0,
         why: 'Every Blink runs the same program. Where you put it changes what it counts, so it changes what it shows.',
@@ -475,7 +481,14 @@ void loop() {
 `,
       },
       reflect: {
-        q: 'Why did the face stay lit after its neighbor left?',
+        code: `FOREACH_FACE(f) {
+  if (getLastValueReceivedOnFace(f) == 1) {
+    setColorOnFace(WHITE, f);
+  } else {
+    setColorOnFace(OFF, f);
+  }
+}`,
+        q: 'You started with this code. Why did a face stay lit after its neighbor left?',
         options: ['getLastValueReceivedOnFace() keeps the last value, even when nobody is there', 'The neighbor was still sending from far away', 'WHITE can\'t be turned off'], answer: 0,
         why: 'The last value stays until a new one arrives. Check isValueReceivedOnFaceExpired(f) first to know if anyone is still there.',
       },

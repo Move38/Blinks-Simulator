@@ -196,7 +196,13 @@ void loop() {
         },
       },
       reflect: {
-        q: 'Why was face 0 dark?',
+        code: `setColorOnFace(GREEN, 1);
+setColorOnFace(GREEN, 2);
+setColorOnFace(YELLOW, 3);
+setColorOnFace(YELLOW, 4);
+setColorOnFace(RED, 5);
+setColorOnFace(RED, 6);`,
+        q: 'You started with these lines. Why was face 0 dark?',
         options: ['Every face number was one too big, so nothing lit face 0', 'Face 0 is always dark', 'GREEN can\'t go on face 0'], answer: 0,
         why: 'The sketch counted faces from 1. Blinks count from 0, so the first line lit face 1 and nothing lit face 0.',
       },
@@ -304,9 +310,12 @@ void loop() {
 `,
     },
     reflect: {
-      q: 'What happens if the setColor line moves to the end of setup()?',
-      options: ['Every face turns orange, white stripes and all', 'Nothing changes', 'Faces 0 and 3 go dark'], answer: 0,
-      why: 'The last command for a face wins. setColor at the end paints over the two white faces.',
+      code: `setColorOnFace(WHITE, 0);
+setColorOnFace(WHITE, 3);
+setColor(makeColorRGB(250, 70, 22));`,
+      q: 'These three lines run in this order. What does the Blink show?',
+      options: ['All six faces orange, with no white', 'Orange, with faces 0 and 3 white', 'Faces 0 and 3 dark, the rest orange'], answer: 0,
+      why: 'The last command for a face wins. setColor() comes last and paints all six faces orange, over the white.',
     },
   },
 };

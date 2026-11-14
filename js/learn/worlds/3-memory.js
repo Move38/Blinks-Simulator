@@ -156,7 +156,15 @@ void loop() {
 `,
       },
       reflect: {
-        q: 'On the next loop(), buttonSingleClicked() is false again. Why does the Blink stay RED?',
+        code: `if (buttonSingleClicked()) {
+  clicked = true;
+}
+if (clicked) {
+  setColor(RED);
+} else {
+  setColor(BLUE);
+}`,
+        q: 'In this code, buttonSingleClicked() is false again on the next loop(). Why does the Blink stay RED?',
         options: ['clicked is still true, and the color comes from clicked', 'The button stays clicked', 'RED can\'t be changed once it is on'], answer: 0,
         why: 'The click only lasts one loop(). The variable keeps it, so every loop() after that still sees clicked is true.',
       },
@@ -331,7 +339,14 @@ void loop() {
 `,
       },
       reflect: {
-        q: 'Why did the Blink forget the click?',
+        code: `void loop() {
+  byte current = 0;
+  if (buttonSingleClicked()) {
+    current = (current + 1) % 6;
+  }
+  setColor(colors[current]);
+}`,
+        q: 'You started with this loop(). Why did the Blink forget the click?',
         options: ['current was made again, set to 0, at the start of every loop()', 'The click was too short', 'A byte can only hold 0'], answer: 0,
         why: 'byte current = 0; inside loop() runs every time loop() does. Above setup(), it runs just once, so current keeps its value.',
       },
@@ -570,7 +585,16 @@ void loop() {
 `,
       },
       reflect: {
-        q: 'In your tally, what does count remember?',
+        code: `if (buttonSingleClicked()) {
+  count = count + 1;
+  if (count == 7) {
+    count = 0;
+    setColor(OFF);
+  } else {
+    setColorOnFace(GREEN, count - 1);
+  }
+}`,
+        q: 'In this tally, what does count remember?',
         options: ['How many faces are lit', 'Which color to use', 'How long the button was held'], answer: 0,
         why: 'count is the state of the game. The lit faces are just a way to show it.',
       },
