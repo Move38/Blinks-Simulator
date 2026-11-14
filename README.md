@@ -5,6 +5,7 @@ Write code for [Blinks](https://move38.com) in C or with Scratch-style blocks, a
 - **Code or blocks.** Switch between the C code you'd load onto a Blink and a block editor. Changes in one show up in the other. Blocks cover light (named colors or your own red/green/blue mix), the button, neighbors (values and datagrams), timers, math, bits (shifts and masks, drawn as a strip of bits), logic, switch, variables (global or local), lists (C arrays, including lists of timers), grids (2D arrays, shown row by row), constants (#define and enum) and your own functions; anything else stays as editable C.
 - **Live.** Your sketch recompiles and restarts as you type, so you see every change right away.
 - **Faithful to the hardware.** The simulator compiles your sketch the way the Blinks SDK does and emulates blinklib and the Blink's BIOS, so code that works here should work on real Blinks.
+- **Hardware-exact mode.** The chip button under the table goes further. avr-gcc, the compiler the Arduino IDE uses for Blinks, compiles your sketch in the browser, and every Blink becomes an emulated ATmega168PB running the real BlinkBIOS and blinklib. Timing, IR and sleep are the real firmware's, and the console shows the flash and RAM the game really uses. It downloads about 6 MB the first time it's turned on, and nothing until then.
 - **Examples** to learn from: ten short lessons, ten one-Blink games from the [Blinks Arcade](https://blinksarcade.jonbobrow.com), Move38's games and the SDK examples. **Open from GitHub** (in the ⋯ menu or under Examples) loads a sketch from any public repository, folder or .ino link, combining a sketch folder's tabs and local headers into one file.
 
 ## Using the table
@@ -38,7 +39,7 @@ Your sketch runs through a small C++ compiler written for this project (`js/comp
 
 The simulator also tells you about things that would go wrong on a Blink: compile errors, `delay()` (Blinks don't have it), a loop that never ends, an array index out of range, face numbers above 5, and globals that won't fit in the ~330 bytes of RAM blinklib leaves for your sketch.
 
-IR messages take time to arrive, about 3 ms a byte as on hardware, and datagrams a little longer to make up for the ones a real table loses. Not simulated: collisions and lost messages of real infrared, flash size limits, and multi-file sketches (paste headers into the sketch). [docs/SIMULATION.md](docs/SIMULATION.md) explains how the simulation works and lists every known difference from hardware.
+IR messages take time to arrive, about 3 ms a byte as on hardware, and datagrams a little longer to make up for the ones a real table loses. Not simulated: collisions and lost messages of real infrared, flash size limits, and multi-file sketches (paste headers into the sketch). [docs/SIMULATION.md](docs/SIMULATION.md) explains how the simulation works and lists every known difference from hardware. Hardware-exact mode closes most of those differences; [hardware/README.md](hardware/README.md) explains how it works and what it doesn't emulate yet.
 
 ## Run locally
 
@@ -60,6 +61,9 @@ js/compiler/                preprocessor, parser, type checker and code generato
 js/runtime/blink.js         one Blink: blinklib + BIOS emulation
 js/runtime/world.js         the table: hex grid, IR links, time
 js/ui/                      board rendering, code editor, block editor, console
+js/hardware/                hardware-exact mode: avr-gcc in a worker, the emulated chip, its table
+js/hardware/toolchain/      what that mode downloads (built by hardware/make-toolchain.mjs)
+hardware/                   how hardware-exact mode was built and tested, and the tools to rebuild it
 examples/                   example sketches (.ino)
-test/                       semantics tests for the compiler and runtime
+test/                       tests for the compiler, the runtime and hardware-exact mode
 ```

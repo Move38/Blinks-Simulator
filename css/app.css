@@ -203,7 +203,7 @@ li.CodeMirror-hint-active .sig { color: rgba(255,255,255,.8); }
 .console.collapsed #toggleConsole svg { transform: rotate(180deg); }
 .console-head { display: flex; align-items: center; gap: 10px; padding: 6px 8px 6px 14px; border-bottom: 1px solid var(--line); min-height: 39px; }
 .console-title { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; font-weight: 700; color: var(--muted); }
-.ram { margin-left: auto; font: 500 11.5px var(--f-mono); color: var(--muted); display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.ram { margin-left: auto; font: 500 11.5px var(--f-mono); color: var(--muted); display: flex; align-items: center; gap: 8px; white-space: nowrap; min-width: 0; overflow: hidden; }
 .ram .bar { width: 64px; height: 5px; border-radius: 99px; background: var(--panel-2); overflow: hidden; }
 .ram .bar i { display: block; height: 100%; background: var(--ok); border-radius: 99px; }
 .ram.high .bar i { background: var(--warn); }
@@ -299,7 +299,15 @@ dialog.help code { font: 12.5px var(--f-mono); background: var(--panel-2); paddi
 dialog.help .close { position: absolute; right: 14px; top: 12px; }
 dialog.confirm { max-width: 420px; padding: 22px 24px 18px; }
 dialog.confirm p { margin: 0 0 18px; font-size: 14.5px; }
+dialog.confirm h2 { font-size: 20px; margin: 0 0 10px; }
+dialog.confirm p:has(+ ul) { margin-bottom: 8px; }
+dialog.confirm ul { margin: 0 0 18px; }
+dialog.confirm li { margin: 4px 0; }
 dialog.confirm .actions { display: flex; justify-content: flex-end; gap: 8px; }
+dialog.confirm:has(.opt-out) { max-width: 480px; }
+dialog.confirm .opt-out { margin-right: auto; display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 13px; cursor: pointer; white-space: nowrap; }
+dialog.confirm .opt-out input { accent-color: var(--blinks); margin: 0; }
+@media (max-width: 520px) { dialog.confirm .actions { flex-wrap: wrap; } dialog.confirm .opt-out { flex: 1 0 100%; margin-bottom: 6px; } }
 dialog.confirm .btn.primary { padding: 0 16px; }
 dialog.help[open] { animation: dlg-in .18s cubic-bezier(.2,.8,.2,1); }
 @keyframes dlg-in { from { opacity: 0; transform: translateY(8px) scale(.98); } }
@@ -329,7 +337,7 @@ dialog.help[open] { animation: dlg-in .18s cubic-bezier(.2,.8,.2,1); }
   #examplesBtn { padding: 0 9px; font-size: 0; gap: 0; }
   #examplesBtn svg { width: 20px; height: 20px; }
   .layouts button:nth-child(n+4) { display: none; }
-  .ram .bar { display: none; }
+  .ram .bar, .ram .of { display: none; }
   .pane-head { flex-wrap: wrap; }
   .sketch-name { order: 3; flex-basis: 100%; }
   .status { max-width: none; margin-left: auto; }

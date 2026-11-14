@@ -1,0 +1,17 @@
+{
+  "name": "blinks-hardware-exact",
+  "private": true,
+  "type": "module",
+  "description": "Spike: run real Blink firmware (BlinkBIOS + blinklib + sketch) on an emulated AVR",
+  "dependencies": {
+    "@horang-corp/avr-gcc-wasm": "0.2.0",
+    "avr8js": "0.21.1"
+  },
+  "scripts": {
+    "test": "node --test",
+    "bench": "node bench.mjs",
+    "profile": "node profile.mjs",
+    "toolchain": "node make-toolchain.mjs",
+    "vendor": "node vendor-avr8js.mjs"
+  }
+}
