@@ -17,11 +17,14 @@
 <body>
 <div class="app">
   <header class="bar">
-    <a class="brand" href="#map" aria-label="Light the Board map"><img class="logo" src="../assets/blinks-logo.svg" alt="Blinks" width="73" height="32"><span class="ttl">Learn</span></a>
+    <a class="brand" href="#map" aria-label="Light the Board map"><img class="logo" src="../assets/blinks-logo.svg" alt="Blinks" width="73" height="32"></a>
+    <nav class="modes" aria-label="Learn or play">
+      <a href="#map" aria-current="page">Learn</a>
+      <a href="../">Playground</a>
+    </nav>
     <span class="crumb" id="crumb" hidden><span class="dot"></span><span class="txt"></span></span>
     <span class="sp"></span>
     <a class="lnk" href="#map" id="mapLink" hidden>Map</a>
-    <a class="lnk" href="../">Playground</a>
   </header>
 
   <!-- the map -->
