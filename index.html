@@ -13,6 +13,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.css">
 <link rel="stylesheet" href="css/app.css">
+<link rel="stylesheet" href="css/upload.css">
 <link rel="stylesheet" href="css/blocks.css" onerror="this.remove()">
 </head>
 <body>
@@ -20,8 +21,11 @@
   <header class="top">
     <a class="brand" href="./" aria-label="Blinks Playground home">
       <img class="logo" src="assets/blinks-logo.svg" alt="Blinks" width="73" height="32">
-      <span class="brand-name">Playground</span>
     </a>
+    <nav class="modes" aria-label="Learn or play">
+      <a href="learn/">Learn</a>
+      <a href="./" aria-current="page">Playground</a>
+    </nav>
     <button type="button" class="btn ghost" id="examplesBtn" aria-haspopup="true" aria-expanded="false">
       <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 5h12M4 10h12M4 15h8" /></svg>
       Examples

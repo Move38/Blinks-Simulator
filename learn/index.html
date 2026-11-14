@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Light the Board · Learn Blinks</title>
+<meta name="description" content="Learn to program Blinks, one level at a time, on simulated Blinks in your browser.">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.css">
+<link rel="stylesheet" href="../css/learn.css">
+<link rel="stylesheet" href="../css/upload.css">
+<link rel="stylesheet" href="../css/blocks.css" onerror="this.remove()">
+</head>
+<body>
+<div class="app">
+  <header class="bar">
+    <a class="brand" href="#map" aria-label="Light the Board map"><img class="logo" src="../assets/blinks-logo.svg" alt="Blinks" width="73" height="32"></a>
+    <nav class="modes" aria-label="Learn or play">
+      <a href="#map" aria-current="page">Learn</a>
+      <a href="../">Playground</a>
+    </nav>
+    <span class="crumb" id="crumb" hidden><span class="dot"></span><span class="txt"></span></span>
+    <span class="sp"></span>
+    <a class="lnk" href="#map" id="mapLink" hidden><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2.5 5.2 7.5 3l5 2.2 5-2.2v11.8l-5 2.2-5-2.2-5 2.2zM7.5 3v11.8M12.5 5.2V17"/></svg>Map</a>
+  </header>
+
+  <!-- the map -->
+  <main class="map-view" id="mapView">
+    <div class="map-area"><svg id="mapSvg" viewBox="0 0 840 560" preserveAspectRatio="xMidYMid meet" aria-label="Map of worlds and levels"></svg></div>
+    <aside class="side" id="mapSide"></aside>
+  </main>
+
+  <!-- a level -->
+  <main class="level-view" id="levelView" hidden>
+    <section class="mission" id="mission" aria-label="Mission"></section>
+    <section class="editor-pane">
+      <div class="ed-bar">
+        <div class="seg" id="viewSeg" role="tablist" aria-label="Editor view">
+          <button role="tab" data-view="blocks">Blocks</button>
+          <button role="tab" data-view="split">Both</button>
+          <button role="tab" data-view="code">Code</button>
+        </div>
+        <span class="run-chip" id="status"><i></i><span class="txt">Ready</span></span>
+        <span class="sp"></span>
+        <button class="link" id="resetCode" title="Put back the code this level started with">Start over</button>
+      </div>
+      <div class="ed-body" id="edBody">
+        <div id="blocks" class="view"></div>
+        <div id="code" class="view"></div>
+        <ol id="order" class="view order" hidden></ol>
+        <div class="shield" id="shield" hidden><span>Read only until you guess</span></div>
+      </div>
+    </section>
+    <section class="table-pane">
+      <div class="felt">
+        <canvas id="board" tabindex="0" aria-label="Your Blinks. Press the center of a Blink to use its button."></canvas>
+        <span class="lbl">Your table</span>
+        <div class="pip" id="pip" hidden>
+          <span class="pip-lbl">Goal</span>
+          <button class="eye" id="goalEye" type="button" aria-pressed="false" title="Hide the goal" aria-label="Hide the goal"></button>
+          <div class="pip-felt"><canvas id="goalBoard" aria-label="The Goal Blink. Press it to see what it does."></canvas></div>
+          <small>Press it to poke it</small>
+        </div>
+        <div class="table-btns">
+          <button class="tbtn" id="restart" title="Restart your Blinks" aria-label="Restart your Blinks"><svg viewBox="0 0 20 20"><path d="M4.5 10a5.5 5.5 0 1 0 1.8-4.1M4.5 3.5v3.3h3.3"/></svg></button>
+          <button class="tbtn" id="uploadBtn" title="Upload to a real Blink" aria-label="Upload to a real Blink"><svg viewBox="0 0 20 20"><path d="M10 12.8V3.6M6.4 7.2 10 3.6l3.6 3.6M4 12.4v3.1c0 .6.4 1 1 1h10c.6 0 1-.4 1-1v-3.1"/></svg></button>
+        </div>
+        <div class="locked-over" id="lockedOver" hidden>Run opens after you guess</div>
+        <div class="bin" id="bin" hidden><svg viewBox="0 0 24 24"><path d="M5 7h14M10 4h4M7 7l1 13h8l1-13" /></svg></div>
+      </div>
+      <div class="console">
+        <div class="console-head">Console</div>
+        <ul class="console-body" id="consoleBody"></ul>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="scrim" id="modal" hidden><div class="modal" id="modalBody" role="dialog" aria-modal="true"></div></div>
+<div class="toast" id="toast" hidden></div>
+<dialog class="upload" id="uploadDialog" aria-label="Upload to a Blink"></dialog>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/clike/clike.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closebrackets.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/selection/active-line.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/comment/comment.min.js"></script>
+<script type="module" src="../js/learn/main.js"></script>
+</body>
+</html>
