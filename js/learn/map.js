@@ -16,6 +16,18 @@ const S = 19, R = S * Math.sqrt(3);
 const petal = i => { const a = Math.PI / 180 * (-90 + 60 * i); return [Math.cos(a) * R, Math.sin(a) * R]; };
 const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
 
+// A five-point star of radius r, its inner corners not too deep (half the radius), rounded.
+// outline: a dark ring around it, so it shows on a lit hex.
+function star(cx, cy, r, fill, outline = false) {
+  const p = [];
+  for (let i = 0; i < 10; i++) {
+    const a = -Math.PI / 2 + i * Math.PI / 5, k = i % 2 ? r * 0.5 : r;
+    p.push((cx + k * Math.cos(a)).toFixed(1) + ',' + (cy + k * Math.sin(a)).toFixed(1));
+  }
+  const ring = outline ? ` stroke="#14111b" stroke-width="${(r * 0.55).toFixed(1)}" paint-order="stroke"` : ` stroke="${fill}" stroke-width="${(r * 0.12).toFixed(1)}"`;
+  return `<polygon points="${p.join(' ')}" fill="${fill}" stroke-linejoin="round"${ring}/>`;
+}
+
 export function drawMap(svg, { state, worlds, selected, onLevel, onWorld }) {
   const current = nextLevel(state, worlds);
   let g = `<path d="M60,110 L${POS.map(p => p.join(',')).join(' L')}" fill="none" stroke="#30283f" stroke-width="3" stroke-dasharray="2 9" stroke-linecap="round"/>`;
@@ -38,8 +50,9 @@ export function drawMap(svg, { state, worlds, selected, onLevel, onWorld }) {
       else if (cur) g += `<path d="${rhex(cx, cy, S * 0.94)}" fill="#2a2337" stroke="#fff" stroke-width="2.5" class="pulse"/><circle cx="${cx}" cy="${cy}" r="3.5" fill="#fff"/>`;
       else if (st === 'open') g += `<path d="${rhex(cx, cy, S * 0.9)}" fill="#1d1827" stroke="${w.color}" stroke-width="1.6" stroke-dasharray="4 3"/>`;
       else g += `<path d="${rhex(cx, cy, S * 0.9)}" fill="#221c2d" stroke="#3a3149" stroke-width="1.2"/>`;
-      if (i === 6 && st !== 'done' && !cur) g += `<text x="${cx}" y="${cy + 4.5}" text-anchor="middle" font-size="13" fill="${real && st !== 'locked' ? w.color : '#4a405e'}">★</text>`;
-      if (level && state.levels[level.id]?.star) g += `<text x="${cx + S * 0.62}" y="${cy - S * 0.42}" text-anchor="middle" font-size="10" fill="#facc15">★</text>`;
+      if (i === 6 && st !== 'done' && !cur) g += star(cx, cy, 6, real && st !== 'locked' ? w.color : '#4a405e');
+      // a twist's star sits on the hex's corner, outlined so it shows on the lit hex
+      if (level && state.levels[level.id]?.star) g += star(cx + S * 0.62, cy - S * 0.55, 5, '#facc15', true);
       g += '</g>';
     }
     g += `<text x="${x}" y="${y + 74}" text-anchor="middle" class="m-num" fill="${real ? w.color : '#5c5470'}">WORLD ${w.n}</text>`;
