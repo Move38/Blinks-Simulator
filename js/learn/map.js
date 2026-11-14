@@ -61,7 +61,7 @@ export function drawMap(svg, { state, worlds, selected, onLevel, onWorld }) {
   // a twist's star sits on its hex's corner, in a gap cut out of the hexes under it, so the
   // map's own background shows around it
   if (twists.length) {
-    const cut = twists.map(([sx, sy]) => star(sx, sy, 5, '#000', 5 * 0.12 + 4)).join('');
+    const cut = twists.map(([sx, sy]) => star(sx, sy, 5, '#000', 5 * 0.12 + 2)).join('');
     g = `<defs><mask id="twistCut" maskUnits="userSpaceOnUse" x="0" y="0" width="840" height="560"><rect width="840" height="560" fill="#fff"/>${cut}</mask></defs>`
       + `<g mask="url(#twistCut)">${g}</g><g pointer-events="none">${twists.map(([sx, sy]) => star(sx, sy, 5, '#facc15')).join('')}</g>`;
   }
