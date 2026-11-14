@@ -29,6 +29,23 @@ npm run vendor      # re-copy avr8js into js/hardware/vendor
 
 The tests that need nothing installed are in [test/hardware.test.mjs](../test/hardware.test.mjs), with the rest of the playground's.
 
+## Uploading to a real Blink
+
+**Upload to a Blink…** in the menu writes the sketch to a real Blink through a USBtinyISP programmer, over WebUSB ([js/hardware/usbtiny.js](../js/hardware/usbtiny.js)). It does what the Arduino IDE's Upload does for a Blink, `avrdude -B 5 -cusbtiny` with the game and the BIOS:
+
+1. Enter programming mode at a 200 kHz SPI clock, and read the signature to tell a 168PB from a 328PB.
+2. Build the sketch for that chip, whether it's one file or a folder of them. **Blink** picks `blink` or `blink328`. **Blink MAX** and **Blink NFC**, under "Beta boards", build for `blink328max` and `blink328nfc`, and refuse a 168PB. A Custom Blinklib sketch builds for the 168PB only, with Custom Blinklib's own BIOS, as its board package does.
+3. Check the fuses against boards.txt. If they differ (a fresh chip doesn't jump to the BIOS), it asks before setting them, as Burn Bootloader does.
+4. Erase the chip, write each 128-byte page that holds anything, and read the pages back to check them.
+
+It needs Chrome, Edge or Opera, on https or localhost. What the computer needs:
+
+- **macOS, ChromeOS, Android**: nothing.
+- **Linux**: the same udev rule avrdude needs. The dialog shows it.
+- **Windows**: Chrome can only open a device that uses Windows' WinUSB driver. A USBtiny's driver installer sets up libusb-win32, which the Arduino IDE's avrdude needs instead. So the programmer is switched to WinUSB with [Zadig](https://zadig.akeo.ie) to upload from the browser, and back to libusb-win32 to upload from the IDE. The dialog shows the steps, and opens them when Windows won't give the browser the programmer. Programmer firmware that told Windows to use WinUSB (Microsoft OS descriptors) would make this step unnecessary, but the IDE's avrdude would then need a build that speaks WinUSB, like [mariusgreuel/avrdude](https://github.com/mariusgreuel/avrdude).
+
+[test/usbtiny.test.mjs](../test/usbtiny.test.mjs) runs it against a pretend programmer and chip ([test/fake-usbtiny.mjs](../test/fake-usbtiny.mjs)), including the ways Windows and Linux refuse it.
+
 ## Chips and BIOS versions
 
 Blinks have shipped on two chips. The newer BIOS in SDK 1.3.0 ([bigjosh/Move38-Arduino-Platform](https://github.com/bigjosh/Move38-Arduino-Platform)) supports both, and the spike runs all four of its boards:
@@ -108,7 +125,7 @@ Sharing is the BIOS's own bootloader: SEED, PULL and PUSH packets over IR, with 
 
 Real Blinks games are built with avr-gcc 7.3.0, so the browser uses the same compiler, built for WebAssembly, rather than clang. A browser can't run the `avr-gcc` driver, because it starts other programs. So [build.js](../js/hardware/build.js) does the driver's job itself:
 
-1. Run `cc1plus` on blinklib and the sketch. These are the same flags the Move38 platform uses, minus LTO, plus `-fno-rtti` and the defines the device specs would add.
+1. Run `cc1plus` on blinklib and the sketch. These are the same flags the Move38 platform uses, minus LTO, plus `-fno-rtti` and the defines the device specs would add. A sketch folder is built as the IDE builds it ([sketch.js](../js/hardware/sketch.js)): its `.ino` tabs joined into one file with prototypes, then each `.cpp` file in its folder and under `src/` on its own. `.c` files are refused, since there's no C compiler here.
 2. Run `cc1plus -E -lang-asm` on `startup.S`.
 3. Run `as`, then `ld` with the SDK's link script and `-nostartfiles` layout, then `objcopy` to the built-in address.
 4. Lay the BlinkBIOS over the result.
@@ -129,6 +146,18 @@ Every path is on a virtual file system, so the same steps run with either set of
 | Time per edit | Compiling the sketch, then `as`, `ld` and `objcopy`, with blinklib compiled ahead of time: **36 ms median in Node, about 40 ms in Chrome**. |
 | Sketch preprocessing | [sketch.js](../js/hardware/sketch.js) adds `#include <Arduino.h>` and a prototype for each function, as the IDE does. All 46 build to exactly the same game as with arduino-cli's preprocessing. |
 
+### Custom Blinklib
+
+Bruno Albuquerque's [Custom Blinklib](https://github.com/brunoga/blinklib) is its own Arduino platform (`blinklib:avr` 1.4.3): its own blinklib, link script and BIOS (Move38's 1.2.0), C++17, and the 168PB only. Its `platform.local.txt` puts the sketch's `config/` folder on the include path for blinklib too, so a game's `config/blinklib_config.h` changes blinklib itself. The toolchain ships Custom Blinklib's blinklib compiled without a config, and its sources: a game with a config gets blinklib compiled with it, kept for as long as the page is open.
+
+Its BIOS spends ten seconds at power-up looking for a game to download, spinning blue, before it starts the game. The emulator does the same. Hardware-exact mode doesn't run Custom Blinklib games yet, because its debug views only know where Move38's blinklib keeps its state; uploading them works.
+
+### Games that only fit with LTO
+
+The IDE builds Blinks games with link-time optimization, which this toolchain can't do: the WebAssembly package has no `lto1`, and `ld` couldn't load the LTO plugin anyway. Some games only fit with it. Hexxagon, a Custom Blinklib game of 25 files, is 5596 bytes from the IDE and 6580 built file by file, over the 5888-byte limit. So when a game doesn't fit, build.js builds it again as one unit: every file of the sketch and of blinklib `#include`d into one, with `-fwhole-program`. That shrinks Hexxagon to 5632 bytes (5670 with WebAssembly's codegen), and it runs as the IDE's build does. Without `-fwhole-program`, one unit is still 492 bytes over. Sketches that fit build file by file, as before, which keeps errors pointing at the right file and builds fast.
+
+Byte-for-byte, the WebAssembly cc1plus isn't always the IDE's: in Hexxagon, 2 of 25 files compile with different register choices (the IDE's is Atmel's patched gcc 7.3.0, and gcc 7 sorts with the host's `qsort`). The code is equivalent.
+
 ### What the browser downloads
 
 Only when hardware-exact mode is turned on, and from then on from the browser's Cache Storage, keyed by the toolchain's hash:
@@ -138,12 +167,12 @@ Only when hardware-exact mode is turned on, and from then on from the browser's 
 | `cc1plus.wasm` | 4.3 MB |
 | `avr-as`, `avr-ld`, `avr-objcopy` | 1.0 MB |
 | their Emscripten glue (`.mjs`) | 0.6 MB, less once the server compresses it |
-| `blinks.pack.gz`: headers, libraries (debug info stripped), link scripts, BIOS images, and blinklib compiled for both chips | 0.3 MB |
+| `blinks.pack.gz`: headers, libraries (debug info stripped), link scripts, BIOS images, both blinklibs' sources, and them compiled for each chip they build for | 0.4 MB |
 
 The `.wasm` files are stored gzipped and unpacked in the worker with `DecompressionStream`, so the download is the same on any static host, GitHub Pages included. The avr8js engine itself adds about 60 KB, also loaded on demand.
 
 - **Licensing.** The tools are GPL v3; [toolchain/NOTICE.md](../js/hardware/toolchain/NOTICE.md) says where their source is. Building them ourselves in CI, from the package's approach, would remove the dependence on someone else's binaries.
-- **LTO.** The WebAssembly build has no `lto1`, so games are compiled without LTO. That costs code size: SpeedRacer comes within 4 bytes of the limit, so some games may not fit without it. Adding `lto1` to the WebAssembly build, or compiling the sketch and blinklib as one file, would close that gap.
+- **LTO.** The WebAssembly build has no `lto1`, so games are compiled without LTO, and one that doesn't fit is built as one unit instead (above). That gets within a few dozen bytes of LTO; a game that fits only by those bytes would need `lto1` added to the WebAssembly build.
 
 ## Rebuilding the fixtures
 

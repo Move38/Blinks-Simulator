@@ -71,6 +71,7 @@ export class Blink {
       inValue: 0, outValue: 0, expireTime: 0, sendTime: 0, prevValue: 0,
       inDgLen: 0, outDgLen: 0, outDg: new Uint8Array(DATAGRAM_LEN), rx: null, busyUntil: 0,
       lastDg: null,     // last datagram sent, for the comms view (its .result says what happened to it)
+      outSeq: 0, ackSeq: 0, connected: false,   // Custom Blinklib: datagram sequence numbers (3 bits)
     }));
     this.btn = { down: 0, bitflags: 0, clickcount: 0, debounce: 0, clickWindow: 0, pending: 0, longReg: 0, pressCountup: 0 };
     this.snapDown = 0; this.snapFlags = 0; this.clickCount = 0;
@@ -90,6 +91,9 @@ export class Blink {
     this.loops = 0;
     this.setupDone = false;
     if (program !== undefined) this.program = program;
+    // which blinklib the sketch is built against (see compiler/sdk.js): its IR protocol and settings
+    this.sdk = (this.program && this.program.sdk) || { id: 'move38' };
+    this.bga = this.sdk.id === 'bga';
     this.inst = null;
     if (this.program) {
       try {
@@ -182,7 +186,7 @@ export class Blink {
     if (this.millis < this.skipUntil) return;   // still inside randomize()
 
     const b = this.btn;
-    if ((b.bitflags & F.SEC3) && this.isAlone()) {
+    if ((b.bitflags & F.SEC3) && this.isAlone() && !this.sterile()) {
       this.savedPixels = this.display.slice();
       this.mode = 'seedspin';
       this.spinFace = 0;
@@ -224,8 +228,12 @@ export class Blink {
     }
   }
 
+  // Custom Blinklib's sterileFlag: a game can stop itself from being shared
+  sterile() { return this.bga && this.program.sterileAddr !== undefined && this.mem[this.program.sterileAddr] !== 0; }
+
   // ---------------- IR ----------------
   rxFaces() {
+    if (this.bga) return this.rxFacesBga();
     for (let f = 0; f < 6; f++) {
       const face = this.faces[f];
       const p = face.rx;
@@ -249,6 +257,7 @@ export class Blink {
   }
 
   txFaces() {
+    if (this.bga) return this.txFacesBga();
     for (let f = 0; f < 6; f++) {
       const face = this.faces[f];
       if (face.sendTime > this.now || this.world.time < face.busyUntil) continue;   // a packet is on its way
@@ -263,6 +272,60 @@ export class Blink {
       this.outbox.push(f, pkt);
       face.sendTime = this.now + BIOS.TX_PROBE_MS + f;
       face.outDgLen = 0;
+    }
+  }
+
+  // Custom Blinklib (blinklib_ir.cpp): every packet carries a header byte (a 3-bit datagram
+  // sequence number, the sequence number being acknowledged, and the viral "button pressed" bit),
+  // the face value, and a datagram if one is waiting. A datagram is resent with each packet until
+  // the neighbor acknowledges it; a neighbor that hasn't read its last one ignores the new one, so
+  // the sender keeps trying instead of losing it.
+  rxFacesBga() {
+    const cfg = this.sdk;
+    for (let f = 0; f < 6; f++) {
+      const face = this.faces[f];
+      const p = face.rx;
+      if (p) {
+        face.rx = null;
+        if (p.k === 'sleep') { this.warmSleep(true); return; }
+        if (cfg.trackConnection && !face.connected) { face.connected = true; this.viralPostpone(); }
+        face.expireTime = this.now + cfg.expireMs;
+        face.sendTime = 0;           // ping-pong: answer right away
+        if (p.k === 'bga') {
+          face.inValue = p.v;
+          if (p.viral) this.viralPostpone();
+          if (cfg.datagrams) {
+            if (p.ack === face.outSeq) face.outDgLen = 0;   // our datagram arrived
+            if (p.data && p.seq !== face.ackSeq) {
+              if (face.inDgLen === 0) {
+                face.ackSeq = p.seq;
+                face.inDgLen = p.data.length;
+                this.mem.set(p.data, MEM.DATAGRAM_IN + f * DATAGRAM_LEN);
+                if (p.first) p.first.result = 'ok';
+              }
+            }
+          }
+        }
+      }
+      if (cfg.trackConnection && face.connected && face.expireTime < this.now) { face.connected = false; this.viralPostpone(); }
+    }
+  }
+
+  txFacesBga() {
+    const cfg = this.sdk;
+    for (let f = 0; f < 6; f++) {
+      const face = this.faces[f];
+      if (face.sendTime > this.now || this.world.time < face.busyUntil) continue;   // a packet is on its way
+      const pkt = { k: 'bga', seq: face.outSeq, ack: face.ackSeq, v: face.outValue, size: cfg.value.size + (cfg.checksum ? 1 : 0), data: null, viral: false };
+      if (face.outDgLen) {
+        pkt.data = face.outDg.slice(0, face.outDgLen);
+        // the comms view shows a datagram once, when first sent, however often it's resent
+        if (!face.lastDg || face.lastDg.seq !== face.outSeq) face.lastDg = { data: pkt.data, seq: face.outSeq, result: null };
+        pkt.first = face.lastDg;
+      }
+      if (this.viralFlags & (1 << f)) { pkt.viral = true; this.viralFlags &= ~(1 << f); }
+      this.outbox.push(f, pkt);
+      face.sendTime = this.now + cfg.probeMs + f;
     }
   }
 
@@ -376,11 +439,11 @@ export class Blink {
   }
 
   setValueSentOnFace(v, face) {
-    if (v > 63) v = 63;
+    if (v > 63 && !this.bga) v = 63;
     if (this.checkFace(face, 'setValueSentOnFace')) this.faces[face].outValue = v;
   }
   setValueSentOnAllFaces(v) {
-    if (v > 63) v = 63;
+    if (v > 63 && !this.bga) v = 63;
     for (const f of this.faces) f.outValue = v;
   }
   getLastValueReceivedOnFace(face) { return this.checkFace(face, 'getLastValueReceivedOnFace') ? this.faces[face].inValue : 0; }
@@ -405,12 +468,28 @@ export class Blink {
   getDatagramOnFace(face) { return MEM.DATAGRAM_IN + Math.min(face, 5) * DATAGRAM_LEN; }
   markDatagramReadOnFace(face) { if (this.checkFace(face, 'markDatagramReadOnFace')) this.faces[face].inDgLen = 0; }
   sendDatagramOnFace(addr, len, face) {
+    if (this.bga) return this.sendDatagramBga(addr, len, face);
     if (len > DATAGRAM_LEN) { this.world.warn(this, `sendDatagramOnFace: ${len} bytes is too long (the limit is ${DATAGRAM_LEN}), so nothing was sent. A real Blink ignores it too.`); return; }
     if (!this.checkFace(face, 'sendDatagramOnFace')) return;
     const f = this.faces[face];
     f.outDgLen = len;
     f.outDg.set(this.mem.subarray(addr, addr + len));
   }
+
+  // Custom Blinklib: false if it's too long or the last one hasn't been acknowledged yet
+  sendDatagramBga(addr, len, face) {
+    if (len > this.sdk.datagramLen) return 0;
+    if (!this.checkFace(face, 'sendDatagramOnFace')) return 0;
+    const f = this.faces[face];
+    if (f.outDgLen) return 0;
+    f.outSeq = (f.outSeq + 1) & 7;
+    f.outDgLen = len;
+    f.outDg.set(this.mem.subarray(addr, addr + len));
+    return 1;
+  }
+  isDatagramPendingOnFace(face) { return this.checkFace(face, 'isDatagramPendingOnFace') && this.faces[face].outDgLen ? 1 : 0; }
+  isDatagramPendingOnAnyFace() { return this.faces.some(f => f.outDgLen) ? 1 : 0; }
+  resetPendingDatagramOnFace(face) { if (this.checkFace(face, 'resetPendingDatagramOnFace')) this.faces[face].outDgLen = 0; }
 
   // Timer (Timer.cpp): the expire time lives in the sketch's RAM
   timerExpired(a) { return this.now > this.dv.getUint32(a, true) ? 1 : 0; }

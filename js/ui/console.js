@@ -27,10 +27,11 @@ export class Console {
   }
 
   // kind: 'out' | 'err' | 'warn' | 'info'
-  add(kind, text, { who = null, line = 0 } = {}) {
+  // `file`: in a sketch of several files, the file `line` is in
+  add(kind, text, { who = null, line = 0, file = null } = {}) {
     if (this.emptyEl) { this.emptyEl.remove(); this.emptyEl = null; }
     const atBottom = this.list.scrollHeight - this.list.scrollTop - this.list.clientHeight < 24;
-    const key = kind + '|' + text + '|' + line;
+    const key = kind + '|' + text + '|' + file + '|' + line;
     if (this.last && this.last.key === key) {
       // same message again (from any Blink): bump the counter
       this.last.n++;
@@ -50,8 +51,8 @@ export class Console {
     if (line) {
       const j = document.createElement('button');
       j.className = 'jump';
-      j.textContent = `line ${line}`;
-      j.addEventListener('click', () => this.onJump(line));
+      j.textContent = file ? `${file} line ${line}` : `line ${line}`;
+      j.addEventListener('click', () => this.onJump(line, file));
       msg.append(' (', j, ')');
     }
     const times = document.createElement('span');

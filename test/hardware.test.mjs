@@ -60,7 +60,7 @@ test('sketch prototypes let a function be called before it is defined', () => {
 test('avr-gcc errors come back on the sketch\'s own lines', async () => {
   const r = await build('void setup() {\n}\n\nvoid loop() {\n  setColor(REDD);\n}\n');
   assert.equal(r.ok, false);
-  assert.deepEqual(r.diagnostics, [{ line: 5, message: "'REDD' was not declared in this scope", severity: 'err' }]);
+  assert.deepEqual(r.diagnostics, [{ file: 'sketch.ino', line: 5, message: "'REDD' was not declared in this scope", severity: 'err' }]);
 });
 
 test('a game too big for a Blink is an error', async () => {

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseGitHub, sketchesIn, loadSketch } from '../js/github.js';
-import { compile } from '../js/compiler/index.js';
+import { compile, compileSketch } from '../js/compiler/index.js';
 
 test('GitHub links: repos, folders, files and raw links', () => {
   assert.deepEqual(parseGitHub('owner/repo'), { owner: 'owner', repo: 'repo', ref: null, path: '' });
@@ -39,6 +39,39 @@ test('a sketch folder is combined like Arduino builds it: main, other tabs, loca
     assert.equal(s.code.match(/Color pick\(\)/g).length, 1);
     assert.ok(s.code.indexOf('void setup()') < s.code.indexOf('void tick()'));
     const c = compile(s.code);
+    assert.ok(c.ok, c.errors && c.errors.map(e => e.message).join('; '));
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test('a sketch with .cpp files and a submodule opens as its files', async () => {
+  const repo = {
+    'Hex/Hex.ino': '#include "game.h"\nvoid setup() {}\nvoid loop() { game::Run(); }\n',
+    'Hex/game.h': '#pragma once\nnamespace game { void Run(); }\n',
+    'Hex/game.cpp': '#include "game.h"\n#include "src/lib/lib.h"\nnamespace game { void Run() { setColor(lib::Pick()); } }\n',
+    'Hex/config/blinklib_config.h': '#define BGA_CUSTOM_BLINKLIB_IR_DATAGRAM_LEN 4\n',
+    'Hex/examples/Demo/Demo.ino': 'void setup() {}\nvoid loop() {}\n',
+    'Hex/README.md': 'hi',
+    '.gitmodules': '[submodule "Hex/src/lib"]\n\tpath = Hex/src/lib\n\turl = https://github.com/someone/blinks-lib.git\n',
+  };
+  const sub = { 'lib.h': '#pragma once\n#include <blinklib.h>\nnamespace lib { Color Pick(); }\n', 'lib.cpp': '#include "lib.h"\nnamespace lib { Color Pick() { return GREEN; } }\n', 'example/x.ino': '' };
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async url => {
+    url = String(url);
+    if (url.includes('api.github.com/repos/someone/blinks-lib/git/trees/abc123')) return Response.json({ tree: Object.keys(sub).map(path => ({ path, type: 'blob' })) });
+    const subRaw = /someone\/blinks-lib\/abc123\/(.+)$/.exec(url);
+    if (subRaw) return new Response(sub[decodeURIComponent(subRaw[1])]);
+    const path = decodeURIComponent(url.split('/main/')[1] || '');
+    return path in repo ? new Response(repo[path]) : new Response('', { status: 404 });
+  };
+  try {
+    const paths = Object.keys(repo);
+    const s = await loadSketch({ owner: 'o', repo: 'r', ref: 'main' }, 'Hex/Hex.ino', paths, [{ path: 'Hex/src/lib', sha: 'abc123' }]);
+    assert.equal(s.main, 'Hex.ino');
+    assert.deepEqual(Object.keys(s.files).sort(), ['Hex.ino', 'config/blinklib_config.h', 'game.cpp', 'game.h', 'src/lib/lib.cpp', 'src/lib/lib.h']);
+    assert.deepEqual(s.submodules, ['src/lib (someone/blinks-lib)']);
+    const c = compileSketch({ files: s.files, main: s.main, sdk: 'bga' });
     assert.ok(c.ok, c.errors && c.errors.map(e => e.message).join('; '));
   } finally {
     globalThis.fetch = realFetch;

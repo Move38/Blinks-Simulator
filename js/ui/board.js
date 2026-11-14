@@ -28,7 +28,8 @@ export class Board {
     this.view = { S: 48, OX: 0, OY: 0 };
     this.target = { S: 48, OX: 0, OY: 0 };
     this.debug = 'tooltip';     // 'none' | 'tooltip' | 'comms'
-    this.bits = false;          // face values as six dots (bits) instead of numbers
+    this.bits = false;          // face values as dots (bits) instead of numbers
+    this.valueBits = 6;         // bits in a face value: 6 with Move38's blinklib, 8 with Custom Blinklib
     this.bubbles = [];          // datagrams in flight, for the comms view
     this.seenDg = new WeakMap(); // face -> last datagram we started a bubble for
     this.presses = new Map();
@@ -362,15 +363,16 @@ export class Board {
 
   // Comms view: the value each face is sending, on the rim of that face. Chips sit just inside
   // the rim so the values of two touching Blinks don't overlap. Blue means a neighbor hears it.
-  // Where each face's value chip sits on Blink b: its center, size and turn. As bits, six dots
-  // (the highest bit first, in two threes) lie along their face, turned so they never read upside
+  // Where each face's value chip sits on Blink b: its center, size and turn. As bits, its dots
+  // (the highest bit first, in two halves) lie along their face, turned so they never read upside
   // down; a number stays upright.
   commsChips(b) {
     const c = this.ctx, [x, y] = this.pos(b), S = this.view.S;
     const a0 = this.angle(b);
     const h = Math.max(10, S * 0.24);
-    const r = Math.max(1.2, h * 0.14), step = r * 2.7, gap = r * 1.4;
-    const dotsW = 5 * step + gap;
+    const n = this.valueBits;
+    const r = Math.max(1.2, h * (n > 8 ? 0.08 : n > 6 ? 0.12 : 0.14)), step = r * 2.7, gap = r * 1.4;
+    const dotsW = (n - 1) * step + gap;
     c.font = `600 ${Math.max(7, Math.round(S * 0.165))}px "JetBrains Mono", monospace`;
     const chips = [];
     for (let f = 0; f < 6; f++) {
@@ -418,10 +420,11 @@ export class Board {
         c.fillStyle = linked ? '#fff' : 'rgba(255,255,255,.72)';
         c.fillText(String(v), 0, 0.5);
       } else {
-        for (let i = 0; i < 6; i++) {
-          const on = (v >> (5 - i)) & 1;
+        const n = this.valueBits;
+        for (let i = 0; i < n; i++) {
+          const on = (v >> (n - 1 - i)) & 1;
           c.beginPath();
-          c.arc(-dotsW / 2 + i * step + (i > 2 ? gap : 0), 0, r, 0, TAU);
+          c.arc(-dotsW / 2 + i * step + (i >= n / 2 ? gap : 0), 0, r, 0, TAU);
           // a 0 sinks into the chip (darker than the blue), a 1 is lit
           c.fillStyle = on ? (linked ? '#fff' : 'rgba(255,255,255,.85)') : (linked ? 'rgba(16,32,96,.5)' : 'rgba(255,255,255,.14)');
           c.fill();

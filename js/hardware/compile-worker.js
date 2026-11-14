@@ -4,12 +4,12 @@
 //   → { type: 'load', base }             fetch the toolchain from `base` (js/hardware/toolchain/)
 //   ← { type: 'progress', loaded, total } while it downloads
 //   ← { type: 'loaded' } or { type: 'failed', message }
-//   → { type: 'build', id, code, board }
+//   → { type: 'build', id, code, board, lib }   code: an .ino's text, or a sketch folder { files, main }
 //   ← { type: 'built', id, ok, ... }      see build() below
 
 import { createTools, decodePack } from './tools.js';
-import { buildSketch, withBios, BOARDS } from './build.js';
-import { inoToCpp, parseDiagnostics } from './sketch.js';
+import { buildSketch, withBios, target } from './build.js';
+import { sketchUnits, parseDiagnostics } from './sketch.js';
 import { readElf, blinklibSymbols, memoryUse } from './elf.js';
 
 const TOOLS = { cc1plus: 'cc1plus', as: 'avr-as', ld: 'avr-ld', objcopy: 'avr-objcopy' };
@@ -71,21 +71,25 @@ async function load(base) {
 }
 
 // Compile a sketch. On success: the flash image (game + BIOS), what it uses of
-// flash and RAM, and where blinklib's variables are. On failure: gcc's messages.
-async function build({ id, code, board }) {
+// flash and RAM, and where blinklib's variables are. On failure: gcc's messages,
+// each with the sketch file it's about.
+async function build({ id, code, board = 'blink', lib = 'move38' }) {
   const t0 = performance.now();
-  for (const path of [...tools.files.keys()]) if (path.startsWith('/build/')) tools.files.delete(path);
-  const r = await buildSketch(tools, inoToCpp(code), board, { prebuiltCore: true });
+  const { files, main } = typeof code === 'string' ? { files: { 'sketch.ino': code }, main: 'sketch.ino' } : code;
+  const b = target(board, lib);
+  const units = sketchUnits(files, main);
+  const r = await buildSketch(tools, units, board, { prebuiltCore: true, lib });
   const ms = performance.now() - t0;
-  if (!r.ok) return { type: 'built', id, ok: false, diagnostics: parseDiagnostics(r.stderr), stderr: r.stderr, ms };
+  if (!r.ok) return { type: 'built', id, ok: false, diagnostics: parseDiagnostics(r.stderr, units.order), stderr: r.stderr, ms };
   const elf = readElf(r.elf);
-  const bios = new TextDecoder().decode(tools.read(`/bios/${BOARDS[board].bios}`));
+  const bios = new TextDecoder().decode(tools.read(`/bios/${b.bios}`));
   const flash = withBios(r.gameHex, bios, board);
   const use = memoryUse(elf);
   return {
-    type: 'built', id, ok: true, ms, flash, chip: BOARDS[board].mcu,
-    symbols: blinklibSymbols(elf),
-    flashUsed: use.flash, flashBudget: BOARDS[board].maxGame, ramUsed: use.ram, ramBudget: BOARDS[board].ram,
+    type: 'built', id, ok: true, ms, flash, chip: b.mcu, whole: r.whole,
+    // blinklib's variables, for the debug views: Move38's layout only
+    symbols: lib === 'move38' ? blinklibSymbols(elf) : { faces: null, now: null },
+    flashUsed: use.flash, flashBudget: b.maxGame, ramUsed: use.ram, ramBudget: b.ram,
   };
 }
 

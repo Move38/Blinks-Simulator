@@ -3,6 +3,7 @@
 //   const tc = new Toolchain();
 //   await tc.load(fraction => …);         // downloads about 6 MB the first time, then comes from the cache
 //   const r = await tc.build(code);       // { ok, flash, chip, symbols, flashUsed, … } or { ok: false, diagnostics }
+//   tc.build({ files, main }, 'blink328', 'bga')   // a sketch folder, for a board, on a blinklib (build.js)
 
 const BASE = new URL('./toolchain/', import.meta.url).href;
 
@@ -31,12 +32,12 @@ export class Toolchain {
   }
 
   // Builds run one after another, in order
-  async build(code, board = 'blink') {
+  async build(code, board = 'blink', lib = 'move38') {
     await this.load();
     const id = this.nextId++;
     return new Promise((resolve) => {
       this.pending.set(id, resolve);
-      this.worker.postMessage({ type: 'build', id, code, board });
+      this.worker.postMessage({ type: 'build', id, code, board, lib });
     });
   }
 }

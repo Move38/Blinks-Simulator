@@ -6,7 +6,7 @@
  * so macros like min(), abs() and FOREACH_FACE() expand exactly as they do on hardware.
  */
 
-import { tokenize, CompileError, tokenText } from './lexer.js';
+import { tokenize, CompileError, tokenText, LINE_FILE } from './lexer.js';
 
 export const PRELUDE = `
 #define __AVR__ 1
@@ -112,6 +112,25 @@ const SYSTEM_HEADERS = new Set([
 ]);
 
 let PRELUDE_DEFS = null;
+const SDK_DEFS = new Map();   // extra prelude text (an SDK's macros) -> the macros with it
+
+// Tokens of a sketch file, with its lines tagged by file (see LINE_FILE)
+export function lexFile(text, id) {
+  const lex = tokenize(text);
+  if (id) for (const t of lex.tokens) t.line += id * LINE_FILE;
+  return lex;
+}
+
+// a/b/../c.h -> a/c.h
+function normalize(path) {
+  const out = [];
+  for (const part of path.split('/')) {
+    if (part === '.' || part === '') continue;
+    if (part === '..') out.pop(); else out.push(part);
+  }
+  return out.join('/');
+}
+const dirOf = path => (path.includes('/') ? path.slice(0, path.lastIndexOf('/') + 1) : '');
 
 class Macro {
   constructor(name, params, body, variadic) {
@@ -131,25 +150,70 @@ function splitLines(tokens) {
   return lines;
 }
 
-export function preprocess(src, opts = {}) {
+function preludeDefs(extra) {
   if (!PRELUDE_DEFS) {
     PRELUDE_DEFS = new Map();
-    const pre = new Preprocessor(PRELUDE_DEFS, opts);
-    pre.run(tokenize(PRELUDE).tokens);
+    new Preprocessor(PRELUDE_DEFS, {}).run(tokenize(PRELUDE).tokens);
   }
-  const defs = new Map(PRELUDE_DEFS);
-  const lex = tokenize(src);
-  const pp = new Preprocessor(defs, opts);
+  if (!extra) return PRELUDE_DEFS;
+  if (!SDK_DEFS.has(extra)) {
+    const defs = new Map(PRELUDE_DEFS);
+    const pp = new Preprocessor(defs, {});
+    pp.prelude = true;
+    pp.run(tokenize(extra).tokens);
+    SDK_DEFS.set(extra, defs);
+  }
+  return SDK_DEFS.get(extra);
+}
+
+export function preprocess(src, opts = {}) {
+  return preprocessTokens(tokenize(src), opts);
+}
+
+// `lex` from tokenize() or lexFile(). opts:
+//   prelude    extra built-in macros (an SDK's)
+//   files      legacy single-file mode: { 'name.h': text } headers to inline
+//   sketch     a sketch of several files: { files: { path: text }, ids: Map(path -> file number),
+//              includeDirs: ['config'], headers: { 'blinklib.h': text } built-in header text,
+//              once: Set() of files with #pragma once }, with `file` the path being read
+export function preprocessTokens(lex, opts = {}, file = '') {
+  const defs = new Map(preludeDefs(opts.prelude));
+  const pp = new Preprocessor(defs, opts, file);
   const out = pp.run(lex.tokens);
-  return { tokens: out, comments: lex.comments, defines: pp.userDefines, warnings: pp.warnings };
+  return { tokens: out, comments: lex.comments, defines: pp.userDefines, warnings: pp.warnings, defs };
+}
+
+// The number a macro stands for (as #if would read it), or null if it isn't one
+export function macroValue(defs, name) {
+  try { const v = new Preprocessor(defs, {}).evalExpr([{ t: 'id', v: name, line: 0 }], 0); return typeof v === 'number' && Number.isFinite(v) ? v : null; }
+  catch (e) { return null; }
 }
 
 class Preprocessor {
-  constructor(defs, opts) {
+  constructor(defs, opts, file = '') {
     this.defs = defs;
     this.opts = opts;
+    this.file = file;
     this.userDefines = [];
     this.warnings = [];
+  }
+
+  // The sketch file an #include means, or null
+  resolve(name, angle) {
+    const sk = this.opts.sketch;
+    if (!sk) return null;
+    const tries = angle ? [] : [dirOf(this.file) + name, name];
+    for (const d of sk.includeDirs || []) tries.push(d.replace(/\/?$/, '/') + name);
+    for (const t of tries) { const p = normalize(t); if (p in sk.files) return p; }
+    return null;
+  }
+
+  hasInclude(name, angle) {
+    if (SYSTEM_HEADERS.has(name) || name.startsWith('avr/') || name.startsWith('util/')) return true;
+    const sk = this.opts.sketch;
+    if (sk && sk.headers && name in sk.headers) return true;
+    if (sk) return this.resolve(name, angle) !== null;
+    return !!(this.opts.files && name in this.opts.files);
   }
 
   run(tokens) {
@@ -206,6 +270,7 @@ class Preprocessor {
         else if (name === 'include') { const inc = this.include(rest, line); if (inc) out.push(...inc); }
         else if (name === 'error') throw new CompileError('#error ' + rest.map(tokenText).join(' '), line);
         else if (name === 'warning') this.warnings.push({ line, message: rest.map(tokenText).join(' ') });
+        else if (name === 'pragma' && rest[0] && rest[0].v === 'once' && this.opts.sketch) this.opts.sketch.once.add(this.file);
         else if (name === 'pragma' || name === '' || name === 'line') { /* ignored */ }
         else throw new CompileError(`Unknown preprocessor directive #${name}`, line);
         continue;
@@ -223,7 +288,30 @@ class Preprocessor {
     let name = '';
     if (rest[0] && rest[0].t === 'str') name = String.fromCharCode(...rest[0].v);
     else if (rest[0] && rest[0].t === 'op' && rest[0].v === '<') name = rest.slice(1, -1).map(tokenText).join('');
+    const angle = !(rest[0] && rest[0].t === 'str');
+    const sk = this.opts.sketch;
+    if (sk && sk.headers && name in sk.headers) {
+      // an SDK header whose macros depend on the sketch (see sdk.js)
+      if (sk.once.has('<' + name + '>')) return;
+      sk.once.add('<' + name + '>');
+      const inner = new Preprocessor(this.defs, this.opts, this.file);
+      const sub = inner.run(tokenize(sk.headers[name]).tokens);
+      sub.pop();
+      for (const t of sub) t.line = line;
+      return sub;
+    }
     if (SYSTEM_HEADERS.has(name) || name.startsWith('avr/') || name.startsWith('util/')) return;
+    if (sk) {
+      const path = this.resolve(name, angle);
+      if (path === null) throw new CompileError(`Can't find ${angle ? `<${name}>` : `"${name}"`} in this sketch`, line);
+      if (sk.once.has(path)) return;
+      const inner = new Preprocessor(this.defs, this.opts, path);
+      const sub = inner.run(lexFile(sk.files[path], sk.ids.get(path)).tokens);
+      sub.pop();
+      this.userDefines.push(...inner.userDefines);
+      this.warnings.push(...inner.warnings);
+      return sub;
+    }
     if (this.opts.files && name in this.opts.files) {
       // multi-file sketch: inline the header
       const lex = tokenize(this.opts.files[name]);
@@ -253,14 +341,26 @@ class Preprocessor {
     }
     const body = rest.slice(i);
     this.defs.set(nameTok.v, new Macro(nameTok.v, params, body, variadic));
-    if (this.defs !== PRELUDE_DEFS) this.userDefines.push({ name: nameTok.v, params, body, line });
+    if (this.defs !== PRELUDE_DEFS && !this.prelude) this.userDefines.push({ name: nameTok.v, params, body, line });
   }
 
-  evalCond(rest, line) {
+  evalCond(rest, line) { return !!this.evalExpr(rest, line); }
+
+  evalExpr(rest, line) {
     // replace defined(X) / defined X
     const toks = [];
     for (let i = 0; i < rest.length; i++) {
       const t = rest[i];
+      if (t.t === 'id' && t.v === '__has_include' && rest[i + 1] && rest[i + 1].v === '(') {
+        // __has_include(<name>) or __has_include("name")
+        let j = i + 2, name = '', angle = false;
+        if (rest[j] && rest[j].t === 'str') { name = String.fromCharCode(...rest[j].v); j++; }
+        else if (rest[j] && rest[j].v === '<') { angle = true; j++; while (rest[j] && rest[j].v !== '>') name += tokenText(rest[j++]); j++; }
+        if (!rest[j] || rest[j].v !== ')') throw new CompileError('Bad __has_include', line);
+        toks.push({ t: 'num', v: this.hasInclude(name, angle) ? '1' : '0', line });
+        i = j;
+        continue;
+      }
       if (t.t === 'id' && t.v === 'defined') {
         let nm;
         if (rest[i + 1] && rest[i + 1].v === '(') { nm = rest[i + 2]; i += 3; } else { nm = rest[i + 1]; i += 1; }
@@ -278,7 +378,7 @@ class Preprocessor {
       else if (t.t === 'eof') break;
       else throw new CompileError('Bad #if expression', line);
     }
-    try { return !!Function('return (' + (js || '0') + ');')(); }
+    try { return Function('return (' + (js || '0') + ');')(); }
     catch (e) { throw new CompileError('Bad #if expression', line); }
   }
 

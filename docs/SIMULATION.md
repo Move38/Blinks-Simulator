@@ -19,7 +19,7 @@ The reference for blinklib behavior is the Move38 SDK 1.2.0 (`blinklib.cpp`, `bl
 
 ## 1. Compiling a sketch
 
-[`js/compiler`](../js/compiler) is a small C++ compiler written for this project. `compile(source)` in [index.js](../js/compiler/index.js) runs four stages:
+[`js/compiler`](../js/compiler) is a small C++ compiler written for this project. `compile(source)` in [index.js](../js/compiler/index.js) runs four stages (`compileSketch()`, for a sketch of several files, is below):
 
 1. **Preprocess** ([preprocess.js](../js/compiler/preprocess.js)). This handles `#define`, `#if`, `#include` and the rest. A built-in prelude copies the macros from the SDK's `Arduino.h` and `blinklib.h`, so `min()`, `abs()`, `FOREACH_FACE()` and the color constants expand exactly as they do on hardware.
 2. **Parse** ([lexer.js](../js/compiler/lexer.js), [parser.js](../js/compiler/parser.js)). This builds a typed AST.
@@ -44,6 +44,22 @@ The reference for blinklib behavior is the Move38 SDK 1.2.0 (`blinklib.cpp`, `bl
 4. **Build the factory.** The generated code is wrapped in `new Function('env', js)`. Each Blink calls it with its own memory and runtime, so every Blink has separate globals and state.
 
 `compile()` also reports RAM use: user globals against a budget of 1024 − 694 = 330 bytes, the space blinklib and the BIOS leave free.
+
+### Sketches of several files
+
+`compileSketch({ files, main, sdk })` builds a sketch folder the way the Arduino IDE does:
+- The `.ino` files at the top of the folder are one translation unit, the main one first, then the rest by name, after an `#include <Arduino.h>`. Each `.c`/`.cpp` file at the top or anywhere under `src/` is a translation unit of its own. Other folders are only used through `#include`.
+- Each unit is preprocessed on its own, with fresh macros. `#include "x.h"` looks next to the including file, then at the top of the sketch; `#include <x.h>` looks in the SDK's include folders (`config/` for Custom Blinklib). `#pragma once` and `__has_include` work.
+- The units are parsed into one program that shares its types. A struct, enum or inline function defined in a header that several files include is the same one in all of them. `static` and namespace-scope `const` names, and those in an anonymous namespace, belong to their own file.
+- Names live in namespaces: `game::state::Get` is looked up from the namespace it's used in outward, then through `using namespace` and `using a::b`. Functions can be overloaded; a call picks the overload its arguments convert to best.
+- A token's line is `file × 100000 + line`, so the parser and code generator carry file positions without knowing about files. `where(line)` on the result turns a line from an error, a warning or the running code back into `{ file, line }`.
+
+### SDKs
+
+[sdk.js](../js/compiler/sdk.js) lists the blinklibs a sketch can be built against: Move38's (the default), and Bruno Albuquerque's [Custom Blinklib](https://github.com/brunoga/blinklib) 1.4.3, which some games use. A sketch that mentions `BGA_CUSTOM_BLINKLIB` (they check for it by name) is built with Custom Blinklib. It differs from Move38's in:
+- **The API.** Face values are whole bytes (`IR_DATA_VALUE_MAX` is 255), or a game's own whole-number type. `sendDatagramOnFace()` returns whether it was taken, and there are `isDatagramPendingOnFace()`, `isDatagramPendingOnAnyFace()` and `resetPendingDatagramOnFace()`. A game sets `sterileFlag` to stop itself being shared. `isMAXblink()` and the other 1.3.0 additions aren't there.
+- **The game's settings,** read from its `config/blinklib_config.h`: the datagram length (which also sets the RAM blinklib needs: 485 bytes plus 12 per byte of datagram), the probe and expiry times, and whether datagrams, checksums and connection tracking are on.
+- **The IR protocol** ([blink.js](../js/runtime/blink.js), `rxFacesBga()`). Every packet is the BIOS type byte, a header byte, the face value and, when one is waiting, a datagram. The header carries a 3-bit sequence number for the datagram, the sequence number being acknowledged, and the viral button bit. A datagram is resent with every packet until the neighbor acknowledges it, and a neighbor that hasn't read its last one ignores the new one, so nothing is lost. Packets take 3 ms a byte, with no slowdown for datagrams.
 
 The API a sketch can call is listed in [builtins.js](../js/compiler/builtins.js). Each entry gives the C signature, so arguments convert as on hardware: a face is a `byte`, so 257 becomes face 1. Pure helpers are ported line for line from blinklib or avr-libc in [rt.js](../js/compiler/rt.js):
 - `makeColorHSB`, `dim`, `lighten`, `map`, `sin8_C`
@@ -223,12 +239,15 @@ The items are ordered roughly by how likely they are to make a game behave diffe
   - class inheritance
   - destructors
   - static class members
+  - operator overloading
   - `goto`
   - case ranges
 - Direct hardware access is not available: registers, ISRs, `<avr/...>` peripherals. `cli()`/`sei()` do nothing.
 - Float math functions use JavaScript's `Math` rounded to 32 bits. Results can differ from avr-libc in the last bit.
 - Flash size is not checked. A sketch that runs here may be too big to upload.
-- A multi-file sketch has to be combined into one file. Open from GitHub does this for a sketch folder.
+- Overloads are picked by a simple ranking of how well each argument converts, not C++'s full rules. Calls that are ambiguous in C++ pick one here.
+- Hardware-exact mode runs sketches for Move38's blinklib, of one file or several. A sketch for Custom Blinklib runs in the simulator, though Upload to a Blink builds it with avr-gcc.
+- With Custom Blinklib, the BIOS's ten-second search for a game to download at power-up is skipped: the game starts at once.
 
 ### Power, sleep and game sharing
 

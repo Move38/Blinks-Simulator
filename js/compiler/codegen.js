@@ -12,7 +12,13 @@
 import { CompileError } from './lexer.js';
 import { T, ptr, ref, arr, fn, isInt, isArith, isScalar, sizeOf, typeName, sameType, promote, commonType, intOf, TIMER, SERIAL } from './types.js';
 import { BUILTINS, NOT_ON_BLINKS, TIMER_METHODS } from './builtins.js';
+import { candidates } from './parser.js';
 import * as H from './rt.js';
+
+// Symbols are keyed by qualified name ('game::map::Get'). File-local ones (static, const, or in an
+// anonymous namespace) are keyed '#<tu>:<name>' so each .cpp file has its own.
+const localKey = (tu, q) => `#${tu}:${q}`;
+const qualify = (ns, name) => (ns ? ns + '::' + name : name);
 
 export const MEM = {
   SIZE: 0x10000,
@@ -40,10 +46,14 @@ export function generate(ast, opts = {}) {
 class Codegen {
   constructor(opts) {
     this.opts = opts;
+    this.B = opts.builtins || BUILTINS;
     this.errors = [];
     this.warnings = [];
-    this.globals = new Map();     // name -> symbol
-    this.funcs = new Map();       // name -> fn symbol
+    this.globals = new Map();     // key -> symbol (a function's is { sk: 'fnset', fns: its overloads })
+    this.funcs = new Map();       // key -> [fn symbol, one per overload]
+    this.declared = new Set();    // keys of the variables declared so far, extern ones too
+    this.jsNames = new Set();
+    this.cur = { ns: '', tu: 0 }; // where the declaration being read is, for name lookup outside functions
     this.structDefs = [];
     this.dataPtr = MEM.GLOBALS;
     this.userRam = 0;
@@ -65,16 +75,21 @@ class Codegen {
   // ================= program =================
   program(ast) {
     // pass 1: types, globals, function signatures in source order
+    this.usings = ast.usings || new Map();
+    this.aliases = ast.aliases || new Map();
     const funcDefs = [];
     for (const item of ast.items) {
       this.line = item.line;
+      this.cur = { ns: item.ns || '', tu: item.tu || 0 };
       if (item.kind === 'TypeDecl') this.declareType(item.type);
       else if (item.kind === 'VarDecl') this.globalVar(item);
-      else if (item.kind === 'FuncDef') { this.declareFunc(item); if (item.body) funcDefs.push({ node: item, globalsSoFar: new Set(this.globals.keys()) }); }
+      else if (item.kind === 'FuncDef') { this.declareFunc(item); if (item.body && !item.skip) funcDefs.push({ node: item, globalsSoFar: new Set(this.declared) }); }
     }
-    for (const m of this.methodBodies) funcDefs.push({ node: m, globalsSoFar: null });
-    if (!this.funcs.has('setup') || !this.funcs.get('setup').defined) throw this.error('Your sketch needs a setup() function', 1);
-    if (!this.funcs.has('loop') || !this.funcs.get('loop').defined) throw this.error('Your sketch needs a loop() function', 1);
+    this.cur = { ns: '', tu: 0 };
+    for (const m of this.methodBodies) if (!m.skip) funcDefs.push({ node: m, globalsSoFar: null });
+    const entry = name => (this.funcs.get(name) || []).find(f => f.defined && !f.params.length);
+    if (!entry('setup')) throw this.error('Your sketch needs a setup() function', 1);
+    if (!entry('loop')) throw this.error('Your sketch needs a loop() function', 1);
 
     // pass 2: function bodies
     for (const f of funcDefs) this.genFunction(f.node, f.globalsSoFar);
@@ -119,7 +134,7 @@ class Codegen {
     all.push('}'); lineMap.push(0);
     const fnTable = this.fnTable.map(f => f ? f.js : 'null').join(', ');
     all.push(`const __fns = [${fnTable}];`); lineMap.push(0);
-    all.push(`return { init: __init, setup: ${this.funcs.get('setup').js}, loop: ${this.funcs.get('loop').js}, setBudget(n) { __budget = n; }, resetStack() { SP = ${MEM.STACK_TOP}; } };`); lineMap.push(0);
+    all.push(`return { init: __init, setup: ${entry('setup').js}, loop: ${entry('loop').js}, setBudget(n) { __budget = n; }, resetStack() { SP = ${MEM.STACK_TOP}; } };`); lineMap.push(0);
 
     return {
       js: all.join('\n'),
@@ -128,7 +143,7 @@ class Codegen {
       ram: { globals: this.userRam, strings: this.stringBytes || 0 },
       serialInput: !!this.usesSerialInput,
       stackLimit,
-      functions: [...this.funcs.values()].filter(f => !f.method).map(f => ({ name: f.name, line: f.line })),
+      functions: [...this.funcs.values()].flat().filter(f => !f.method).map(f => ({ name: f.name, line: f.line })),
       globals: [...this.globals.values()].filter(s => s.sk === 'var').map(s => ({ name: s.name, type: typeName(s.type), addr: s.addr, size: sizeOf(s.type), line: s.line })),
     };
   }
@@ -143,28 +158,49 @@ class Codegen {
     const def = t.def;
     if (def.declared) return;
     def.declared = true;
-    let v = -1;
-    for (const it of def.items) {
-      v = it.value ? this.constEval(it.value, it.line) : v + 1;
-      const sym = { sk: 'const', name: it.name, type: t, value: v, line: it.line };
-      if (!def.scoped) this.defineGlobal(it.name, sym, it.line);
-      if (def.tag) this.globals.set(def.tag + '::' + it.name, sym);
-    }
+    this.inScopeOf(def, () => {
+      let v = -1;
+      for (const it of def.items) {
+        v = it.value ? this.constEval(it.value, it.line) : v + 1;
+        const sym = { sk: 'const', name: it.name, type: t, value: v, line: it.line };
+        if (!def.scoped) this.defineGlobal(qualify(def.ns, it.name), sym, it.line);
+        if (def.tag) this.globals.set(def.tag + '::' + it.name, sym);
+      }
+    });
+  }
+
+  // Look names up as from where a type was declared (its array sizes and enum values)
+  inScopeOf(def, f) {
+    if (def.ns === undefined) return f();
+    const save = [this.cur, this.fnCtx, this.scopes];
+    this.cur = { ns: def.ns, tu: def.tu || 0 };
+    this.fnCtx = null;
+    this.scopes = [];
+    try { return f(); } finally { [this.cur, this.fnCtx, this.scopes] = save; }
   }
 
   layout(def) {
     if (def.size != null) return;
-    if (!def.complete) throw this.error(`'${def.name}' is used before it is fully defined`);
+    if (!def.complete) throw this.error(`'${def.short || def.name}' is used before it is fully defined`);
+    this.inScopeOf(def, () => this.layoutFields(def));
+  }
+
+  layoutFields(def) {
     if (!this.structDefs.includes(def)) this.structDefs.push(def);
     const union = def.kind === 'union';
     let bit = 0, size = 0;
     const fields = [];
+    // what a { list } fills, in order: every member, but only the first of a union, and the
+    // members of an anonymous struct or union in its place
+    const initFields = [];
+    const initable = () => !union || !initFields.length;
     for (const m of def.members) {
       const mt = this.resolveType(m.type, m.line);
       if (m.anon) {
         this.layout(mt.def);
         if (!union && bit % 8) bit = (bit + 7) & ~7;
         const base = union ? 0 : bit >> 3;
+        if (initable()) for (const f of mt.def.initFields) initFields.push({ ...f, offset: f.offset + base });
         for (const f of mt.def.fields) fields.push({ ...f, offset: f.offset + base });
         if (union) size = Math.max(size, mt.def.size); else bit += mt.def.size * 8;
         continue;
@@ -177,6 +213,7 @@ class Codegen {
         if (w === 0) { bit = (bit + 7) & ~7; continue; }
         const at = union ? 0 : bit;
         fields.push({ name: m.name, type: mt, offset: at >> 3, bitOff: at & 7, bits: w, access: m.access, line: m.line });
+        if (initable()) initFields.push(fields[fields.length - 1]);
         if (union) size = Math.max(size, (w + 7) >> 3); else bit += w;
         continue;
       }
@@ -184,13 +221,15 @@ class Codegen {
       const sz = sizeOf(mt);
       if (mt.k === 'arr' && mt.n == null) throw this.error(`Array '${m.name}' needs a size`, m.line);
       fields.push({ name: m.name, type: mt, offset: union ? 0 : bit >> 3, access: m.access, init: m.init, line: m.line });
+      if (initable()) initFields.push(fields[fields.length - 1]);
       if (union) size = Math.max(size, sz); else bit += sz * 8;
     }
     def.fields = fields;
+    def.initFields = initFields;
     def.size = union ? size : (bit + 7) >> 3;
     for (const [, m] of def.methods) {
       this.declareFunc(m);
-      if (m.body) this.methodBodies.push(m);
+      if (m.body && !m.skip) this.methodBodies.push(m);
     }
   }
 
@@ -226,12 +265,19 @@ class Codegen {
   }
 
   // ================= symbols =================
-  defineGlobal(name, sym, line) {
-    if (sym.sk === 'var' && (BUILTINS[name] || name === 'round')) throw this.error(`'${name}' is already the name of a function on Blinks; pick a different name`, line);
-    const prev = this.globals.get(name);
+  defineGlobal(key, sym, line) {
+    const name = sym.name;
+    if (sym.sk === 'var' && !key.includes('::') && (this.B[name] || name === 'round')) throw this.error(`'${name}' is already the name of a function on Blinks; pick a different name`, line);
+    const prev = this.globals.get(key);
     if (prev && prev.sk === 'var' && sym.sk === 'var') throw this.error(`'${name}' is already defined (line ${prev.line})`, line);
-    if (prev && prev.sk === 'const' && sym.sk === 'const' && prev.type !== sym.type) throw this.error(`'${name}' is already defined (line ${prev.line})`, line);
-    this.globals.set(name, sym);
+    if (prev && prev.sk === 'const' && sym.sk === 'const' && prev.type !== sym.type) {
+      // the same enum from a header that several .cpp files include is fine
+      if (prev.value === sym.value) return;
+      throw this.error(`'${name}' is already defined (line ${prev.line})`, line);
+    }
+    if (prev && prev.sk === 'fnset' && sym.sk === 'var') throw this.error(`'${name}' is already a function`, line);
+    sym.key = key;
+    this.globals.set(key, sym);
   }
 
   alloc(size) {
@@ -244,17 +290,20 @@ class Codegen {
   globalVar(item) {
     for (const d of item.decls) {
       this.line = d.line;
-      if (d.type.k === 'fn') { this.declareFunc({ kind: 'FuncDef', name: d.name, type: d.type, params: d.type.params, body: null, line: d.line }); continue; }
+      if (d.type.k === 'fn') { this.declareFunc({ kind: 'FuncDef', name: d.name, type: d.type, params: d.type.params, body: null, line: d.line, ns: item.ns, tu: item.tu, isStatic: item.isStatic }); continue; }
       let t = this.resolveType(d.type, d.line);
       if (t.k === 'auto') t = this.autoType(d.init);
       if (t.k === 'arr' && t.n == null) t = this.inferArraySize(t, d.init, d.line);
       if (t.k === 'void') throw this.error(`Variable '${d.name}' can't be void`, d.line);
       if (t.k === 'ref') throw this.error('Global references are not supported', d.line);
-      if (item.isExtern) continue;
+      const q = qualify(item.ns, d.name);
+      if (item.isExtern) { this.declared.add(q); continue; }
+      // static, and const outside a class, are local to their file, as in C++
+      const key = item.isStatic || item.isConst ? localKey(item.tu || 0, q) : q;
       const size = sizeOf(t);
       const addr = this.alloc(size);
       this.userRam += size;
-      const sym = { sk: 'var', name: d.name, type: t, storage: 'mem', addr, line: d.line, isConst: item.isConst };
+      const sym = { sk: 'var', name: d.name, ns: item.ns, type: t, storage: 'mem', addr, line: d.line, isConst: item.isConst };
       // compile-time value for `const int N = 5;`
       this.withInit(() => {
         this.initObject(t, String(addr), d, d.line);
@@ -263,7 +312,8 @@ class Codegen {
         const e = this.ex(d.init);
         if (e.cv !== undefined) sym.cv = this.convConst(e.cv, e.t, t);
       }
-      this.defineGlobal(d.name, sym, d.line);
+      this.defineGlobal(key, sym, d.line);
+      this.declared.add(key);
     }
   }
 
@@ -315,48 +365,83 @@ class Codegen {
     return 1;
   }
 
+  // A unique JS function name for a symbol key
+  jsName(base) {
+    let n = base.replace(/^#(\d+):/, 'f$1_').replace(/::/g, '__').replace(/[^\w$]/g, '_');
+    if (this.jsNames.has(n)) { let k = 2; while (this.jsNames.has(n + '_' + k)) k++; n += '_' + k; }
+    this.jsNames.add(n);
+    return n;
+  }
+
   declareFunc(node) {
     this.line = node.line;
-    const key = node.cls ? node.cls + '::' + node.name : node.name;
     if (node.cls && !this.globalStruct(node.cls)) throw this.error(`Unknown class '${node.cls}'`, node.line);
     if (node.isCtor) {
       const def = this.globalStruct(node.cls).def;
       const ckey = node.cls + '::#ctor' + node.params.length;
-      const prev = this.funcs.get(ckey);
-      if (prev && prev.defined && node.body) throw this.error(`Constructor ${node.cls}() is defined twice`, node.line);
-      const sym = prev || { sk: 'fn', name: node.cls, key: ckey, js: `F_${node.cls}__ctor${node.params.length}`, method: true, ctor: true, cls: def, line: node.line };
+      const prev = this.funcs.get(ckey) && this.funcs.get(ckey)[0];
+      if (prev && prev.defined && node.body) {
+        if (node.tu !== prev.node.tu) { node.skip = true; return; }
+        throw this.error(`Constructor ${def.short || node.cls}() is defined twice`, node.line);
+      }
+      const sym = prev || { sk: 'fn', name: def.short || node.cls, key: ckey, js: this.jsName(`F_${node.cls}__ctor${node.params.length}`), method: true, ctor: true, cls: def, line: node.line };
       sym.type = node.type; sym.params = this.resolveParams(node.params, node.line); sym.node = node;
       if (node.body) sym.defined = true;
-      this.funcs.set(ckey, sym);
+      node.sym = sym;
+      this.funcs.set(ckey, [sym]);
       def.ctors = def.ctors || new Map();
       def.ctors.set(node.params.length, sym);
       return;
     }
-    if (BUILTINS[key] && !node.cls && !LIBC.has(key)) {
+    const tu = node.tu || 0;
+    let key = node.cls ? node.cls + '::' + node.name : qualify(node.ns, node.name);
+    // static functions (or a definition of one declared static) belong to their file
+    if (!node.cls && (node.isStatic || this.funcs.has(localKey(tu, key)))) key = localKey(tu, key);
+    if (!node.cls && !node.ns && this.B[node.name] && !LIBC.has(node.name)) {
       throw this.error(`'${node.name}' is already a Blinks function; pick a different name`, node.line);
     }
-    let sym = this.funcs.get(key);
     const params = this.resolveParams(node.params, node.line);
     const ret = this.resolveType(node.type.ret, node.line);
-    if (sym) {
-      if (sym.params.length !== params.length) throw this.error(`'${node.name}' is declared with ${sym.params.length} parameters on line ${sym.line} but ${params.length} here (overloading isn't supported in the simulator)`, node.line);
-      if (sym.defined && node.body) throw this.error(`Function '${node.name}' is defined twice (also on line ${sym.line})`, node.line);
-      // prototypes may carry default arguments
-      params.forEach((p, i) => { if (!p.def && sym.params[i].def) p.def = sym.params[i].def; });
-    } else {
-      const js = node.cls ? `F_${node.cls}__${node.name}` : 'F_' + node.name;
-      sym = { sk: 'fn', name: node.name, key, js, line: node.line };
-      if (node.cls) { sym.method = true; sym.cls = this.globalStruct(node.cls).def; }
-      this.funcs.set(key, sym);
+    let set = this.funcs.get(key);
+    if (!set) {
+      set = [];
+      this.funcs.set(key, set);
       if (!node.cls) {
-        const g = this.globals.get(node.name);
+        const g = this.globals.get(key);
         if (g && g.sk === 'var') throw this.error(`'${node.name}' is already a variable`, node.line);
-        this.globals.set(node.name, sym);
+        this.globals.set(key, { sk: 'fnset', name: node.name, key, fns: set });
       }
+    }
+    // the same function declared again, or a new overload
+    let sym = set.find(s => sameParams(s.params, params));
+    if (!sym) {
+      // a prototype and a definition whose parameter types differ a little are the same function
+      const loose = set.filter(s => s.params.length === params.length && !!s.defined !== !!node.body);
+      if (loose.length === 1 && set.filter(s => s.params.length === params.length).length === 1) sym = loose[0];
+    }
+    if (sym) {
+      if (sym.defined && node.body) {
+        // an inline function (or one defined in a class) from a header another .cpp file includes too
+        if ((node.isInline || sym.node.isInline) && tu !== (sym.node.tu || 0)) { node.skip = true; return; }
+        throw this.error(`Function '${node.name}' is defined twice (also on line ${sym.line})`, node.line);
+      }
+      // prototypes may carry default arguments
+      params.forEach((p, i) => { if (!p.def && sym.params[i] && sym.params[i].def) p.def = sym.params[i].def; });
+      if (sym.defined && !node.body) {
+        // a prototype after the definition (from a header): keep the definition's parameter names
+        sym.params.forEach((p, i) => { if (!p.def && params[i].def) p.def = params[i].def; });
+        node.sym = sym;
+        return;
+      }
+    } else {
+      sym = { sk: 'fn', name: node.name, key, js: this.jsName('F_' + key), line: node.line };
+      if (node.cls) { sym.method = true; sym.cls = this.globalStruct(node.cls).def; }
+      set.push(sym);
     }
     sym.ret = ret; sym.params = params; sym.node = node.body ? node : (sym.node || node);
     if (node.body) { sym.defined = true; sym.line = node.line; }
-    if (node.name === 'loop' || node.name === 'setup') {
+    node.sym = sym;
+    if (!node.cls && !node.ns && (node.name === 'loop' || node.name === 'setup')) {
       if (params.length) throw this.error(`${node.name}() doesn't take any parameters`, node.line);
       if (ret.k !== 'void') throw this.error(`${node.name}() must be declared void`, node.line);
     }
@@ -377,20 +462,31 @@ class Codegen {
     });
   }
 
-  lookup(name) {
-    for (let i = this.scopes.length - 1; i >= 0; i--) {
-      const s = this.scopes[i].get(name);
-      if (s) return s;
+  // Where names are being looked up from: { ns, tu, usings, aliases }
+  scopeCtx() {
+    const f = this.fnCtx && !this.fnCtx.isInit ? this.fnCtx : this.cur;
+    return { ns: f.ns || '', tu: f.tu || 0, usings: this.usings, aliases: this.aliases };
+  }
+
+  // `abs`: the name is already fully qualified. `quiet`: don't complain about declaration order.
+  lookup(name, abs = false, quiet = false) {
+    if (!abs && !name.includes('::')) {
+      for (let i = this.scopes.length - 1; i >= 0; i--) {
+        const s = this.scopes[i].get(name);
+        if (s) return s;
+      }
+      if (this.fnCtx && this.fnCtx.cls) {
+        const f = this.fieldOf(this.fnCtx.cls, name);
+        if (f) return { sk: 'field', field: f };
+        const m = this.funcs.get(this.fnCtx.cls.name + '::' + name);
+        if (m) return { sk: 'method', fns: m };
+      }
     }
-    if (this.fnCtx && this.fnCtx.cls) {
-      const f = this.fieldOf(this.fnCtx.cls, name);
-      if (f) return { sk: 'field', field: f };
-      const m = this.funcs.get(this.fnCtx.cls.name + '::' + name);
-      if (m) return { sk: 'method', fn: m };
-    }
-    const g = this.globals.get(name);
-    if (g) {
-      if (this.fnCtx && this.fnCtx.visible && g.sk === 'var' && !this.fnCtx.visible.has(name)) {
+    const sc = this.scopeCtx();
+    for (const k of abs ? [name] : candidates(name, sc)) {
+      const g = this.globals.get(localKey(sc.tu, k)) || this.globals.get(k);
+      if (!g) continue;
+      if (!quiet && this.fnCtx && this.fnCtx.visible && g.sk === 'var' && !this.fnCtx.visible.has(g.key)) {
         throw this.error(`'${name}' is used before it is declared (it's declared on line ${g.line}). Move the declaration above this function.`);
       }
       return g;
@@ -406,13 +502,14 @@ class Codegen {
 
   // ================= functions =================
   genFunction(node, globalsSoFar) {
-    const sym = this.funcs.get(node.isCtor ? node.cls + '::#ctor' + node.params.length : (node.cls ? node.cls + '::' + node.name : node.name));
+    const sym = node.sym;
     this.line = node.line;
     const cls = node.cls ? this.globalStruct(node.cls).def : null;
-    const ctx = { name: node.name, ret: sym.ret || T.void, temps: 0, frame: 0, cls, visible: globalsSoFar, addrTaken: new Set(), staticN: 0 };
-    collectAddrTaken(node.body, ctx.addrTaken, this);
+    const ctx = { name: node.name, ret: sym.ret || T.void, temps: 0, frame: 0, cls, visible: globalsSoFar, addrTaken: new Set(), staticN: 0, ns: cls ? cls.ns || '' : node.ns || '', tu: node.tu || 0 };
     this.fnCtx = ctx;
     this.scopes = [new Map()];
+    this.cur = { ns: ctx.ns, tu: ctx.tu };   // for its static locals' initializers
+    collectAddrTaken(node.body, ctx.addrTaken, this);
     const out = this.out;
     const jsParams = [];
     const prologue = [];
@@ -618,7 +715,7 @@ class Codegen {
           o.emit('{ SP = __fp; return; }', s.line);
           return;
         }
-        const e = this.ex(s.arg);
+        const e = s.arg.kind === 'InitList' && ret.k === 'struct' ? this.constructExpr({ kind: 'Construct', type: ret, args: [s.arg], line: s.line }) : this.ex(s.arg);
         if (ret.k === 'void') {
           if (e.t.k !== 'void') throw this.error(`${this.fnCtx.name}() is void, so it can't return a value`, s.line);
           o.emit(`{ ${e.c}; SP = __fp; return; }`, s.line);
@@ -669,7 +766,7 @@ class Codegen {
     for (const d of s.decls) {
       this.line = d.line;
       let t = d.type.k === 'auto' ? this.autoType(d.init) : this.resolveType(d.type, d.line);
-      if (t.k === 'fn') { this.declareFunc({ kind: 'FuncDef', name: d.name, type: t, params: t.params, body: null, line: d.line }); continue; }
+      if (t.k === 'fn') { this.declareFunc({ kind: 'FuncDef', name: d.name, type: t, params: t.params, body: null, line: d.line, ns: this.fnCtx.ns, tu: this.fnCtx.tu }); continue; }
       if (t.k === 'arr' && t.n == null) t = this.inferArraySize(t, d.init, d.line);
       if (t.k === 'void') throw this.error(`Variable '${d.name}' can't be void`, d.line);
       if (s.isStatic) { this.staticLocal(d, t, s); continue; }
@@ -826,8 +923,7 @@ class Codegen {
         cur.i = cur.items.length;
         return;
       }
-      const fields = def.kind === 'union' ? def.fields.slice(0, 1) : def.fields;
-      for (const f of fields) {
+      for (const f of def.initFields) {
         if (cur.i >= cur.items.length) break;
         const item = cur.items[cur.i];
         if (item.designator) {
@@ -1000,7 +1096,7 @@ class Codegen {
   }
 
   decay(e) {
-    if (e.builtin) return { c: this.builtinFnIndex(e.builtin), t: ptr({ k: 'fn', ret: BUILTINS[e.builtin].ret, params: BUILTINS[e.builtin].params.map(t => ({ type: t })) }) };
+    if (e.builtin) return { c: this.builtinFnIndex(e.builtin), t: ptr({ k: 'fn', ret: this.B[e.builtin].ret, params: this.B[e.builtin].params.map(t => ({ type: t })) }) };
     if (e.t.k === 'arr') return { c: e.lv ? e.lv.addr : e.c, t: ptr(e.t.of), cv: undefined };
     if (e.t.k === 'fn') return { c: e.c, t: ptr(e.t), cv: undefined };
     return e;
@@ -1181,21 +1277,22 @@ class Codegen {
 
   ident(n) {
     const name = n.name;
-    const s = this.lookup(name);
+    const s = this.lookup(name, n.abs);
     if (!s) {
-      if (BUILTINS[name]) return { c: name, t: { k: 'builtin', name }, builtin: name };
+      if (this.B[name]) return { c: name, t: { k: 'builtin', name }, builtin: name };
       if (name === 'Serial') throw this.error('To print on a Blink, add `#include "Serial.h"` and `ServicePortSerial Serial;` at the top of your sketch, and call `Serial.begin();` in setup()');
       if (NOT_ON_BLINKS[name]) throw this.error(NOT_ON_BLINKS[name]);
       const lower = name.toLowerCase();
-      const near = Object.keys(BUILTINS).find(k => k.toLowerCase() === lower) || [...this.globals.keys()].find(k => k.toLowerCase() === lower);
+      const near = Object.keys(this.B).find(k => k.toLowerCase() === lower) || [...this.globals.keys()].find(k => k.toLowerCase() === lower);
       throw this.error(`'${name}' was not declared` + (near ? `. Did you mean '${near}'?` : ''));
     }
     switch (s.sk) {
       case 'const': return { c: String(s.value), t: s.type, cv: s.value };
-      case 'fn': {
-        return { c: this.fnIndex(s), t: { k: 'fn', ret: s.ret, params: s.params }, fn: s };
+      case 'fnset': {
+        const f = s.fns[0];
+        return { c: this.fnIndex(f), t: { k: 'fn', ret: f.ret, params: f.params }, fn: f, fns: s.fns };
       }
-      case 'method': return { c: '0', t: { k: 'method' }, method: s.fn, self: '__this' };
+      case 'method': return { c: '0', t: { k: 'method' }, method: s.fns[0], methods: s.fns, self: '__this' };
       case 'field': return this.fieldAccess({ c: '__this', t: ptr({ k: 'struct', def: this.fnCtx.cls }) }, s.field, true);
       case 'var': {
         if (s.storage === 'js') return { c: s.js, t: s.type, lv: { lk: 'js', js: s.js, t: s.type }, cv: s.cv };
@@ -1214,7 +1311,7 @@ class Codegen {
   }
 
   builtinFnIndex(name) {
-    const bi = BUILTINS[name];
+    const bi = this.B[name];
     const ps = bi.params.map((_, i) => 'a' + i);
     const entry = { js: `((${ps.join(', ')}) => ${bi.gen(ps)})`, builtin: name };
     let i = this.fnTable.findIndex(f => f && f.builtin === name);
@@ -1567,8 +1664,8 @@ class Codegen {
       throw this.error(`A Timer has set(), add(), never(), isExpired() and getRemaining(), not .${n.prop}`, n.line);
     }
     if (def.builtin === 'serial') return { c: '0', t: { k: 'method' }, serialMethod: n.prop, self: addr };
-    const m = this.funcs.get(def.name + '::' + n.prop);
-    if (m) return { c: '0', t: { k: 'method' }, method: m, self: addr };
+    const ms = this.funcs.get(def.name + '::' + n.prop);
+    if (ms) return { c: '0', t: { k: 'method' }, method: ms[0], methods: ms, self: addr };
     const f = this.fieldOf(def, n.prop);
     if (!f) throw this.error(`${def.name || 'struct'} has no member '${n.prop}'`, n.line);
     if (f.access === 'private' && !(this.fnCtx && this.fnCtx.cls === def)) throw this.error(`'${n.prop}' is private in ${def.name}`, n.line);
@@ -1596,6 +1693,13 @@ class Codegen {
         if (!p.def) throw this.error(`${fsym.name}() needs ${ps.filter(x => !x.def).length} argument${ps.length === 1 ? '' : 's'} but got ${args.length}`, line);
         argNode = p.def;
       }
+      if (argNode.kind === 'InitList') {
+        // f({1, 2}): the parameter is built from the list
+        const to = p.type.k === 'ref' ? p.type.to : p.type;
+        if (to.k === 'struct') { codes.push(this.constructExpr({ kind: 'Construct', type: to, args: [argNode], line }).c); continue; }
+        if (argNode.items.length > 1) throw this.error(`Too many values in { } for ${typeName(to)}`, line);
+        argNode = argNode.items[0] || { kind: 'Num', value: 0, raw: '0', decimal: true, line };
+      }
       const e = this.ex(argNode);
       if (p.type.k === 'ref') {
         const to = p.type.to;
@@ -1616,7 +1720,7 @@ class Codegen {
     const callee = this.ex(n.callee);
     const line = n.line;
     if (callee.builtin) {
-      const bi = BUILTINS[callee.builtin];
+      const bi = this.B[callee.builtin];
       if (n.args.length !== bi.params.length) throw this.error(`${callee.builtin}() takes ${bi.params.length} argument${bi.params.length === 1 ? '' : 's'} but got ${n.args.length}`, line);
       const args = n.args.map((a, i) => this.conv(this.ex(a), bi.params[i], line));
       const e = { c: bi.gen(args.map(a => a.c)), t: bi.ret };
@@ -1631,12 +1735,12 @@ class Codegen {
     }
     if (callee.serialMethod) return this.serialCall(callee.serialMethod, n.args, line, callee.self);
     if (callee.method) {
-      const m = callee.method;
+      const m = callee.methods && callee.methods.length > 1 ? this.pickOverload(callee.methods, n.args, line) : callee.method;
       const codes = this.callArgs(m, n.args, line);
       return this.retWrap({ c: `${m.js}(${[callee.self].concat(codes).join(', ')})`, t: m.ret });
     }
     if (callee.fn) {
-      const f = callee.fn;
+      const f = callee.fns && callee.fns.length > 1 ? this.pickOverload(callee.fns, n.args, line) : callee.fn;
       if (!this.called.has(f)) this.called.set(f, line);
       const codes = this.callArgs(f, n.args, line);
       return this.retWrap({ c: `${f.js}(${codes.join(', ')})`, t: f.ret });
@@ -1650,6 +1754,27 @@ class Codegen {
     const params = ft.params.map(p => ({ ...p, type: this.resolveType(p.type) }));
     const codes = this.callArgs({ name: 'function', params }, n.args, line);
     return this.retWrap({ c: `__fns[${fp.c}](${codes.join(', ')})`, t: this.resolveType(ft.ret) });
+  }
+
+  // Which overload a call means: the one whose parameters the arguments convert to best
+  pickOverload(fns, args, line) {
+    const save = this.out;
+    this.out = new Emitter();
+    let types;
+    try { types = args.map(a => a.kind === 'InitList' ? { k: 'initlist' } : this.decay(this.ex(a)).t); } finally { this.out = save; }
+    let best = null, bestScore = -1;
+    for (const f of fns) {
+      const need = f.params.filter(p => !p.def).length;
+      if (args.length > f.params.length || args.length < need) continue;
+      let score = 0;
+      for (let i = 0; i < args.length && score >= 0; i++) {
+        const s = matchScore(f.params[i].type, types[i]);
+        score = s < 0 ? -1 : score + s;
+      }
+      if (score > bestScore) { best = f; bestScore = score; }
+    }
+    if (!best) throw this.error(`No version of ${fns[0].name}() takes ${args.length ? 'these arguments' : 'no arguments'}`, line);
+    return best;
   }
 
   retWrap(e) {
@@ -1703,6 +1828,27 @@ class Codegen {
   }
 }
 
+// Same parameter types, ignoring const: the same function declared again
+function sameParams(a, b) {
+  return a.length === b.length && a.every((p, i) => sameType(p.type, b[i].type));
+}
+
+// How well an argument of type `a` fits a parameter of type `p`: -1 not at all, higher is better
+function matchScore(p, a) {
+  if (p.k === 'ref') p = p.to;
+  if (a.k === 'initlist') return p.k === 'struct' ? 2 : 1;
+  if (sameType(p, a)) return 4;
+  if (p.k === 'struct' || a.k === 'struct' || p.k === 'color' || a.k === 'color') return -1;
+  if (p.k === 'ptr') {
+    if (a.k === 'ptr') return p.to.k === 'void' || a.to.k === 'void' ? 1 : sameType(p.to, a.to) ? 3 : 1;
+    if (a.k === 'builtin') return 1;
+    return isInt(a) ? 0 : -1;
+  }
+  if (a.k === 'ptr') return isInt(p) && intOf(p).isBool ? 1 : -1;
+  if (isArith(p) && isArith(a)) return isInt(p) === isInt(a) ? 2 : 1;
+  return -1;
+}
+
 // only warn when a negative constant is compared with an unsigned value (e.g. `x > -1`)
 function signedNeg(e) {
   return e.cv !== undefined && e.cv < 0;
@@ -1749,8 +1895,9 @@ function collectAddrTaken(node, set, cg) {
     if (Array.isArray(n)) { n.forEach(visit); return; }
     if (n.kind === 'Unary' && n.op === '&' && n.arg.kind === 'Ident') set.add(n.arg.name);
     if (n.kind === 'Call' && n.callee.kind === 'Ident') {
-      const f = cg.funcs.get(n.callee.name);
-      if (f && f.params) f.params.forEach((p, i) => { if (p.type.k === 'ref' && n.args[i] && n.args[i].kind === 'Ident') set.add(n.args[i].name); });
+      const s = cg.lookup(n.callee.name, n.callee.abs, true);
+      const fns = s && (s.sk === 'fnset' || s.sk === 'method') ? s.fns : [];
+      for (const f of fns) if (f.params) f.params.forEach((p, i) => { if (p.type.k === 'ref' && n.args[i] && n.args[i].kind === 'Ident') set.add(n.args[i].name); });
     }
     if (n.kind === 'Call' && n.callee.kind === 'Member') {
       // method calls on a local struct take its address

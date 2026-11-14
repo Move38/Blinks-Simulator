@@ -1,6 +1,6 @@
 // The build steps' virtual file system on disk, run with the Arduino IDE's
 // avr-gcc 7.3.0 (the same compiler the IDE builds Blinks games with).
-import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync, readFileSync, readdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir, homedir } from 'node:os';
 import { join, dirname } from 'node:path';
@@ -8,6 +8,8 @@ import { join, dirname } from 'node:path';
 const ARDUINO = join(homedir(), 'Library/Arduino15/packages');
 export const GCC = join(ARDUINO, 'arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7');
 export const SDK = join(ARDUINO, 'move38/hardware/avr/1.3.0');
+// Bruno Albuquerque's Custom Blinklib (github.com/brunoga/blinklib)
+export const BGA_SDK = join(ARDUINO, 'blinklib/hardware/avr/1.4.3');
 
 export function nativeTools() {
   const root = mkdtempSync(join(tmpdir(), 'blinks-build-'));
@@ -16,7 +18,9 @@ export function nativeTools() {
   link(join(GCC, 'lib/gcc/avr/7.3.0/include-fixed'), 'sysroot/gcc/include-fixed');
   link(join(GCC, 'avr/include'), 'sysroot/avr/include');
   link(join(SDK, 'cores/blinklib'), 'core');
-  link(join(SDK, 'linkscripts'), 'ldscripts');
+  link(join(BGA_SDK, 'cores/blinklib'), 'core-bga');
+  for (const name of readdirSync(join(SDK, 'linkscripts'))) link(join(SDK, 'linkscripts', name), `ldscripts/${name}`);
+  link(join(BGA_SDK, 'linkscripts/avr5.xn'), 'ldscripts/bga-avr5.xn');
   link(join(GCC, 'lib/gcc/avr/7.3.0/avr5/libgcc.a'), 'libs/avr5/libgcc.a');
   for (const lib of ['libc.a', 'libm.a', 'libatmega168pb.a', 'libatmega328pb.a']) link(join(GCC, 'avr/lib/avr5', lib), `libs/avr5/${lib}`);
   mkdirSync(join(root, 'build'));
