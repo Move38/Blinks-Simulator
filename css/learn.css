@@ -37,9 +37,10 @@ code { font: 0.92em var(--f-mono); background: var(--panel-2); padding: 1px 5px;
 
 /* ---------- header ---------- */
 .bar { display: flex; align-items: center; gap: 14px; padding: 0 max(16px, env(safe-area-inset-right)) 0 max(16px, env(safe-area-inset-left)); border-bottom: 1px solid var(--line); }
-.brand { display: flex; align-items: center; gap: 12px; color: var(--text); text-decoration: none; }
-.logo { display: inline-flex; background: var(--blinks); color: #fff; font: 800 14px/1 var(--f-disp); padding: 6px 10px 7px; border-radius: 9px; transform: rotate(-3deg); }
-.ttl { font: 800 18px var(--f-disp); }
+.brand { display: flex; align-items: center; gap: 10px; color: var(--text); text-decoration: none; }
+/* the Blinks logo and the page's name, as in the playground's header */
+.logo { height: 30px; width: auto; display: block; }
+.ttl { font: 800 23px/1 var(--f-disp); letter-spacing: -.01em; padding-left: 10px; border-left: 1px solid var(--line); }
 .crumb { display: flex; align-items: center; gap: 8px; color: var(--muted); font-weight: 600; margin-left: 6px; }
 .crumb .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--wc); }
 .sp { flex: 1; }
