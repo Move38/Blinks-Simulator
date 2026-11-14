@@ -77,7 +77,8 @@ export class Board {
         minX = Math.min(minX, x); maxX = Math.max(maxX, x); minY = Math.min(minY, y); maxY = Math.max(maxY, y);
       }
     }
-    const top = 44, bottom = 76, side = 28;
+    // room for the playground's controls; hooks.margins can say otherwise (the learn page's Goal Blink)
+    const { top = 44, bottom = 76, side = 28 } = this.hooks.margins || {};
     const w = (maxX - minX) + 2.2, h = (maxY - minY) + 2.2;
     const S = clamp(Math.min((this.W - side * 2) / w, (this.H - top - bottom) / h), 18, 78);
     const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;

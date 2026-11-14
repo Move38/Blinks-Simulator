@@ -3,8 +3,14 @@
  */
 
 import light from './1-light.js';
+import input from './2-input.js';
+import memory from './3-memory.js';
+import time from './4-time.js';
+import patterns from './5-patterns.js';
+import neighbors from './6-neighbors.js';
 
-export const WORLDS = [light];
+// a world counts once it has its boss; until then the map shows it locked
+export const WORLDS = [light, input, memory, time, patterns, neighbors].filter(w => w.boss);
 
 // The skills levels are tagged with, as the map names them, in the order they're met
 export const SKILLS = {

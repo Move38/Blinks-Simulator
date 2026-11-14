@@ -20,11 +20,13 @@ export function colorName(c) {
   const v = rgb5(c), max = Math.max(...v);
   if (max === 0) return 'OFF';
   for (const [n, w] of Object.entries(NAMED)) if (w.every((x, i) => x === v[i])) return n;
-  // a named color, dimmed: the same shape at a lower brightness
-  for (const [n, w] of Object.entries(NAMED)) {
+  // a named color, dimmed: the same shape at a lower brightness. Very faint colors have to match
+  // closely, and at brightness 1 every color looks alike, so those keep their numbers.
+  const slack = max <= 3 ? 0.5 : 1.5;
+  if (max > 1) for (const [n, w] of Object.entries(NAMED)) {
     if (n === 'OFF') continue;
     const k = max / 31;
-    if (w.every((x, i) => Math.abs(x * k - v[i]) <= 1.5)) return 'dim ' + n;
+    if (w.every((x, i) => Math.abs(x * k - v[i]) <= slack)) return 'dim ' + n;
   }
   return `red ${v[0]} green ${v[1]} blue ${v[2]}`;
 }

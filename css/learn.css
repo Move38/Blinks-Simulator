@@ -174,6 +174,8 @@ code { font: 0.92em var(--f-mono); background: var(--panel-2); padding: 1px 5px;
 .order li::before { content: counter(ln); color: var(--faint); font-size: 11.5px; width: 18px; text-align: right; }
 .order li.fixed { cursor: default; background: transparent; border-style: dashed; color: var(--muted); }
 .order li.dragging { opacity: .4; }
+.order li.point { border-color: var(--star); background: rgba(250,204,21,.12); }
+.note.order-note { background: var(--panel-2); border-color: var(--line-2); color: var(--muted); }
 .order li .grip { margin-left: auto; color: var(--faint); font-family: var(--f-ui); }
 .order li:focus-visible { outline-offset: 0; }
 

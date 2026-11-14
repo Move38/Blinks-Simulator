@@ -113,6 +113,18 @@ void loop() {
       twist: {
         brief: 'Make the rainbow run the other way around: RED on face 0, then ORANGE on face 5, YELLOW on face 4, and so on.',
         checks: [facesShow({ 0: 'RED', 5: 'ORANGE', 4: 'YELLOW', 3: 'GREEN', 2: 'BLUE', 1: 'MAGENTA' }, { say: 'The rainbow runs counterclockwise' })],
+        solution: `void setup() {
+  setColorOnFace(RED, 0);
+  setColorOnFace(ORANGE, 5);
+  setColorOnFace(YELLOW, 4);
+  setColorOnFace(GREEN, 3);
+  setColorOnFace(BLUE, 2);
+  setColorOnFace(MAGENTA, 1);
+}
+
+void loop() {
+}
+`,
       },
       reflect: {
         q: 'Which face is just clockwise of face 5?',
@@ -280,6 +292,15 @@ void loop() {
           return !['WHITE', 'OFF'].includes(names[0]) || `They were ${names[0]}.`;
         },
       }],
+      solution: `void setup() {
+  setColor(makeColorRGB(250, 70, 22));
+  setColorOnFace(makeColorRGB(0, 120, 255), 0);
+  setColorOnFace(makeColorRGB(0, 120, 255), 3);
+}
+
+void loop() {
+}
+`,
     },
     reflect: {
       q: 'What happens if the setColor line moves to the end of setup()?',

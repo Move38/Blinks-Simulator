@@ -39,8 +39,14 @@ for (const level of LEVELS.values()) {
         for (const r of s.results) assert.ok(r.pass, `twist solution fails "${r.say}": ${r.saw}`);
       }
     }
+    if (level.order) {
+      // the cards are the goal's lines, shuffled: putting them in order solves the level
+      const sorted = a => [...a].sort();
+      assert.deepEqual(sorted(level.order.scrambled), sorted(level.goal.replace(/\n$/, '').split('\n')), 'the cards are the goal\'s lines');
+      assert.notEqual(level.order.scrambled.join('\n'), level.goal.replace(/\n$/, ''), 'the cards start out of order');
+    }
     if (level.hints?.point) {
-      const lines = (level.start || '').split('\n').length;
+      const lines = (level.order ? level.order.scrambled.join('\n') : level.start || '').split('\n').length;
       assert.ok(level.hints.point.line >= 1 && level.hints.point.line <= lines, 'the hint points at a line that exists');
     }
     if (level.reflect) assert.ok(level.reflect.answer < level.reflect.options.length);

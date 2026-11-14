@@ -7,9 +7,9 @@
 import { World } from '../runtime/world.js';
 import { Board } from '../ui/board.js';
 
-export function makeTable(canvas, { events = {}, fixed = false, bin = null, onLayout } = {}) {
+export function makeTable(canvas, { events = {}, fixed = false, bin = null, margins, onLayout } = {}) {
   let world = new World(events);
-  const board = new Board(canvas, world, { fixed, bin, onLayout: refit => { onLayout?.(); if (refit) board.fit(); } });
+  const board = new Board(canvas, world, { fixed, bin, margins, onLayout: refit => { onLayout?.(); if (refit) board.fit(); } });
   board.debug = 'tooltip';
   let last = performance.now(), paused = false;
   function frame(now) {

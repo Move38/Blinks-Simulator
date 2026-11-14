@@ -136,8 +136,8 @@ const tableEvents = {
   onWarn: (b, message, line) => con.add('warn', message, { who: b.id, line }),
   onSerial: (b, text) => con.add('out', text, { who: b.id }),
 };
-const table = makeTable($('#board'), { events: tableEvents, bin: $('#bin') });
-const goalTable = makeTable($('#goalBoard'), { fixed: true });
+const table = makeTable($('#board'), { events: tableEvents, bin: $('#bin'), margins: { top: 44, bottom: 56, side: 28 } });
+const goalTable = makeTable($('#goalBoard'), { fixed: true, margins: { top: 4, bottom: 4, side: 4 } });
 
 const editor = createCodeEditor($('#code'), { onChange: code => codeChanged(code, 'code'), onRun: () => check() });
 let blocks = null, blocksLoading = null;
@@ -189,6 +189,9 @@ function openLevel(level) {
   $('#pip').hidden = !goal?.ok;
   $('#pip').classList.toggle('wide', cells.length > 1);
   if (goal?.ok) { goalTable.reset(cells); goalTable.load(goal); goalTable.board.fit(false); }
+  // the learner's Blinks sit below the Goal panel, never under it
+  table.board.hooks.margins = { top: goal?.ok ? $('#pip').offsetHeight + 24 : 44, bottom: 56, side: 28 };
+  table.board.fit(false);
   $('#lockedOver').hidden = level.type !== 'predict';
 
   // the code: blocks, code or both, as the world teaches; an Order level shows its lines instead
@@ -295,7 +298,8 @@ function runLive() {
     const e = c.errors[0];
     L.sameError = e.message === L.lastError ? L.sameError + 1 : 1;
     L.lastError = e.message;
-    setStatus('err', e.line ? `Error on line ${e.line}` : 'Error');
+    if (L.level.order) setStatus('', 'Not a sketch yet');
+    else setStatus('err', e.line ? `Error on line ${e.line}` : 'Error');
     editor.setDiagnostics(c.errors.map(x => ({ line: x.line || 1, message: x.message, severity: 'err' })));
     L.live = null;
     renderChecks();
@@ -353,6 +357,11 @@ function renderChecks() {
   if (!ul) return;
   const checks = currentChecks();
   const err = L.live === null && compileLevelCode(L.code);
+  if (err && !err.ok && L.level.order) {
+    // scrambled cards don't make a sketch yet: that's the puzzle, not a mistake
+    ul.innerHTML = `<li class="note order-note">Drag the lines into order. The checks run once they make a sketch.</li>`;
+    return;
+  }
   if (err && !err.ok) {
     const e = err.errors[0];
     ul.innerHTML = `<li class="note">Fix the error${e.line ? ` on line ${e.line}` : ''} first. Then the checks run again.<br><small>${esc(e.message)}</small></li>`;
@@ -365,7 +374,8 @@ function renderChecks() {
     const cls = r?.pass ? 'pass' : failShown ? 'fail' : '';
     return `<li class="ck ${cls}"><span class="mk">${r?.pass ? '✓' : failShown ? '✗' : ''}</span><span>${esc(c.say)}${failShown && r.saw ? `<small>${esc(r.saw)}</small>` : ''}</span></li>`;
   }).join('');
-  const all = L.live && L.live.results.every(r => r.pass) && askAnswered();
+  // a Discover level may have no checks, only its question
+  const all = (checks.length ? L.live && L.live.results.every(r => r.pass) : true) && askAnswered();
   $('#checkBtn')?.classList.toggle('ready', !!all);
 }
 
@@ -443,10 +453,18 @@ function renderHints() {
 let pointed = null;
 function pointAt(line) {
   clearPoint();
-  if (!line || view === 'blocks' || L?.level.order) return;
+  if (!line) return;
+  if (L?.level.order) {
+    // the line the hint means is a card; it may have moved since
+    const text = L.level.order.scrambled[line - 1];
+    const li = [...$('#order').children].find(c => c.textContent.replace(/⠿$/, '') === text);
+    li?.classList.add('point');
+    return;
+  }
+  if (view === 'blocks') return;
   pointed = editor.cm.addLineClass(line - 1, 'background', 'cm-point-line');
 }
-function clearPoint() { if (pointed) { editor.cm.removeLineClass(pointed, 'background', 'cm-point-line'); pointed = null; } }
+function clearPoint() { $('#order').querySelector('.point')?.classList.remove('point'); if (pointed) { editor.cm.removeLineClass(pointed, 'background', 'cm-point-line'); pointed = null; } }
 
 // ---------------- Predict ----------------
 function predictHtml() {
@@ -605,8 +623,41 @@ function finishModal({ starred, coasting, worldDone }) {
   document.querySelector('#modalBody a[href="#map"]').addEventListener('click', () => { delete $('#modal').dataset.sticky; closeModal(); });
 }
 
+// ---------------- #dev/blocks: can every level a learner sees as blocks become blocks? ----------------
+async function blocksReport() {
+  closeLevel();
+  $('#mapView').hidden = false;
+  $('#levelView').hidden = true;
+  $('#mapSide').innerHTML = '<p class="eyebrow">Blocks check</p><p class="sub">Loading the block editor…</p>';
+  // the block editor needs a visible host to lay out in
+  $('#levelView').hidden = false;
+  $('#blocks').hidden = false;
+  const b = await getBlocks();
+  $('#levelView').hidden = true;
+  const rows = [];
+  for (const w of WORLDS) {
+    if (w.view === 'code') continue;
+    for (const l of [...w.levels, w.boss].filter(Boolean)) {
+      for (const lv of [l, l.bridge].filter(Boolean)) {
+        const sources = { start: lv.order ? null : lv.start, goal: lv.goal, twist: lv.twist?.solution };
+        for (const [which, src] of Object.entries(sources)) {
+          if (!src || (which === 'start' && lv.startFails)) continue;
+          const r = b.setCode(src);
+          rows.push({ id: lv.id, which, ok: r.ok, lossy: r.ok && r.lossy, note: r.ok ? (r.notes || []).join('; ') : r.message });
+        }
+      }
+    }
+  }
+  const bad = rows.filter(r => !r.ok || r.lossy);
+  $('#mapSide').innerHTML = `<p class="eyebrow">Blocks check</p><h2>${bad.length ? `${bad.length} of ${rows.length} need a look` : `All ${rows.length} convert`}</h2>
+    <p class="sub">Every start, goal and twist solution in the worlds that open in blocks, loaded into the block editor. "C code" means part of it shows as a C block.</p>
+    <div class="skills">${rows.map(r => `<div class="row"><span>${esc(r.id)} ${r.which}</span><b style="color:${!r.ok ? 'var(--err)' : r.lossy ? 'var(--warn)' : 'var(--ok)'}">${!r.ok ? 'fails' : r.lossy ? 'C code' : 'ok'}</b></div>${(!r.ok || r.lossy) && r.note ? `<p class="sub" style="margin:0 0 6px">${esc(r.note)}</p>` : ''}`).join('')}</div>`;
+  window.blocksReportResult = { total: rows.length, bad };
+}
+
 // ---------------- routing ----------------
 function route() {
+  if (location.hash === '#dev/blocks') return blocksReport();
   const m = /^#level\/(.+)$/.exec(location.hash);
   const level = m && LEVELS.get(decodeURIComponent(m[1]));
   if (level) openLevel(level);

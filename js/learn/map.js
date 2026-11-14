@@ -21,7 +21,7 @@ export function drawMap(svg, { state, worlds, selected, onLevel, onWorld }) {
   let g = `<path d="M60,110 L${POS.map(p => p.join(',')).join(' L')}" fill="none" stroke="#30283f" stroke-width="3" stroke-dasharray="2 9" stroke-linecap="round"/>`;
   g += blink(60, 110, S, ['W'], { glow: 'W' });
   g += `<text x="60" y="152" text-anchor="middle" class="m-sub">Start</text>`;
-  const all = PATH.map(([name, color], k) => worlds.find(w => w.n === k + 1) || { n: k + 1, name, color });
+  const all = PATH.map(([name, color], k) => worlds.find(w => w.n === k + 1 && w.boss) || { n: k + 1, name, color });
   all.forEach((w, k) => {
     const [x, y] = POS[k], real = !!w.levels;
     g += `<g class="m-world${w === selected ? ' sel' : ''}" data-world="${k}">`;
