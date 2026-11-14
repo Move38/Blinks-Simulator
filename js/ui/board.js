@@ -311,10 +311,12 @@ export class Board {
     rhex(c, x, y, R, R * 0.16); c.fillStyle = g; c.fill();
     if (this.hover === b && !lift) { rhex(c, x, y, R * 0.985, R * 0.15); c.strokeStyle = 'rgba(250,70,22,.7)'; c.lineWidth = 1.5; c.stroke(); }
 
-    // LED segments: face f is centred on angle a0 + f * 60°, measured from straight up
-    const r2 = R * 0.8;
+    // LED segments: face f is centred on angle a0 + f * 60°, measured from straight up,
+    // inside a window with slightly rounded corners
+    const r2 = R * 0.8, rr2 = r2 * 0.1;
     const V = [];
     for (let i = 0; i < 6; i++) { const a = a0 + i * Math.PI / 3; V.push([x + r2 * Math.cos(a), y + r2 * Math.sin(a)]); }
+    c.save(); rhex(c, x, y, r2, rr2, a0); c.clip();
     for (let f = 0; f < 6; f++) {
       const A = V[(f + 4) % 6], B = V[(f + 5) % 6];
       const L = colorToRGB(b.display[f]);
@@ -325,10 +327,15 @@ export class Board {
       lg.addColorStop(0, `rgba(255,255,255,${0.3 * a * a})`); lg.addColorStop(0.45, 'rgba(255,255,255,0)'); lg.addColorStop(1, 'rgba(20,20,30,.22)');
       c.fillStyle = lg; c.fill();
     }
-    c.strokeStyle = 'rgba(30,30,45,.3)'; c.lineWidth = 1;
+    // dividers multiply with the light under them, so each is a darker shade of its face
+    // (on a white face, the same grey as before)
+    c.globalCompositeOperation = 'multiply';
+    c.strokeStyle = 'rgb(187,187,192)'; c.lineWidth = 1;
     c.beginPath(); for (const p of V) { c.moveTo(x, y); c.lineTo(p[0], p[1]); } c.stroke();
-    c.beginPath(); V.forEach((p, i) => i ? c.lineTo(p[0], p[1]) : c.moveTo(p[0], p[1])); c.closePath();
-    c.strokeStyle = 'rgba(60,60,75,.45)'; c.lineWidth = 1.5; c.stroke();
+    c.restore();
+    c.save(); c.globalCompositeOperation = 'multiply';
+    rhex(c, x, y, r2, rr2, a0); c.strokeStyle = 'rgb(167,167,174)'; c.lineWidth = 1.5; c.stroke();
+    c.restore();
     if (pressed) { c.fillStyle = 'rgba(0,0,0,.12)'; c.fill(); }
 
     if (b.mode === 'crashed') {
@@ -567,10 +574,10 @@ function ledFill(L) {
   return mix(OFF_RGB, sat, Math.pow(a, 0.6)).map(v => Math.round(clamp(v, 0, 255))).join(',');
 }
 
-// rounded hexagon, flat top
-function rhex(c, x, y, R, rr) {
+// rounded hexagon, flat top (turned by a0)
+function rhex(c, x, y, R, rr, a0 = 0) {
   const P = [];
-  for (let i = 0; i < 6; i++) { const a = i * Math.PI / 3; P.push([x + R * Math.cos(a), y + R * Math.sin(a)]); }
+  for (let i = 0; i < 6; i++) { const a = a0 + i * Math.PI / 3; P.push([x + R * Math.cos(a), y + R * Math.sin(a)]); }
   c.beginPath(); c.moveTo((P[5][0] + P[0][0]) / 2, (P[5][1] + P[0][1]) / 2);
   for (let i = 0; i < 6; i++) { const p = P[i], n = P[(i + 1) % 6]; c.arcTo(p[0], p[1], n[0], n[1], rr); }
   c.closePath();
