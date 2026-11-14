@@ -1,7 +1,7 @@
 {
-  "version": "eab2391a6cf6",
+  "version": "fee7ec59e6a4",
   "files": {
-    "blinks.pack.gz": 410474,
+    "blinks.pack.gz": 421550,
     "cc1plus.mjs": 183199,
     "cc1plus.wasm.gz": 4532447,
     "avr-as.mjs": 134895,

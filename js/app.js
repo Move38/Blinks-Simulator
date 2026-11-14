@@ -394,8 +394,8 @@ async function openUpload() {
   d.innerHTML = `<form method="dialog" class="up">
     <button type="button" class="btn icon ghost close" aria-label="Close"><svg viewBox="0 0 20 20"><path d="M5 5l10 10M15 5 5 15" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg></button>
     <h2>Upload to a Blink</h2>
-    <p class="up-hint">Plug in your USBtinyISP programmer, hold its pins on the Blink’s programming pads, and choose Upload. Your sketch is built with avr-gcc and written along with the BlinkBIOS, as the Arduino IDE’s Upload does.</p>
-    ${bga ? `<p class="up-hint up-lib">Built on ${SDKS.bga.name} with its own BIOS, as its Arduino board package does. It only builds for the original Blinks’ ATmega168PB.</p>` : ''}
+    <p class="up-hint">Plug in your Dev Blink via USB and choose Upload. Your sketch is built with avr-gcc and written along with the BlinkBIOS, just like in the Arduino IDE.</p>
+    ${bga ? `<p class="up-hint up-lib">Built on ${SDKS.bga.name}, with the BIOS its board package uses for the Blink’s chip. Blink MAX and NFC need Move38’s blinklib.</p>` : ''}
     ${os === 'windows' ? `<details class="up-setup"><summary>Setting up Windows (once)</summary>
       <p>Chrome can only use a programmer that has Windows’ WinUSB driver:</p>
       <ol><li>Download <a href="https://zadig.akeo.ie" target="_blank" rel="noopener">Zadig</a> and run it.</li>
@@ -420,7 +420,7 @@ async function openUpload() {
   for (const input of d.querySelectorAll('input[name=board]')) {
     const b = UPLOAD_BOARDS[input.value], label = input.closest('label');
     label.querySelector('.t').textContent = b.name;
-    label.querySelector('.b').textContent = bga ? 'ATmega168PB' : b.note;
+    label.querySelector('.b').textContent = b.note;
     input.checked = input.value === (bga ? 'standard' : state.uploadBoard);
     input.onchange = () => { state.uploadBoard = input.value; saveState(); };
   }
@@ -471,7 +471,6 @@ async function openUpload() {
       let board = null;
       const r = await uploadFlash(tiny, async chip => {
         if (chip === 'atmega168pb' && choice !== 'standard') throw new UploadError(`This Blink has an ATmega168PB, so it isn’t a ${UPLOAD_BOARDS[choice].name}. Choose Blink and upload again.`);
-        if (lib === 'bga' && chip !== 'atmega168pb') throw new UploadError(`${SDKS.bga.name} only builds for the original Blinks’ ATmega168PB, and this Blink has an ATmega328PB.`);
         board = choice !== 'standard' ? choice : chip === 'atmega168pb' ? 'blink' : 'blink328';
         const b = await hw.toolchain.build(code, board, lib);
         const err = (b.diagnostics || []).find(x => x.severity === 'err');
@@ -485,7 +484,7 @@ async function openUpload() {
       });
       progress(1);
       const chipName = r.chip === 'atmega168pb' ? 'ATmega168PB' : 'ATmega328PB';
-      say(`Uploaded “${name}” to a ${UPLOAD_BOARDS[choice].name} (${chipName})${r.fusesSet ? ', and set its fuses' : ''}. Take the programmer off and it starts.`, 'ok');
+      say(`Uploaded “${name}” to a ${UPLOAD_BOARDS[choice].name} (${chipName})${r.fusesSet ? ', and set its fuses' : ''}.`, 'ok');
       con.add('info', `Uploaded “${name}” to a Blink with an ${chipName} (${board}): ${r.bytes} bytes of game and BIOS written and checked.`);
     } catch (e) {
       progress(null);

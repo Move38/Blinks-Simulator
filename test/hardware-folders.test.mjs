@@ -100,7 +100,26 @@ test('a Custom Blinklib game builds on its own blinklib and BIOS, and runs', asy
   assert.ok(bios.startsWith(':102E0000'));
   assert.equal(r.flash[0x2e00], parseInt(bios.slice(9, 11), 16));
   assert.equal(colors(r), 'BBBBBB');
-  assert.throws(() => target('blink328', 'bga'), /doesn't build for blink328/);
+  assert.throws(() => target('blink328max', 'bga'), /doesn't build for blink328max/);
+});
+
+test('a Custom Blinklib game builds for the 328PB, as its bga-dev branch does, and talks to a 168PB', async () => {
+  const r = await build(BGA, 'G.ino', { lib: 'bga', board: 'blink328' });
+  assert.ok(r.ok, r.stderr);
+  assert.equal(r.chip, 'atmega328pb');
+  assert.equal(target('blink328', 'bga').bios, 'BlinkBIOS-328PB.hex');   // Move38 1.3.0's, as bga-dev ships
+  assert.equal(colors(r), 'BBBBBB');
+  // Neighbors on a Custom Blinklib 168PB (its 1.2.0 BIOS) beside a Custom Blinklib 328PB (1.3.0's)
+  const neighbors = { 'N.ino': readFileSync(new URL('../hardware/fixtures/Neighbors/Neighbors.ino', import.meta.url), 'utf8') };
+  const a = await build(neighbors, 'N.ino', { lib: 'bga' }), b = await build(neighbors, 'N.ino', { lib: 'bga', board: 'blink328' });
+  const table = new AvrTable();
+  table.add(new AvrBlink({ chip: a.chip, flash: a.flash }));
+  table.add(new AvrBlink({ chip: b.chip, flash: b.flash }));
+  table.connect(0, 0, 1, 3);
+  table.run(20e9);   // past the 168PB's BIOS looking for a game to download
+  table.blinks.forEach((x) => x.takeColors());
+  table.run(100e6);
+  assert.deepEqual(table.blinks.map((x) => x.takeColors().map(([, g]) => (g > 0.5 ? 'G' : '.')).join('')), ['G.....', '...G..']);
 });
 
 test('a Custom Blinklib game’s config/blinklib_config.h builds blinklib too', async () => {

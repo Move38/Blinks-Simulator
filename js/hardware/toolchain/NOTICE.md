@@ -13,4 +13,4 @@ Downloaded only when the playground's hardware-exact mode is turned on. Rebuild 
     blinklib compiled for the ATmega168PB and ATmega328PB
   - Custom Blinklib 1.4.3's blinklib, link script and BlinkBIOS image
     ([brunoga/blinklib](https://github.com/brunoga/blinklib); see LICENSE-Custom-Blinklib.txt), with blinklib
-    compiled for the ATmega168PB
+    compiled for the ATmega168PB and ATmega328PB

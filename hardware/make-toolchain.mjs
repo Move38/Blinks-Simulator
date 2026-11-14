@@ -23,7 +23,8 @@ const kb = (n) => `${(n / 1024).toFixed(0)} KB`;
 
 const tools = await wasmToolsFromSources();
 for (const board of ['blink', 'blink328']) await compileCore(tools, board);
-await compileCore(tools, 'blink', { lib: 'bga' });   // without a game's config; one with a config builds its own
+// without a game's config; one with a config builds its own
+for (const board of ['blink', 'blink328']) await compileCore(tools, board, { lib: 'bga' });
 // The libraries are mostly debug info, which linking doesn't need (libgcc.a: 5.8 MB -> 1 MB)
 for (const path of [...tools.files.keys()].filter((p) => p.endsWith('.a'))) {
   await tools.run('objcopy', ['--strip-debug', path, path]);
@@ -71,6 +72,6 @@ Downloaded only when the playground's hardware-exact mode is turned on. Rebuild 
     blinklib compiled for the ATmega168PB and ATmega328PB
   - Custom Blinklib 1.4.3's blinklib, link script and BlinkBIOS image
     ([brunoga/blinklib](https://github.com/brunoga/blinklib); see LICENSE-Custom-Blinklib.txt), with blinklib
-    compiled for the ATmega168PB
+    compiled for the ATmega168PB and ATmega328PB
 `);
 console.log(`total download: ${kb(total)}`);

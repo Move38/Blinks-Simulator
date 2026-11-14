@@ -34,7 +34,7 @@ The tests that need nothing installed are in [test/hardware.test.mjs](../test/ha
 **Upload to a Blink…** in the menu writes the sketch to a real Blink through a USBtinyISP programmer, over WebUSB ([js/hardware/usbtiny.js](../js/hardware/usbtiny.js)). It does what the Arduino IDE's Upload does for a Blink, `avrdude -B 5 -cusbtiny` with the game and the BIOS:
 
 1. Enter programming mode at a 200 kHz SPI clock, and read the signature to tell a 168PB from a 328PB.
-2. Build the sketch for that chip, whether it's one file or a folder of them. **Blink** picks `blink` or `blink328`. **Blink MAX** and **Blink NFC**, under "Beta boards", build for `blink328max` and `blink328nfc`, and refuse a 168PB. A Custom Blinklib sketch builds for the 168PB only, with Custom Blinklib's own BIOS, as its board package does.
+2. Build the sketch for that chip, whether it's one file or a folder of them. **Blink** picks `blink` or `blink328`. **Blink MAX** and **Blink NFC**, under "Beta boards", build for `blink328max` and `blink328nfc`, and refuse a 168PB. A Custom Blinklib sketch builds for the 168PB or the 328PB (not MAX or NFC), with the BIOS its board package uses for that chip.
 3. Check the fuses against boards.txt. If they differ (a fresh chip doesn't jump to the BIOS), it asks before setting them, as Burn Bootloader does.
 4. Erase the chip, write each 128-byte page that holds anything, and read the pages back to check them.
 
@@ -148,9 +148,9 @@ Every path is on a virtual file system, so the same steps run with either set of
 
 ### Custom Blinklib
 
-Bruno Albuquerque's [Custom Blinklib](https://github.com/brunoga/blinklib) is its own Arduino platform (`blinklib:avr` 1.4.3): its own blinklib, link script and BIOS (Move38's 1.2.0), C++17, and the 168PB only. Its `platform.local.txt` puts the sketch's `config/` folder on the include path for blinklib too, so a game's `config/blinklib_config.h` changes blinklib itself. The toolchain ships Custom Blinklib's blinklib compiled without a config, and its sources: a game with a config gets blinklib compiled with it, kept for as long as the page is open.
+Bruno Albuquerque's [Custom Blinklib](https://github.com/brunoga/blinklib) is its own Arduino platform (`blinklib:avr` 1.4.3): its own blinklib, link script and BIOS (Move38's 1.2.0), C++17, and the 168PB only. Its unreleased [`bga-dev`](https://github.com/brunoga/blinklib/tree/bga-dev) branch (July 2021) adds a Blink328 board: the same blinklib with Move38 1.3.0's 328PB link script and BIOS, and the game at 0x3900. 1.4.3's BIOS interface headers lay out the BIOS's memory as 1.3.0's do, so that works, and the playground builds the 328PB that way, byte-for-byte as `bga-dev` does. A Custom Blinklib 168PB and 328PB see each other over IR. `bga-dev`'s MAX board is unfinished (a 9984-byte limit with the standard link script), and it has no NFC board, so those aren't offered. Its `platform.local.txt` puts the sketch's `config/` folder on the include path for blinklib too, so a game's `config/blinklib_config.h` changes blinklib itself. The toolchain ships Custom Blinklib's blinklib compiled without a config, and its sources: a game with a config gets blinklib compiled with it, kept for as long as the page is open.
 
-Its BIOS spends ten seconds at power-up looking for a game to download, spinning blue, before it starts the game. The emulator does the same. Hardware-exact mode doesn't run Custom Blinklib games yet, because its debug views only know where Move38's blinklib keeps its state; uploading them works.
+On the 168PB its BIOS spends ten seconds at power-up looking for a game to download, spinning blue, before it starts the game. The emulator does the same. Hardware-exact mode doesn't run Custom Blinklib games yet, because its debug views only know where Move38's blinklib keeps its state; uploading them works.
 
 ### Games that only fit with LTO
 
