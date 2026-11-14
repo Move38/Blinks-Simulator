@@ -6,7 +6,8 @@ Write code for [Blinks](https://move38.com) in C or with Scratch-style blocks, a
 - **Live.** Your sketch recompiles and restarts as you type, so you see every change right away.
 - **Faithful to the hardware.** The simulator compiles your sketch the way the Blinks SDK does and emulates blinklib and the Blink's BIOS, so code that works here should work on real Blinks.
 - **Hardware-exact mode.** The chip button under the table goes further. avr-gcc, the compiler the Arduino IDE uses for Blinks, compiles your sketch in the browser, and every Blink becomes an emulated ATmega168PB running the real BlinkBIOS and blinklib. Timing, IR and sleep are the real firmware's, and the console shows the flash and RAM the game really uses. It downloads about 6 MB the first time it's turned on, and nothing until then.
-- **Examples** to learn from: ten short lessons, ten one-Blink games from the [Blinks Arcade](https://blinksarcade.jonbobrow.com), Move38's games and the SDK examples. **Open from GitHub** (in the ⋯ menu or under Examples) loads a sketch from any public repository, folder or .ino link, combining a sketch folder's tabs and local headers into one file.
+- **Examples** to learn from: ten short lessons, ten one-Blink games from the [Blinks Arcade](https://blinksarcade.jonbobrow.com), Move38's games and the SDK examples. **Open from GitHub** (in the ⋯ menu or under Examples) loads a sketch from any public repository, folder or .ino link. A sketch folder's tabs and local headers are combined into one file; a bigger one, with .cpp files, a `src/` folder (git submodules too) or a `config/` folder, opens as all its files, in tabs, and is built the way the Arduino IDE builds it.
+- **Custom Blinklib.** Games written for Bruno Albuquerque's [Custom Blinklib](https://github.com/brunoga/blinklib), like [Hexxagon](https://github.com/brunoga/blinks-hexxagon), run with its whole-byte face values, datagrams that are resent until they arrive, and the settings in their `config/blinklib_config.h`. The playground picks it when a sketch names it; ⋯ → Blinks library switches.
 
 ## Using the table
 
@@ -58,6 +59,7 @@ Run the compiler and simulator tests with `npm test` (Node 20+).
 index.html, css/            the page
 js/app.js                   wires the editor, compiler, simulation and console together
 js/compiler/                preprocessor, parser, type checker and code generator (C++ -> JS)
+js/compiler/sdk.js          the blinklibs a sketch can be built against (Move38's, Custom Blinklib)
 js/runtime/blink.js         one Blink: blinklib + BIOS emulation
 js/runtime/world.js         the table: hex grid, IR links, time
 js/ui/                      board rendering, code editor, block editor, console

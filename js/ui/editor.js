@@ -135,13 +135,30 @@ export function createCodeEditor(host, { onChange, onRun }) {
     });
   }
 
+  // each file of a sketch keeps its own document, so switching files keeps its undo history
+  const docs = new Map();
+  let docKey = null;
   return {
     cm,
     getValue: () => cm.getValue(),
-    setValue(v) {
+    setValue(v, key = null) {
       silent = true;
-      cm.setValue(v);
-      cm.clearHistory();
+      clearDiagnostics();
+      docs.clear();
+      cm.swapDoc(CodeMirror.Doc(v, 'text/x-blinks'));
+      docKey = key;
+      silent = false;
+    },
+    // show file `key`, whose text is `v`
+    openDoc(key, v) {
+      if (key === docKey) return;
+      silent = true;
+      clearDiagnostics();
+      if (docKey !== null) docs.set(docKey, cm.getDoc());
+      let d = docs.get(key);
+      if (!d || d.getValue() !== v) d = CodeMirror.Doc(v, 'text/x-blinks');
+      cm.swapDoc(d);
+      docKey = key;
       silent = false;
     },
     setDiagnostics,

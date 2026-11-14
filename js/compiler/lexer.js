@@ -5,6 +5,11 @@
  * stream but collected separately so the block editor can keep them.
  */
 
+// In a sketch with several files, a token's line is file * LINE_FILE + its line in that file, so
+// the parser and code generator carry file positions without knowing about files. File 0 is the
+// main sketch, whose lines are unchanged.
+export const LINE_FILE = 100000;
+
 export class CompileError extends Error {
   constructor(message, line, col) {
     super(message);

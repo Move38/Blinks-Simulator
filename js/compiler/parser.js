@@ -2,10 +2,14 @@
  * Recursive-descent parser for the C++ subset used in Blinks sketches.
  *
  * AST overview (every node has `kind` and `line`):
- *   Program      { items: [FuncDef | VarDecl | TypeDecl] }
- *   FuncDef      { name, cls, type: fn-type, params: [{name,type,def}], body: Block|null, isStatic, inits }
+ *   Program      { items: [FuncDef | VarDecl | TypeDecl], usings, aliases }
+ *   FuncDef      { name, cls, type: fn-type, params: [{name,type,def}], body: Block|null, isStatic, isInline, inits }
  *   VarDecl      { decls: [{ name, type, init, line }], isStatic, isConst, isExtern }
  *   TypeDecl     { type }                       (struct/enum/typedef definitions)
+ *   Top-level items also carry `ns` (their namespace, like 'game::map', '' for the global one) and
+ *   `tu` (which translation unit, i.e. .cpp file, they come from). Struct, union and enum types are
+ *   registered under qualified names ('game::map::Data'), and a struct defined again in another
+ *   translation unit (from a shared header) reuses the first definition.
  *   Block        { body: [stmt] }
  *   If           { cond, then, else }
  *   For          { init: VarDecl|ExprStmt|null, cond, step, body }
@@ -28,17 +32,148 @@ const BASE_KW = new Set(['void', 'char', 'short', 'int', 'long', 'float', 'doubl
 const QUAL_KW = new Set(['const', 'volatile', 'static', 'extern', 'inline', 'register', 'constexpr', 'typedef', 'mutable', 'virtual', 'explicit', 'friend']);
 
 export function parse(tokens, opts = {}) {
-  return new Parser(tokens, opts).parseProgram();
+  return parseUnits([tokens], opts);
+}
+
+// A sketch of several translation units (the .ino files together, then each .cpp file), parsed
+// into one program that shares types and namespaces
+export function parseUnits(units, opts = {}) {
+  const p = new Parser(opts);
+  const items = [];
+  units.forEach((tokens, tu) => p.parseUnit(tokens, tu, items));
+  return { kind: 'Program', items, usings: p.usings, aliases: p.aliases, line: 1 };
+}
+
+// The names `name` might mean, from namespace `ns`, most likely first: ns::name, then each
+// enclosing namespace's, then through `using namespace` and `using a::b` in those namespaces.
+// `scope` is { ns, tu, usings, aliases } (usings and aliases as the parser collects them).
+export function candidates(name, scope) {
+  if (name.startsWith('::')) return [name.slice(2)];
+  const out = [];
+  const head = name.split('::')[0], rest = name.slice(head.length);
+  const parts = scope.ns ? scope.ns.split('::') : [];
+  for (;;) {
+    const p = parts.join('::');
+    out.push(p ? p + '::' + name : name);
+    const key = scope.tu + '|' + p;
+    const alias = scope.aliases && scope.aliases.get(key + '|' + head);
+    if (alias) out.push(alias + rest);
+    for (const u of (scope.usings && scope.usings.get(key)) || []) out.push(u + '::' + name);
+    if (!parts.length) break;
+    parts.pop();
+  }
+  return out;
 }
 
 class Parser {
-  constructor(tokens, opts) {
-    this.toks = tokens;
-    this.i = 0;
+  constructor(opts) {
     this.types = builtinTypeNames();
-    this.structs = new Map();   // struct tag -> type
+    this.structs = new Map();   // qualified struct tag -> type
     this.opts = opts;
     this.classStack = [];
+    this.ns = [];               // the namespaces we're inside
+    this.knownNs = new Set(['']);
+    this.usings = new Map();    // 'tu|ns' -> namespaces brought in by `using namespace`
+    this.aliases = new Map();   // 'tu|ns|name' -> what `using a::name` names
+    this.anon = 0;              // depth of anonymous namespaces: what's declared there is file-local
+    this.tu = 0;
+  }
+
+  parseUnit(tokens, tu, items) {
+    this.toks = tokens;
+    this.i = 0;
+    this.tu = tu;
+    this.ns = [];
+    this.anon = 0;
+    while (this.tok.t !== 'eof') {
+      const before = this.i;
+      this.parseTopLevel(items);
+      if (this.i === before) throw this.err(`Unexpected '${this.tok.v}'`);
+    }
+  }
+
+  // ---------- namespaces ----------
+  get curNs() { return this.ns.join('::'); }
+  qualify(name) { return this.ns.length ? this.curNs + '::' + name : name; }
+  scope() { return { ns: this.curNs, tu: this.tu, usings: this.usings, aliases: this.aliases }; }
+
+  // The type a (possibly qualified) name means here: { type, key } or null
+  findType(name) {
+    for (const key of candidates(name, this.scope())) {
+      const type = this.types.get(key);
+      if (type) return { type, key };
+    }
+    return null;
+  }
+
+  // The namespace a (possibly qualified) name means here, or null
+  findNs(name) {
+    for (const key of candidates(name, this.scope())) if (this.knownNs.has(key)) return key;
+    return null;
+  }
+
+  // `name`, `a::b::name` or `::name` starting k tokens ahead: { parts, global, ends[] } or null.
+  // ends[n] is the token index just after the (n+1)th part.
+  scanName(k = 0) {
+    let j = this.i + k, global = false;
+    if (this.isOp('::', this.toks[j]) && this.toks[j + 1] && this.toks[j + 1].t === 'id') { global = true; j++; }
+    if (!this.toks[j] || this.toks[j].t !== 'id') return null;
+    const parts = [this.toks[j].v], ends = [j + 1];
+    j++;
+    while (this.isOp('::', this.toks[j]) && this.toks[j + 1] && this.toks[j + 1].t === 'id') {
+      parts.push(this.toks[j + 1].v);
+      j += 2;
+      ends.push(j);
+    }
+    return { parts, global, ends };
+  }
+
+  // The longest name starting k tokens ahead that is a type: { type, key, end } or null
+  typeAt(k = 0) {
+    const s = this.scanName(k);
+    if (!s || BASE_KW.has(s.parts[0]) || QUAL_KW.has(s.parts[0])) return null;
+    for (let n = s.parts.length; n >= 1; n--) {
+      const f = this.findType((s.global ? '::' : '') + s.parts.slice(0, n).join('::'));
+      if (f) return { ...f, end: s.ends[n - 1] };
+    }
+    return null;
+  }
+
+  // `using namespace a::b;`, `using a::b::name;` or `using Name = type;`
+  parseUsing(items) {
+    const line = this.tok.line;
+    this.next();
+    const key = this.tu + '|' + this.curNs;
+    if (this.accept('namespace')) {
+      const s = this.scanName();
+      if (!s) throw this.err('Expected a namespace name');
+      const name = (s.global ? '::' : '') + s.parts.join('::');
+      this.i = s.ends[s.ends.length - 1];
+      const ns = this.findNs(name);
+      if (ns === null) throw this.err(`There's no namespace called '${name}'`);
+      if (!this.usings.has(key)) this.usings.set(key, []);
+      this.usings.get(key).push(ns);
+    } else if (this.tok.t === 'id' && this.isOp('=', this.peek())) {
+      const name = this.next().v;
+      this.next();
+      const t = this.parseTypeName();
+      if (!t) throw this.err('Expected a type after =');
+      this.types.set(this.qualify(name), t);
+      if (items) items.push({ kind: 'TypeDecl', type: t, line });
+    } else {
+      const s = this.scanName();
+      if (!s || s.parts.length < 2) throw this.err('Expected `using namespace name;` or `using name::member;`');
+      this.i = s.ends[s.ends.length - 1];
+      const last = s.parts[s.parts.length - 1];
+      const prefix = (s.global ? '::' : '') + s.parts.slice(0, -1).join('::');
+      const ns = this.findNs(prefix);
+      if (ns === null) throw this.err(`There's no namespace called '${prefix}'`);
+      const target = ns ? ns + '::' + last : last;
+      this.aliases.set(key + '|' + last, target);
+      const t = this.types.get(target);
+      if (t) this.types.set(this.qualify(last), t);
+    }
+    this.expect(';', 'after using');
   }
 
   // ---------- token helpers ----------
@@ -68,13 +203,17 @@ class Parser {
     return t.v;
   }
 
-  isTypeName(tk = this.tok) {
+  // Does a type name start k tokens ahead?
+  isTypeName(k = 0) {
+    const tk = this.peek(k);
+    if (this.isOp('::', tk)) return !!this.typeAt(k);
     if (tk.t !== 'id') return false;
-    return BASE_KW.has(tk.v) || this.types.has(tk.v) || tk.v === 'struct' || tk.v === 'union' || tk.v === 'enum' || tk.v === 'class';
+    return BASE_KW.has(tk.v) || tk.v === 'struct' || tk.v === 'union' || tk.v === 'enum' || tk.v === 'class' || !!this.typeAt(k);
   }
-  isDeclStart(tk = this.tok) {
-    if (tk.t !== 'id') return false;
-    return this.isTypeName(tk) || QUAL_KW.has(tk.v) || tk.v === '__attribute__';
+  isDeclStart(k = 0) {
+    const tk = this.peek(k);
+    if (tk.t !== 'id' && !this.isOp('::', tk)) return false;
+    return this.isTypeName(k) || QUAL_KW.has(tk.v) || tk.v === '__attribute__';
   }
 
   skipAttributes() {
@@ -85,35 +224,43 @@ class Parser {
   }
 
   // ---------- program ----------
-  parseProgram() {
-    const items = [];
-    while (this.tok.t !== 'eof') {
-      const before = this.i;
-      this.parseTopLevel(items);
-      if (this.i === before) throw this.err(`Unexpected '${this.tok.v}'`);
+  parseTopLevel(items) {
+    const first = items.length;
+    this.parseTopLevelItem(items);
+    for (let k = first; k < items.length; k++) {
+      const it = items[k];
+      if (it.ns === undefined) it.ns = this.curNs;
+      it.tu = this.tu;
+      if (this.anon && it.kind !== 'TypeDecl') it.isStatic = true;
     }
-    return { kind: 'Program', items, line: 1 };
   }
 
-  parseTopLevel(items) {
+  parseTopLevelItem(items) {
     if (this.accept(';')) return;
     const line = this.tok.line;
     if (this.is('namespace')) {
       this.next();
-      if (this.tok.t === 'id') this.next();
-      this.expect('{');
+      // namespace a { }, namespace a::b { }, or an anonymous namespace (its names are file-local)
+      const names = [];
+      while (this.tok.t === 'id') { names.push(this.next().v); if (!this.accept('::')) break; }
+      this.expect('{', 'to open the namespace');
+      if (!names.length) this.anon++;
+      for (const n of names) { this.ns.push(n); this.knownNs.add(this.curNs); }
       while (!this.isOp('}') && this.tok.t !== 'eof') this.parseTopLevel(items);
-      this.expect('}');
+      this.expect('}', 'to close the namespace');
+      this.ns.length -= names.length;
+      if (!names.length) this.anon--;
       return;
     }
-    if (this.is('using')) { while (!this.isOp(';') && this.tok.t !== 'eof') this.next(); this.next(); return; }
+    if (this.is('using')) { this.parseUsing(items); return; }
     if (this.is('template')) throw this.err('Templates are not supported in the simulator');
     if (this.is('extern') && this.peek().t === 'str') { this.next(); this.next(); if (this.accept('{')) { while (!this.isOp('}')) this.parseTopLevel(items); this.expect('}'); } return; }
 
     let spec = this.parseDeclSpec();
-    if (!spec && this.tok.t === 'id' && this.isOp('::', this.peek())) spec = { type: T.void }; // Foo::Foo() constructor
+    if (!spec && this.scanName() && this.scanName().parts.length > 1) spec = { type: T.void }; // Foo::Foo() constructor
     if (!spec) throw this.err(`Expected a declaration but found '${this.tok.t === 'eof' ? 'end of file' : this.tok.v}'`);
     if (spec.defined && this.isOp(';')) { this.next(); items.push({ kind: 'TypeDecl', type: spec.type, line }); return; }
+    if (spec.elaborated && this.isOp(';')) { this.next(); return; }  // struct Foo; declares Foo for later
     if (spec.isTypedef) { this.parseTypedefRest(spec, line); items.push({ kind: 'TypeDecl', type: spec.type, line }); return; }
     if (spec.defined) items.push({ kind: 'TypeDecl', type: spec.type, line });
 
@@ -132,9 +279,15 @@ class Parser {
     do {
       const d = this.parseDeclarator(spec.type);
       if (!d.name) throw this.err('typedef needs a name');
-      this.types.set(d.name, d.type);
-      if (d.type.k === 'struct' && !d.type.def.name) d.type.def.name = d.name;
-      if (d.type.k === 'enum' && !d.type.name) d.type.name = d.name;
+      const key = this.qualify(d.name);
+      // the same typedef of an unnamed struct or enum, from a header another .cpp file included
+      // too: keep the first, so both files mean the same type
+      const prev = this.types.get(key);
+      if (prev && prev.k === d.type.k && (d.type.k === 'struct' || d.type.k === 'enum') && prev.tu !== undefined && prev.tu !== this.tu) continue;
+      this.types.set(key, d.type);
+      if (d.type.k === 'struct' && !d.type.def.name) { d.type.def.name = key; d.type.def.short = d.name; d.type.name = key; }
+      if (d.type.k === 'enum' && (!d.type.name || d.type.name === 'enum')) { d.type.name = key; d.type.def.tag = d.type.def.tag || key; }
+      if (d.type.k === 'struct' || d.type.k === 'enum') d.type.tu = this.tu;
     } while (this.accept(','));
     this.expect(';', 'after typedef');
   }
@@ -144,7 +297,11 @@ class Parser {
     let cls = null, name = d.name;
     if (d.qual) { cls = d.qual; }
     else if (this.classStack.length) cls = this.classStack[this.classStack.length - 1].def.name;
-    const node = { kind: 'FuncDef', name, cls, type: fnType, params: fnType.params, body: null, isStatic: spec.isStatic, line, inits: null, isCtor: !!d.isCtor };
+    const node = {
+      kind: 'FuncDef', name, cls, type: fnType, params: fnType.params, body: null, line, inits: null, isCtor: !!d.isCtor,
+      isStatic: spec.isStatic || this.anon > 0, isInline: !!spec.isInline || !!this.classStack.length,
+      ns: d.nsQual !== undefined ? d.nsQual : this.curNs, tu: this.tu,
+    };
     if (this.accept(':')) {
       // constructor member initializer list
       node.inits = [];
@@ -182,7 +339,8 @@ class Parser {
       else if (this.isOp('(') ) { this.next(); ctorArgs = this.parseArgsUntil(')'); }
       else if (this.isOp('{') && d.type.k !== 'fn') { init = this.parseInitializer(); }
       decls.push({ name: d.name, type: d.type, init, ctorArgs, line: d.line || line });
-      if (this.types.has(d.name)) this.types.delete(d.name); // `state state;` — the variable hides the type
+      const hidden = this.findType(d.name);
+      if (hidden) this.types.delete(hidden.key); // `state state;` — the variable hides the type
       if (!this.accept(',')) break;
       d = this.parseDeclarator(spec.type);
     }
@@ -211,19 +369,21 @@ class Parser {
   // Returns { type, isStatic, isConst, isTypedef, isExtern, defined } or null
   parseDeclSpec() {
     const start = this.i;
-    let isStatic = false, isConst = false, isTypedef = false, isExtern = false;
+    let isStatic = false, isConst = false, isTypedef = false, isExtern = false, isInline = false, elaborated = false;
     let unsigned = null, longs = 0, short = false, base = null, named = null, defined = false;
     for (;;) {
       const t = this.tok;
-      if (t.t !== 'id') break;
+      if (t.t !== 'id' && !(this.isOp('::', t) && !base && !named)) break;
       const v = t.v;
       if (v === '__attribute__') { this.skipAttributes(); continue; }
       if (QUAL_KW.has(v)) {
         this.next();
         if (v === 'static') isStatic = true;
-        else if (v === 'const' || v === 'constexpr') isConst = true;
+        else if (v === 'const') isConst = true;
+        else if (v === 'constexpr') isConst = isInline = true;
         else if (v === 'typedef') isTypedef = true;
         else if (v === 'extern') isExtern = true;
+        else if (v === 'inline') isInline = true;
         continue;
       }
       if (named || base === 'struct') break;
@@ -237,17 +397,20 @@ class Parser {
       }
       if (v === 'struct' || v === 'union' || v === 'class') {
         if (base || named) break;
-        named = this.parseStructSpec(); defined = named.justDefined; delete named.justDefined; continue;
+        named = this.parseStructSpec(); defined = named.justDefined; delete named.justDefined; elaborated = !defined; continue;
       }
       if (v === 'enum') {
         if (base || named) break;
-        named = this.parseEnumSpec(); defined = named.justDefined; delete named.justDefined; continue;
+        named = this.parseEnumSpec(); defined = named.justDefined; delete named.justDefined; elaborated = !defined; continue;
       }
-      if (!base && unsigned === null && !longs && !short && this.types.has(v)) {
+      const ta = !base && unsigned === null && !longs && !short ? this.typeAt() : null;
+      if (ta) {
         // A name followed by '(' or '::' might be a constructor/method definition rather than a type
-        if (this.classStack.length && v === this.classStack[this.classStack.length - 1].def.name && this.isOp('(', this.peek())) break;
-        if (this.isOp('::', this.peek()) && this.types.has(v) && this.peek(2).t === 'id' && this.peek(2).v === v) break;
-        named = this.types.get(v); this.next(); continue;
+        const cls = this.classStack[this.classStack.length - 1];
+        if (cls && ta.type.def === cls.def && v === cls.def.short && this.isOp('(', this.toks[ta.end])) break;
+        const after = this.toks[ta.end], then = this.toks[ta.end + 1];
+        if (ta.type.k === 'struct' && this.isOp('::', after) && then && then.t === 'id' && then.v === ta.type.def.short) break;
+        named = ta.type; this.i = ta.end; continue;
       }
       break;
     }
@@ -270,7 +433,7 @@ class Parser {
       this.i = start;
       return null;
     }
-    return { type, isStatic, isConst, isTypedef, isExtern, defined };
+    return { type, isStatic, isConst, isTypedef, isExtern, isInline, defined, elaborated };
   }
 
   parseStructSpec() {
@@ -278,18 +441,34 @@ class Parser {
     this.skipAttributes();
     let tag = null;
     if (this.tok.t === 'id' && !this.isOp('{', this.tok)) tag = this.next().v;
-    let type = tag ? (this.structs.get(tag) || null) : null;
+    const declares = this.isOp('{') || this.isOp(':') || this.isOp(';');
+    let type = null, key = null;
+    if (tag) {
+      // `struct Foo {` and `struct Foo;` declare Foo in this namespace; `struct Foo *p` refers to one
+      if (!declares) for (const k of candidates(tag, this.scope())) if (this.structs.has(k)) { key = k; break; }
+      if (!key) key = this.qualify(tag);
+      type = this.structs.get(key) || null;
+    }
     if (!type) {
-      type = { k: 'struct', name: tag, def: { name: tag, kind: kw, members: [], methods: new Map(), size: null, complete: false, line: this.tok.line } };
-      if (tag) { this.structs.set(tag, type); this.types.set(tag, type); }
+      type = { k: 'struct', name: key, def: { name: key, short: tag, ns: this.curNs, tu: this.tu, kind: kw, members: [], methods: new Map(), size: null, complete: false, line: this.tok.line } };
+      if (tag) { this.structs.set(key, type); this.types.set(key, type); }
     }
     let justDefined = false;
     if (this.isOp('{') || this.isOp(':')) {
       if (this.accept(':')) throw this.err('Class inheritance is not supported in the simulator');
       this.next();
-      this.parseStructBody(type, kw);
+      if (type.def.complete) {
+        // defined again: from a header that another .cpp file included too. Keep the first
+        // definition so both files mean the same type, and read past this one.
+        if (type.def.tu === this.tu) throw this.err(`${kw} ${tag} is defined twice`);
+        const copy = { k: 'struct', name: key, def: { ...type.def, members: [], methods: new Map(), complete: false } };
+        this.parseStructBody(copy, kw);
+      } else {
+        type.def.tu = this.tu;
+        this.parseStructBody(type, kw);
+        type.def.complete = true;
+      }
       this.expect('}', `to close ${kw} ${tag || ''}`);
-      type.def.complete = true;
       justDefined = true;
     }
     return Object.assign(Object.create(null), type, { justDefined });
@@ -304,7 +483,7 @@ class Parser {
       if ((this.is('public') || this.is('private') || this.is('protected')) && this.isOp(':', this.peek())) { access = this.next().v; this.next(); continue; }
       const line = this.tok.line;
       // constructor
-      if (this.tok.t === 'id' && this.tok.v === def.name && this.isOp('(', this.peek())) {
+      if (this.tok.t === 'id' && this.tok.v === def.short && this.isOp('(', this.peek())) {
         const nm = this.next().v;
         const params = this.parseParams();
         const d = { name: nm, type: fn(T.void, params.params, params.variadic), isCtor: true, line };
@@ -315,19 +494,24 @@ class Parser {
       }
       if (this.is('~')) throw this.err('Destructors are not supported in the simulator');
       if ((this.is('union') || this.is('struct')) && this.isOp('{', this.peek())) {
-        // anonymous member union/struct: its fields belong to the parent
+        // anonymous member union/struct: its fields belong to the parent, unless it names a
+        // member (`struct { ... } player[4];`)
         const inner = this.parseStructSpec();
-        if (this.tok.t === 'id') {
-          const nm = this.next().v;
-          def.members.push({ name: nm, type: inner, access, line });
-        } else def.members.push({ name: null, anon: true, type: inner, access, line });
+        delete inner.justDefined;
+        if (this.isOp(';')) def.members.push({ name: null, anon: true, type: inner, access, line });
+        else {
+          do {
+            const d = this.parseDeclarator(inner);
+            def.members.push({ name: d.name, type: d.type, access, line });
+          } while (this.accept(','));
+        }
         this.expect(';');
         continue;
       }
       const spec = this.parseDeclSpec();
       if (!spec) throw this.err(`Unexpected '${this.tok.v}' in ${kw}`);
       if (spec.isTypedef) { this.parseTypedefRest(spec, line); continue; }
-      if (spec.defined && this.accept(';')) continue;
+      if ((spec.defined || spec.elaborated) && this.accept(';')) continue;
       do {
         const d = this.parseDeclarator(spec.type);
         if (d.type.k === 'fn') {
@@ -362,19 +546,25 @@ class Parser {
       if (!s) throw this.err('Expected the enum\'s underlying type');
       base = s.type;
     }
-    let type = tag && this.types.get(tag);
+    let type = null, key = null;
+    if (tag) {
+      if (!this.isOp('{')) { const f = this.findType(tag); if (f && f.type.k === 'enum') { type = f.type; key = f.key; } }
+      if (!type) { key = this.qualify(tag); type = this.types.get(key); }
+    }
     if (!type || type.k !== 'enum') {
-      type = { k: 'enum', name: tag || 'enum', base, def: { items: [], scoped, tag } };
-      if (tag) this.types.set(tag, type);
+      type = { k: 'enum', name: key || 'enum', base, tu: this.tu, def: { items: [], scoped, tag: key, ns: this.curNs, tu: this.tu } };
+      if (tag) this.types.set(key, type);
     }
     let justDefined = false;
     if (this.accept('{')) {
+      // defined again, from a header another .cpp file included too: keep the first definition
+      const items = type.def.items.length && type.def.tu !== this.tu ? [] : type.def.items;
       while (!this.isOp('}')) {
         const line = this.tok.line;
         const name = this.ident('an enum value name');
         let value = null;
         if (this.accept('=')) value = this.parseCondExpr();
-        type.def.items.push({ name, value, line });
+        items.push({ name, value, line });
         if (!this.accept(',')) break;
       }
       this.expect('}', 'to close the enum');
@@ -400,19 +590,30 @@ class Parser {
       t = this.parseSuffixes(t);
       return { name: inner.name, type: substitute(inner.type, hole, t), line };
     }
-    let name = null, qual = null, isCtor = false;
+    let name = null, qual = null, nsQual, isCtor = false;
     if (this.tok.t === 'id' && !QUAL_KW.has(this.tok.v)) {
-      name = this.next().v;
+      const parts = [this.next().v];
       while (opts.allowQualified && this.isOp('::')) {
         this.next();
-        qual = name;
         if (this.isOp('~')) throw this.err('Destructors are not supported in the simulator');
-        name = this.ident();
-        if (name === qual) isCtor = true;
+        parts.push(this.ident());
+      }
+      name = parts.pop();
+      if (parts.length) {
+        // Foo::bar (a method of class Foo) or game::map::Get (a function in a namespace)
+        const prefix = parts.join('::');
+        const ft = this.findType(prefix);
+        if (ft && ft.type.k === 'struct') {
+          qual = ft.type.def.name;
+          if (name === ft.type.def.short) isCtor = true;
+        } else {
+          nsQual = this.findNs(prefix);
+          if (nsQual === null) throw this.err(`'${prefix}' isn't a class or namespace declared above`);
+        }
       }
     }
     t = this.parseSuffixes(t);
-    return { name, type: t, qual, isCtor, line };
+    return { name, type: t, qual, nsQual, isCtor, line };
   }
 
   parseSuffixes(t) {
@@ -427,7 +628,7 @@ class Parser {
       } else if (this.isOp('(')) {
         // function parameters, unless it looks like constructor arguments: `Box box(21);`
         const n = this.peek();
-        if (!(this.isOp(')', n) || this.isDeclStart(n) || this.is('...', n))) break;
+        if (!(this.isOp(')', n) || this.isDeclStart(1) || this.is('...', n))) break;
         const p = this.parseParams();
         sufs.push({ fn: true, params: p.params, variadic: p.variadic });
         while (this.is('const') || this.is('override') || this.is('noexcept')) this.next();
@@ -565,6 +766,7 @@ class Parser {
           return { kind: 'Return', arg, line };
         }
         case 'goto': throw this.err('goto is not supported in the simulator');
+        case 'using': this.parseUsing(null); return { kind: 'Empty', line };
         case 'typedef': {
           const spec = this.parseDeclSpec();
           this.parseTypedefRest(spec, line);
@@ -575,6 +777,7 @@ class Parser {
         const spec = this.parseDeclSpec();
         if (spec) {
           if (spec.defined && this.accept(';')) return { kind: 'TypeDecl', type: spec.type, line };
+          if (spec.elaborated && this.accept(';')) return { kind: 'Empty', line };
           const d = this.parseDeclarator(spec.type);
           return this.parseVarDeclRest(spec, d, line);
         }
@@ -587,8 +790,11 @@ class Parser {
 
   // `byte(x)`, `Color(1,2,3)`, `Timer::foo` etc. start with a type name but are expressions
   looksLikeExpression() {
-    const t = this.tok, n = this.peek();
-    if (!this.types.has(t.v) && !BASE_KW.has(t.v)) return false;
+    const t = this.tok;
+    const ta = BASE_KW.has(t.v) ? null : this.typeAt();
+    if (!ta && !BASE_KW.has(t.v)) return false;
+    const n = ta ? this.toks[ta.end] : this.peek();
+    if (ta && n.t === 'op' && n.v === '(' && this.isOp('*', this.toks[ta.end + 1])) return false;
     if (n.t === 'op' && (n.v === '(' || n.v === '::' || n.v === '.' || n.v === '{')) {
       if (n.v === '(' && this.isOp('*', this.peek(2))) return false; // function pointer declaration
       return true;
@@ -699,7 +905,8 @@ class Parser {
 
   looksLikeFunctionalCastInParens() {
     // "(byte(x) + 1)" — a type name followed by '(' inside parens is an expression
-    const n = this.peek();
+    const ta = this.typeAt();
+    const n = ta ? this.toks[ta.end] : this.peek();
     return n.t === 'op' && (n.v === '(' || n.v === '::' || n.v === '.');
   }
 
@@ -746,25 +953,27 @@ class Parser {
         if (v === 'nullptr') { this.next(); return { kind: 'Num', value: 0, raw: '0', isNull: true, line }; }
         if (v === 'this') { this.next(); return { kind: 'This', line }; }
         // functional cast / construction: byte(x), Color(r,g,b), Timer()
-        if ((this.types.has(v) || BASE_KW.has(v)) && v !== 'auto') {
+        const ta = BASE_KW.has(v) ? null : this.typeAt();
+        if ((ta || BASE_KW.has(v)) && v !== 'auto') {
           const save = this.i;
           const spec = this.parseDeclSpec();
           if (spec && (this.isOp('(') || this.isOp('{'))) {
             const close = this.isOp('(') ? ')' : '}';
             this.next();
             const args = this.parseArgsUntil(close);
-            return { kind: 'Construct', type: spec.type, args, line };
+            // Type{a, b} initializes like `Type x = {a, b}`
+            return { kind: 'Construct', type: spec.type, args: close === '}' && spec.type.k === 'struct' ? [{ kind: 'InitList', items: args, line }] : args, line };
           }
           if (spec && spec.type.k === 'enum' && this.isOp('::')) {
             this.next();
             const name = this.ident();
-            return { kind: 'Ident', name: (spec.type.name) + '::' + name, line };
+            return { kind: 'Ident', name: (spec.type.name) + '::' + name, abs: true, line };
           }
           this.i = save;
-          if (this.isOp('::', this.peek())) {
-            this.next(); this.next();
+          if (ta && this.isOp('::', this.toks[ta.end])) {
+            this.i = ta.end + 1;
             const name = this.ident();
-            return { kind: 'Ident', name: v + '::' + name, line };
+            return { kind: 'Ident', name: ta.key + '::' + name, abs: true, line };
           }
           throw this.err(`'${v}' is a type; expected a value here`);
         }
@@ -780,7 +989,12 @@ class Parser {
           this.expect(')');
           return { kind: 'Paren', expr: e, line };
         }
-        if (t.v === '::') { this.next(); return this.parsePrimary(); }
+        if (t.v === '::') {
+          this.next();
+          const e = this.parsePrimary();
+          if (e.kind === 'Ident' && !e.abs) e.name = '::' + e.name;
+          return e;
+        }
         if (t.v === '{') return this.parseInitializer();
         break;
       case 'eof':

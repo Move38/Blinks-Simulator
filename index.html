@@ -55,6 +55,7 @@
         <input class="sketch-name" id="sketchName" value="My sketch" placeholder="untitled" spellcheck="false" aria-label="Sketch name">
         <div class="status" id="status" aria-live="polite"><span class="dot"></span><span class="txt">Ready</span></div>
       </div>
+      <div class="file-tabs" id="fileTabs" role="tablist" aria-label="Files" hidden></div>
       <div class="editor-body">
         <div id="code" class="view"></div>
         <div id="blocks" class="view" hidden></div>
@@ -146,17 +147,19 @@
     <span class="drift-mark" aria-hidden="true">typical</span>
   </div>
 </div>
+<div class="popover menu-pop debug-pop lib-pop" id="libPop" role="menu" aria-label="Blinks library" hidden></div>
 <div class="popover menu-pop" id="menuPop" hidden>
   <button type="button" data-action="new">New sketch</button>
-  <button type="button" data-action="open">Open .ino file…</button>
+  <button type="button" data-action="open">Open sketch files…</button>
   <button type="button" data-action="github">Open from GitHub…</button>
-  <button type="button" data-action="download">Download .ino</button>
+  <button type="button" data-action="download">Download</button>
+  <button type="button" data-action="library">Blinks library…</button>
   <button type="button" data-action="share">Copy share link</button>
   <button type="button" data-action="arrangement" title="Copy where the Blinks are, to use as an example's starting arrangement">Copy arrangement</button>
   <hr>
   <button type="button" data-action="help">How the simulator works</button>
 </div>
-<input type="file" id="fileInput" accept=".ino,.cpp,.c,.h,.txt" hidden>
+<input type="file" id="fileInput" accept=".ino,.cpp,.c,.h,.hpp,.txt" multiple hidden>
 <dialog class="help" id="helpDialog"></dialog>
 <dialog class="help confirm" id="confirmDialog"></dialog>
 <dialog class="help github" id="githubDialog" aria-label="Open from GitHub"></dialog>

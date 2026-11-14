@@ -33,8 +33,11 @@ export const DRIFT = { typical: 0.02, min: 0.005, max: 0.1 };
 // to send again. While a packet is on its way, neither end of the link sends anything else on
 // that face.
 export const IR = { BYTE_MS: 3, DATAGRAM_SLOWDOWN: 1.5 };
+// Custom Blinklib's packets (k: 'bga') are the type byte, a header byte, the face value, and a
+// datagram if one rides along; they resend until acknowledged, so there's no slowdown.
 export function airtime(pkt) {
   if (pkt.k === 'dgram') return Math.round((pkt.data.length + 3) * IR.BYTE_MS * IR.DATAGRAM_SLOWDOWN);
+  if (pkt.k === 'bga') return (2 + pkt.size + (pkt.data ? pkt.data.length : 0)) * IR.BYTE_MS;
   return (pkt.k === 'value' ? 2 : 3) * IR.BYTE_MS;
 }
 
@@ -56,8 +59,11 @@ export class World {
   // ---------- program ----------
   load(compiled) {
     const lineMap = compiled.lineMap;
+    const sterile = compiled.sdk && compiled.sdk.id === 'bga' && (compiled.globals || []).find(g => g.name === 'sterileFlag');
     this.program = {
       factory: compiled.factory,
+      sdk: compiled.sdk,
+      sterileAddr: sterile ? sterile.addr : undefined,
       mapLine(stack) {
         const m = /<anonymous>:(\d+):\d+/.exec(stack);
         if (!m) return 0;
@@ -183,7 +189,7 @@ export class World {
         const pkt = out[i + 1];
         at += airtime(pkt);
         const n = this.neighbor(b, out[i]);
-        if (!n) { if (pkt.k === 'dgram') pkt.result = 'lost'; continue; }
+        if (!n) { if (pkt.k === 'dgram') pkt.result = 'lost'; else if (pkt.first && !pkt.first.result) pkt.first.result = 'lost'; continue; }
         b.faces[out[i]].busyUntil = n.blink.faces[n.face].busyUntil = at;
         this.inflight.push({ from: b, f: out[i], to: n.blink, face: n.face, pkt, at });
       }
