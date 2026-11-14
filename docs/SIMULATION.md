@@ -247,7 +247,7 @@ The items are ordered roughly by how likely they are to make a game behave diffe
 - Flash size is not checked. A sketch that runs here may be too big to upload.
 - Overloads are picked by a simple ranking of how well each argument converts, not C++'s full rules. Calls that are ambiguous in C++ pick one here.
 - Hardware-exact mode runs sketches for Move38's blinklib, of one file or several. A sketch for Custom Blinklib runs in the simulator, though Upload to a Blink builds it with avr-gcc.
-- With Custom Blinklib, the BIOS's ten-second search for a game to download at power-up is skipped: the game starts at once.
+- With Custom Blinklib, its 168PB BIOS's ten-second search for a game to download at power-up is skipped: the game starts at once. (On a 328PB it uses Move38's 1.3.0 BIOS, which doesn't search.)
 
 ### Power, sleep and game sharing
 

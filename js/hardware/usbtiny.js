@@ -133,7 +133,7 @@ export class UsbTiny {
       await this.control(REQ.POWERUP, SCK_PERIOD, RESET_HIGH);
       await sleep(20);
     }
-    throw new UploadError('No Blink answered. Hold the programmer’s pins firmly on the Blink’s pads, check the Blink’s battery, and try again.');
+    throw new UploadError('No Blink answered. Check that it’s connected to the programmer and its battery is charged, then try again.');
   }
 
   async signature() { return [(await this.spi(0x30, 0, 0, 0))[3], (await this.spi(0x30, 0, 1, 0))[3], (await this.spi(0x30, 0, 2, 0))[3]]; }
@@ -189,7 +189,7 @@ export async function uploadFlash(tiny, imageFor, { onProgress = () => {}, confi
   if (!found) {
     const blank = sig.every((b) => b === 0) || sig.every((b) => b === 0xff);
     throw new UploadError(blank
-      ? 'The programmer is connected, but no Blink answered. Hold its pins firmly on the Blink’s pads and try again.'
+      ? 'The programmer is connected, but no Blink answered. Check that a Blink is connected to it and try again.'
       : `This chip (signature ${sig.map(hex2).join(' ')}) isn’t one a Blink uses.`);
   }
   const c = CHIPS[found];
@@ -219,7 +219,7 @@ export async function uploadFlash(tiny, imageFor, { onProgress = () => {}, confi
     onProgress((pages.length + i) / steps, 'Checking…');
     const got = await tiny.readPage(addr);
     const at = got.findIndex((b, j) => b !== flash[addr + j]);
-    if (at >= 0) throw new UploadError(`Checking found 0x${hex2(got[at])} at 0x${(addr + at).toString(16)} instead of 0x${hex2(flash[addr + at])}. Hold the programmer still and upload again.`);
+    if (at >= 0) throw new UploadError(`Checking found 0x${hex2(got[at])} at 0x${(addr + at).toString(16)} instead of 0x${hex2(flash[addr + at])}. Upload again.`);
   }
   onProgress(1, 'Done');
   return { chip: found, pages: pages.length, bytes: pages.length * PAGE, fusesSet: off.length > 0 };

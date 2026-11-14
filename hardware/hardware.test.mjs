@@ -185,9 +185,11 @@ test('the browser toolchain builds Custom Blinklib games the same as the IDE\'s 
   const game = readFileSync(new URL('fixtures/Neighbors/Neighbors.ino', import.meta.url), 'utf8');
   for (const config of [null, '#define BGA_CUSTOM_BLINKLIB_IR_DATAGRAM_LEN 5\n#define BGA_CUSTOM_BLINKLIB_SEND_PROBE_TIMEOUT_MS 300\n']) {
     const units = sketchUnits({ 'Neighbors.ino': game, ...(config ? { 'config/blinklib_config.h': config } : {}) }, 'Neighbors.ino');
-    const w = await buildSketch(wasm, units, 'blink', { prebuiltCore: true, lib: 'bga' });
-    const n = await buildSketch(nativeTools(), units, 'blink', { lib: 'bga' });
-    assert.ok(w.ok && n.ok, w.stderr || n.stderr);
-    assert.deepEqual(withBios(w.gameHex, bios), withBios(n.gameHex, bios), config ? 'with a config' : 'without');
+    for (const board of ['blink', 'blink328']) {
+      const w = await buildSketch(wasm, units, board, { prebuiltCore: true, lib: 'bga' });
+      const n = await buildSketch(nativeTools(), units, board, { lib: 'bga' });
+      assert.ok(w.ok && n.ok, w.stderr || n.stderr);
+      assert.deepEqual(withBios(w.gameHex, bios, board), withBios(n.gameHex, bios, board), `${board} ${config ? 'with a config' : 'without'}`);
+    }
   }
 });

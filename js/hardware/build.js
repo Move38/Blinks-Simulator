@@ -29,16 +29,18 @@ export const CORE_SOURCES = ['blinklib.cpp', 'Timer.cpp', 'Serial.cpp', 'Print.c
 
 // The blinklibs a sketch can be built on (the ids are compiler/sdk.js's):
 //   move38  Move38's, from the Arduino IDE's move38:avr 1.3.0, for every board above
-//   bga     Bruno Albuquerque's Custom Blinklib, from blinklib:avr 1.4.3. Its boards.txt
-//           only has the 168PB, with its own link script and BIOS (Move38's 1.2.0), and
-//           its platform.local.txt puts the sketch's config folder on the include path,
+//   bga     Bruno Albuquerque's Custom Blinklib, from blinklib:avr 1.4.3: the 168PB with its
+//           own link script and BIOS (Move38's 1.2.0). Its unreleased bga-dev branch adds
+//           the 328PB as Move38's blink328 board (Move38 1.3.0's link script and BIOS, the
+//           game at 0x3900) with 1.4.3's blinklib, whose BIOS interface matches 1.3.0's.
+//           Its platform.local.txt puts the sketch's config folder on the include path,
 //           so blinklib itself is built with the game's config/blinklib_config.h.
 export const BLINKLIBS = {
   move38: { core: '/core', sources: CORE_SOURCES, std: 'gnu++11' },
   bga: {
     core: '/core-bga', std: 'gnu++17',
     sources: ['blinklib.cpp', 'blinklib_ir.cpp', 'blinklib_led.cpp', 'blinklib_time.cpp', 'blinklib_timer.cpp', 'blinklib_warm_sleep.cpp', 'Serial.cpp', 'Print.cpp', 'main.cpp', 'sp.cpp'],
-    boards: { blink: { board: 'AVR_BLINK', linkscript: 'bga-avr5.xn', bios: 'BlinkBIOS-CustomBlinklib.hex' } },
+    boards: { blink: { board: 'AVR_BLINK', linkscript: 'bga-avr5.xn', bios: 'BlinkBIOS-CustomBlinklib.hex' }, blink328: {} },
     config: 'config/blinklib_config.h',
   },
 };
