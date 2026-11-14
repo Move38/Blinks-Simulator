@@ -246,7 +246,7 @@ The items are ordered roughly by how likely they are to make a game behave diffe
 - Float math functions use JavaScript's `Math` rounded to 32 bits. Results can differ from avr-libc in the last bit.
 - Flash size is not checked. A sketch that runs here may be too big to upload.
 - Overloads are picked by a simple ranking of how well each argument converts, not C++'s full rules. Calls that are ambiguous in C++ pick one here.
-- Hardware-exact mode builds single-file sketches for Move38's blinklib only. A sketch of several files, or one for Custom Blinklib, runs in the simulator.
+- Hardware-exact mode runs sketches for Move38's blinklib, of one file or several. A sketch for Custom Blinklib runs in the simulator, though Upload to a Blink builds it with avr-gcc.
 - With Custom Blinklib, the BIOS's ten-second search for a game to download at power-up is skipped: the game starts at once.
 
 ### Power, sleep and game sharing

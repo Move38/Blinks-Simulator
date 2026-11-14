@@ -18,11 +18,19 @@ const STORE = 'blinks.playground.v2';
 
 // ---------------- state ----------------
 const DEBUG_MODES = ['none', 'tooltip', 'comms'];
+// What Upload to a Blink can build for. `standard` is whichever of blink (168PB) or blink328
+// matches the chip it finds; the others are 328PB boards (js/hardware/build.js)
+const UPLOAD_BOARDS = {
+  standard: { name: 'Blink', note: 'ATmega168PB or ATmega328PB, found when you upload' },
+  blink328max: { name: 'Blink MAX', note: 'ATmega328PB, with room for a 7936-byte game and isMAXblink()', beta: true },
+  blink328nfc: { name: 'Blink NFC', note: 'ATmega328PB with an NFC chip, isNFCblink() and saveGameStat()', beta: true },
+};
 const saved = loadState();
 const urlEngine = new URLSearchParams(location.search).has('hardware') ? 'hardware' : null;
 const state = {
   engine: urlEngine ?? (saved.engine === 'hardware' ? 'hardware' : 'sim'),   // sim: the JS simulator; hardware: emulated chips (js/hardware)
   hwExplained: saved.hwExplained === true,   // "Don't show this again" on the hardware-exact explainer
+  uploadBoard: UPLOAD_BOARDS[saved.uploadBoard] ? saved.uploadBoard : 'standard',   // the board picked in Upload to a Blink
   code: saved.code ?? STARTER,      // the text in the editor: the sketch, or the open file of one with several
   // a sketch of several files (.cpp files, a src/ or config/ folder): { path: text }, its main .ino,
   // and the file open in the editor. null for a sketch that is one file (state.code).
@@ -55,7 +63,7 @@ function saveState() {
   saveTimer = setTimeout(() => {
     try {
       localStorage.setItem(STORE, JSON.stringify({
-        code: state.code, files: state.files, main: state.main, file: state.file, sdk: state.sdk, name: state.name, view: state.view, live: state.live, debug: state.debug, bits: state.bits, drift: state.drift, engine: state.engine, hwExplained: state.hwExplained,
+        code: state.code, files: state.files, main: state.main, file: state.file, sdk: state.sdk, name: state.name, view: state.view, live: state.live, debug: state.debug, bits: state.bits, drift: state.drift, engine: state.engine, hwExplained: state.hwExplained, uploadBoard: state.uploadBoard,
         consoleOpen: state.consoleOpen, split: state.split, source: state.source,
         cells: world.blinks.map(b => [b.q, b.r, b.rot]),
       }));
@@ -151,6 +159,10 @@ function codeChanged() {
 function sketchKey() {
   return state.sdk + '\n' + (state.files ? JSON.stringify(state.files) : state.code);
 }
+// The sketch as avr-gcc builds it (js/hardware): an .ino's text, or a sketch folder
+const avrSketch = () => (state.files ? { files: state.files, main: state.main } : state.code);
+// gcc's messages as the editor's: { file, line, message }, with no file for a one-file sketch
+const avrDiags = (r, severity) => (r.diagnostics || []).filter(d => d.severity === severity).map(d => ({ file: state.files ? d.file : null, line: d.line, message: d.message }));
 function compileCurrent() {
   if (state.files) return compileSketch({ files: state.files, main: state.main, sdk: state.sdk });
   return compile(state.code, { sdk: state.sdk });
@@ -256,18 +268,24 @@ function showRam(ram, flash) {
 // the simulator keeps the table running while it loads.
 let hw = null;                // { HardwareWorld, toolchain } once loaded
 let hwLoading = null;
+let hwProgress = null;        // also told how loading is going, while an upload waits for it
 let buildSeq = 0;
+let hwWhole = false;          // the latest build only fit as one unit (build.js)
 const hardwareActive = () => !!hw && world instanceof hw.HardwareWorld;
-// hardware-exact builds one .ino against Move38's blinklib (js/hardware/build.js)
-const hardwareSupports = () => !state.files && state.sdk === 'move38';
-const hardwareUnsupported = () => `Hardware-exact mode builds single-file sketches for Move38's blinklib, so ${state.files ? 'a sketch of several files' : `a sketch for ${SDKS[state.sdk].name}`} runs in the simulator.`;
+// hardware-exact runs Move38's blinklib (js/hardware/build.js). Custom Blinklib games build
+// too, for Upload, but the debug views only know where Move38's blinklib keeps its state.
+const hardwareSupports = () => state.sdk === 'move38';
+const hardwareUnsupported = () => `Hardware-exact mode runs Move38’s blinklib for now, so this ${SDKS[state.sdk].name} sketch runs in the simulator. It can still be uploaded to a real Blink.`;
 
 function loadHardware() {
   if (!hwLoading) {
     hwLoading = (async () => {
       const [{ HardwareWorld }, { Toolchain }] = await Promise.all([import('./hardware/world.js'), import('./hardware/toolchain.js')]);
       const toolchain = new Toolchain();
-      await toolchain.load(p => { if (state.engine === 'hardware') setStatus('busy', `Loading avr-gcc… ${Math.round(p * 100)}%`); });
+      await toolchain.load(p => {
+        if (state.engine === 'hardware') setStatus('busy', `Loading avr-gcc… ${Math.round(p * 100)}%`);
+        hwProgress?.(p);
+      });
       return (hw = { HardwareWorld, toolchain });
     })();
     hwLoading.catch(() => { hwLoading = null; });
@@ -315,22 +333,24 @@ async function setEngine(engine) {
 
 // Compile with avr-gcc in the worker; with `load`, flash the Blinks with the result
 async function hardwareBuild(load, force) {
-  const code = state.code, key = sketchKey();
+  const code = avrSketch(), key = sketchKey();
   if (load && !force && state.running === key) return;
   const seq = ++buildSeq;
   setStatus('busy', 'Compiling with avr-gcc…');
   const r = await hw.toolchain.build(code);
   if (seq !== buildSeq || !hardwareActive()) return;   // a newer build, or the engine changed
-  const diags = r.diagnostics || [];
   const res = {
     ok: r.ok,
-    errors: diags.filter(d => d.severity === 'err').map(d => ({ line: d.line, message: d.message })),
-    warnings: diags.filter(d => d.severity === 'warn').map(d => ({ line: d.line, message: d.message })),
-    serialInput: /\bSerial\b/.test(code),
+    errors: avrDiags(r, 'err'),
+    warnings: avrDiags(r, 'warn'),
+    serialInput: /\bSerial\b/.test(state.files ? Object.values(state.files).join('\n') : code),
     ram: { used: r.ramUsed, budget: r.ramBudget },
     flash: { used: r.flashUsed, budget: r.flashBudget },
   };
   if (!r.ok && !res.errors.length) res.errors.push({ line: 0, message: 'avr-gcc couldn\'t build this sketch' });
+  // said once each time it starts happening, not on every build
+  if (r.ok && r.whole && !hwWhole) con.add('info', `This game only fits on a Blink when it's built as one unit, which shrinks it almost as much as the Arduino IDE's link-time optimization does.`);
+  if (r.ok) hwWhole = r.whole;
   if (!r.ok || !load) { showCompile(res, false); return; }
   runtimeDiags.clear();
   state.compiled = res;
@@ -357,6 +377,132 @@ $('#hwBtn').addEventListener('click', async () => {
   })) return;
   setEngine('hardware');
 });
+
+// ---------------- upload to a real Blink ----------------
+// Builds the sketch with avr-gcc, as hardware-exact mode does, and writes it with the
+// BlinkBIOS to a Blink through a USBtinyISP over WebUSB (js/hardware/usbtiny.js): what the
+// Arduino IDE's Upload does for a Blink. Works in either engine, for a sketch of one file or
+// several, on Move38's blinklib or Custom Blinklib.
+async function openUpload() {
+  closePopovers();
+  const d = $('#uploadDialog');
+  const { UsbTiny, uploadFlash, UploadError, hex2, hostOS, UDEV_RULE } = await import('./hardware/usbtiny.js');
+  const os = hostOS();
+  const bga = state.sdk === 'bga';
+  const radio = (key) => `<label class="up-board"><input type="radio" name="board" value="${key}"><span><span class="t"></span><span class="b"></span></span></label>`;
+  const keys = Object.keys(UPLOAD_BOARDS);
+  d.innerHTML = `<form method="dialog" class="up">
+    <button type="button" class="btn icon ghost close" aria-label="Close"><svg viewBox="0 0 20 20"><path d="M5 5l10 10M15 5 5 15" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg></button>
+    <h2>Upload to a Blink</h2>
+    <p class="up-hint">Plug in your USBtinyISP programmer, hold its pins on the Blink’s programming pads, and choose Upload. Your sketch is built with avr-gcc and written along with the BlinkBIOS, as the Arduino IDE’s Upload does.</p>
+    ${bga ? `<p class="up-hint up-lib">Built on ${SDKS.bga.name} with its own BIOS, as its Arduino board package does. It only builds for the original Blinks’ ATmega168PB.</p>` : ''}
+    ${os === 'windows' ? `<details class="up-setup"><summary>Setting up Windows (once)</summary>
+      <p>Chrome can only use a programmer that has Windows’ WinUSB driver:</p>
+      <ol><li>Download <a href="https://zadig.akeo.ie" target="_blank" rel="noopener">Zadig</a> and run it.</li>
+      <li>In its Options menu, choose List All Devices, then pick <b>USBtinyISP</b> (USB ID 1781 0C9F).</li>
+      <li>Choose <b>WinUSB</b> as the driver and click Replace Driver.</li>
+      <li>Unplug the programmer, plug it back in, and upload again.</li></ol>
+      <p class="up-note">The Arduino IDE uploads through the libusb-win32 driver instead. To upload from the IDE again, pick libusb-win32 in Zadig the same way.</p>
+    </details>` : ''}
+    ${os === 'linux' ? `<details class="up-setup"><summary>Setting up Linux (once)</summary>
+      <p>Let the browser use the programmer with a udev rule, as avrdude needs too:</p>
+      <pre class="up-cmd"></pre>
+      <p class="up-note">Then unplug the programmer, plug it back in, and upload again.</p>
+    </details>` : ''}
+    <fieldset class="up-boards"><legend>Board</legend>
+      ${keys.filter(k => !UPLOAD_BOARDS[k].beta).map(radio).join('')}
+      ${bga ? '' : `<details class="up-beta"><summary>Beta boards</summary>${keys.filter(k => UPLOAD_BOARDS[k].beta).map(radio).join('')}</details>`}
+    </fieldset>
+    <div class="up-bar" hidden><i></i></div>
+    <div class="up-status" role="status"></div>
+    <div class="actions"><button type="button" class="btn ghost up-cancel">Close</button><button type="button" class="btn primary up-go">Upload</button></div>
+  </form>`;
+  for (const input of d.querySelectorAll('input[name=board]')) {
+    const b = UPLOAD_BOARDS[input.value], label = input.closest('label');
+    label.querySelector('.t').textContent = b.name;
+    label.querySelector('.b').textContent = bga ? 'ATmega168PB' : b.note;
+    input.checked = input.value === (bga ? 'standard' : state.uploadBoard);
+    input.onchange = () => { state.uploadBoard = input.value; saveState(); };
+  }
+  if (!bga) d.querySelector('.up-beta').open = !!UPLOAD_BOARDS[state.uploadBoard].beta;
+  const cmd = d.querySelector('.up-cmd');
+  if (cmd) cmd.textContent = `echo '${UDEV_RULE}' | sudo tee /etc/udev/rules.d/60-usbtiny.rules\nsudo udevadm control --reload-rules`;
+  const setup = d.querySelector('.up-setup');
+  const status = d.querySelector('.up-status'), bar = d.querySelector('.up-bar'), go = d.querySelector('.up-go'), cancel = d.querySelector('.up-cancel');
+  const say = (text, kind = '') => { status.textContent = text; status.className = 'up-status ' + kind; };
+  const progress = (f) => { bar.hidden = f === null; if (f !== null) bar.firstChild.style.width = (f * 100).toFixed(1) + '%'; };
+  let busy = false;
+  const close = () => { if (!busy) d.close(); };
+  d.querySelector('.close').onclick = cancel.onclick = close;
+  d.onclick = e => { if (e.target === d) close(); };
+  d.oncancel = e => { if (busy) e.preventDefault(); };   // Escape mid-upload would leave the Blink half-written
+
+  if (!navigator.usb) { say('Uploading needs a browser with WebUSB: Chrome, Edge or Opera on a computer. Or download your sketch and upload it with the Arduino IDE.', 'err'); go.disabled = true; }
+
+  // Asked in the dialog when the Blink's fuses aren't a Blink's: the answer is one of the two buttons
+  const confirmFuses = ({ found, want }) => new Promise(resolve => {
+    const f = (o) => `L ${hex2(o.low)} H ${hex2(o.high)} E ${hex2(o.ext)}`;
+    say(`This Blink’s fuses (${f(found)}) aren’t a Blink’s (${f(want)}), so it wouldn’t start the BIOS. Set them, as the Arduino IDE’s Burn Bootloader does?`, 'ask');
+    go.textContent = 'Set fuses and upload';
+    cancel.textContent = 'Stop';
+    go.disabled = cancel.disabled = false;
+    const answer = (yes) => { go.onclick = upload; cancel.onclick = close; go.textContent = 'Upload'; cancel.textContent = 'Close'; go.disabled = cancel.disabled = true; resolve(yes); };
+    go.onclick = () => answer(true);
+    cancel.onclick = () => answer(false);
+  });
+
+  async function upload() {
+    busy = true;
+    go.disabled = cancel.disabled = true;
+    d.querySelectorAll('input').forEach(i => { i.disabled = true; });
+    // what to build, as it is now: it may change while avr-gcc loads
+    const code = state.files ? { files: { ...state.files }, main: state.main } : state.code;
+    const lib = state.sdk, name = title(), choice = bga ? 'standard' : state.uploadBoard;
+    let tiny = null;
+    try {
+      say('Choose your programmer…');
+      tiny = await UsbTiny.connect(navigator.usb, os);   // first, while this still counts as the click
+      if (!hw) {
+        progress(0);
+        hwProgress = p => { say(`Loading avr-gcc… ${Math.round(p * 100)}%`); progress(p); };
+        say('Loading avr-gcc…');
+        try { await loadHardware(); } finally { hwProgress = null; }
+      }
+      let board = null;
+      const r = await uploadFlash(tiny, async chip => {
+        if (chip === 'atmega168pb' && choice !== 'standard') throw new UploadError(`This Blink has an ATmega168PB, so it isn’t a ${UPLOAD_BOARDS[choice].name}. Choose Blink and upload again.`);
+        if (lib === 'bga' && chip !== 'atmega168pb') throw new UploadError(`${SDKS.bga.name} only builds for the original Blinks’ ATmega168PB, and this Blink has an ATmega328PB.`);
+        board = choice !== 'standard' ? choice : chip === 'atmega168pb' ? 'blink' : 'blink328';
+        const b = await hw.toolchain.build(code, board, lib);
+        const err = (b.diagnostics || []).find(x => x.severity === 'err');
+        const at = err && [state.files && err.file, err.line && `line ${err.line}`].filter(Boolean).join(' ');
+        if (!b.ok) throw new UploadError(`avr-gcc couldn’t build this sketch${err ? `: ${at ? `${at}: ` : ''}${err.message}` : '.'}`);
+        if (b.flashUsed > b.flashBudget) throw new UploadError(`The game is ${b.flashUsed} bytes, but a ${UPLOAD_BOARDS[choice].name} has room for ${b.flashBudget}.`);
+        return b.flash;
+      }, {
+        onProgress: (f, text) => { progress(f); say(text); },
+        confirmFuses,
+      });
+      progress(1);
+      const chipName = r.chip === 'atmega168pb' ? 'ATmega168PB' : 'ATmega328PB';
+      say(`Uploaded “${name}” to a ${UPLOAD_BOARDS[choice].name} (${chipName})${r.fusesSet ? ', and set its fuses' : ''}. Take the programmer off and it starts.`, 'ok');
+      con.add('info', `Uploaded “${name}” to a Blink with an ${chipName} (${board}): ${r.bytes} bytes of game and BIOS written and checked.`);
+    } catch (e) {
+      progress(null);
+      say(e instanceof UploadError ? e.message : `The upload failed: ${e.message || e}`, 'err');
+      if (e.driver && setup) setup.open = true;
+    } finally {
+      await tiny?.close();
+      busy = false;
+      go.disabled = cancel.disabled = false;
+      d.querySelectorAll('input').forEach(i => { i.disabled = false; });
+    }
+  }
+  go.onclick = upload;
+  d.returnValue = '';
+  d.showModal();
+  if (!go.disabled) go.focus();
+}
 
 // ---------------- code / blocks views ----------------
 async function getBlocks() {
@@ -692,6 +838,8 @@ $('#menuPop').addEventListener('click', async e => {
     link.download = state.files ? folder + '.zip' : (title().replace(/[^\w-]+/g, '') || 'untitled') + '.ino';
     link.click();
     setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+  } else if (a === 'upload') {
+    openUpload();
   } else if (a === 'library') {
     openPopover($('#libPop'), $('#menuBtn'));
   } else if (a === 'share') {

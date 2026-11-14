@@ -11,3 +11,6 @@ Downloaded only when the playground's hardware-exact mode is turned on. Rebuild 
   - blinklib, its link scripts and the BlinkBIOS images from the Move38 SDK 1.3.0
     ([bigjosh/Move38-Arduino-Platform](https://github.com/bigjosh/Move38-Arduino-Platform); see LICENSE-Move38-SDK.txt), with
     blinklib compiled for the ATmega168PB and ATmega328PB
+  - Custom Blinklib 1.4.3's blinklib, link script and BlinkBIOS image
+    ([brunoga/blinklib](https://github.com/brunoga/blinklib); see LICENSE-Custom-Blinklib.txt), with blinklib
+    compiled for the ATmega168PB

@@ -2,14 +2,15 @@
 //
 // wasmToolsFromSources(): the tools from @horang-corp/avr-gcc-wasm, with the
 //   files a Blinks build needs gathered from that package, the Arduino IDE's
-//   avr-gcc (limits.h and the device libraries, which the package lacks) and
-//   the Move38 SDK. make-toolchain.mjs uses it to build the browser toolchain.
+//   avr-gcc (limits.h and the device libraries, which the package lacks), the
+//   Move38 SDK and Custom Blinklib. make-toolchain.mjs uses it to build the
+//   browser toolchain.
 // wasmToolsFromPack(): the toolchain exactly as the browser loads it, from
 //   js/hardware/toolchain.
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
 import { join } from 'node:path';
-import { GCC, SDK } from './native-tools.mjs';
+import { GCC, SDK, BGA_SDK } from './native-tools.mjs';
 import { createTools, decodePack } from '../js/hardware/tools.js';
 
 export const PKG = new URL('node_modules/@horang-corp/avr-gcc-wasm/', import.meta.url).pathname;
@@ -39,6 +40,9 @@ export async function wasmToolsFromSources() {
   for (const lib of ['libgcc.a', 'libc.a', 'libm.a']) files.set(`/libs/avr5/${lib}`, readFileSync(join(PKG, 'assets/libs', lib)));
   for (const lib of ['libatmega168pb.a', 'libatmega328pb.a']) files.set(`/libs/avr5/${lib}`, readFileSync(join(GCC, 'avr/lib/avr5', lib)));
   readTree(join(SDK, 'bootloaders'), files, '/bios', (p) => p.endsWith('.hex'));
+  readTree(join(BGA_SDK, 'cores/blinklib'), files, '/core-bga', (p) => !p.endsWith('.hex'));
+  files.set('/ldscripts/bga-avr5.xn', readFileSync(join(BGA_SDK, 'linkscripts/avr5.xn')));
+  files.set('/bios/BlinkBIOS-CustomBlinklib.hex', readFileSync(join(BGA_SDK, 'bootloaders/BlinkBIOS.hex')));
 
   const modules = {};
   for (const [tool, name] of Object.entries(TOOL_FILES)) {

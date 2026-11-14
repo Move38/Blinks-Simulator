@@ -5,7 +5,17 @@
 // prototype for every function near the top. This does the same: it finds the
 // functions defined at the top level and declares them just before the first
 // one, with #line directives so gcc's line numbers stay those of the sketch.
-export function inoToCpp(code, file = 'sketch.ino') {
+export const inoToCpp = (code, file = 'sketch.ino') => inosToCpp([[file, code]]);
+
+// A sketch's .ino files ([path, code], the main one first), as the one C++ file the IDE makes of them
+export function inosToCpp(inos) {
+  // where each line of the joined code came from, as [file, line]; null for the #line directives
+  const lines = [], from = [];
+  for (const [file, text] of inos) {
+    lines.push(`#line 1 "${file}"`); from.push(null);
+    text.split('\n').forEach((l, i) => { lines.push(l); from.push([file, i + 1]); });
+  }
+  const code = lines.join('\n');
   const clean = blank(code);
   const protos = [];
   let firstLine = 0;
@@ -31,10 +41,24 @@ export function inoToCpp(code, file = 'sketch.ino') {
     } else if (ch === ';' && depth === 0 && parens === 0) stmt = i + 1;
     else if (ch === '\n' && depth === 0 && clean.slice(stmt, i).trimStart().startsWith('#')) stmt = i + 1;
   }
-  const lines = code.split('\n');
-  const head = [`#include <Arduino.h>`, `#line 1 "${file}"`];
+  const head = ['#include <Arduino.h>'];
   if (!protos.length) return head.concat(lines).join('\n');
-  return head.concat(lines.slice(0, firstLine - 1), protos, `#line ${firstLine} "${file}"`, lines.slice(firstLine - 1)).join('\n');
+  const [file, line] = from[firstLine - 1];
+  return head.concat(lines.slice(0, firstLine - 1), protos, `#line ${line} "${file}"`, lines.slice(firstLine - 1)).join('\n');
+}
+
+// A sketch folder as the Arduino IDE builds it: its .ino files (in its own folder; the main
+// one, then the rest alphabetically) joined into one file, and each .c/.cpp file in its own
+// folder and anywhere under src/ compiled on its own. `files`: { path: text }, paths relative
+// to the sketch's folder. Returns { files, units } for buildSketch, and the order of the files.
+export function sketchUnits(files, main) {
+  const paths = Object.keys(files);
+  const order = [main, ...paths.filter((p) => p !== main).sort((a, b) => a.localeCompare(b))];
+  const top = (p) => !p.includes('/');
+  const inos = order.filter((p) => top(p) && /\.ino$/i.test(p));
+  const cpps = order.filter((p) => (top(p) || p.startsWith('src/')) && /\.(c|cc|cpp)$/i.test(p));
+  const joined = `${main}.cpp`;
+  return { files: { ...files, [joined]: inosToCpp(inos.map((p) => [p, files[p]])) }, units: [joined, ...cpps], order };
 }
 
 const NOT_FUNCTIONS = /^(?:struct|class|union|enum|namespace|typedef|template|extern\s+"C")\b|=/;
@@ -75,36 +99,43 @@ function blank(code) {
   return out;
 }
 
-// gcc's and ld's messages for the sketch, as { line, message, severity }.
+// gcc's and ld's messages for the sketch, as { file, line, message, severity }, with the
+// sketch's own files named relative to its folder, as they are in `files`. Messages about
+// other files (blinklib's, say) come with line 0, and say which file.
 // gcc: "sketch.ino:12:5: error: 'x' was not declared in this scope"
+//      "/build/sketch/src/game.cpp:3:1: error: …"
 // ld:  "sketch.ino:12: undefined reference to `foo()'" or "... region `text' overflowed by 40 bytes"
-export function parseDiagnostics(stderr, file = 'sketch.ino') {
+export function parseDiagnostics(stderr, files = ['sketch.ino']) {
+  const known = new Set(typeof files === 'string' ? [files] : files);
+  const where = (path, line) => {
+    const file = path.replace(/^\/build\/sketch\//, '');
+    return known.has(file) ? { file, line: +line } : { file: null, line: 0, prefix: `${file.split('/').pop()}:${line}: ` };
+  };
   const out = [];
   const seen = new Set();
   for (const raw of stderr.split('\n')) {
     const line = raw.trim();
-    let m = new RegExp(`^${escape(file)}:(\\d+)(?::\\d+)?: (fatal error|error|warning|note): (.*)$`).exec(line);
+    let m = /^(.+?):(\d+)(?::\d+)?: (fatal error|error|warning|note): (.*)$/.exec(line);
     if (m) {
-      if (m[2] === 'note') continue;
-      add(+m[1], m[3], m[2] === 'warning' ? 'warn' : 'err');
+      if (m[3] === 'note') continue;
+      add(where(m[1], m[2]), m[4], m[3] === 'warning' ? 'warn' : 'err');
       continue;
     }
-    m = new RegExp(`${escape(file)}:(\\d+): (undefined reference to .*)$`).exec(line);
-    if (m) { add(+m[1], m[2].replace(/`/g, "'"), 'err'); continue; }
+    m = /(?:^|\s|:)([^\s:]+\.(?:ino|cpp|cc|h|hpp)):(\d+): (undefined reference to .*)$/.exec(line);
+    if (m) { add(where(m[1], m[2]), m[3].replace(/`/g, "'"), 'err'); continue; }
     m = /(region `?(\w+)'? overflowed by (\d+) bytes)/.exec(line);
-    if (m) { add(0, m[2] === 'text' ? `The game is ${m[3]} bytes too big to fit on a Blink` : `Out of ${m[2]} memory by ${m[3]} bytes`, 'err'); continue; }
+    if (m) { add(null, m[2] === 'text' ? `The game is ${m[3]} bytes too big to fit on a Blink` : `Out of ${m[2]} memory by ${m[3]} bytes`, 'err'); continue; }
     m = /(?:^|: )(undefined reference to .*)$/.exec(line);
-    if (m) add(0, m[1].replace(/`/g, "'"), 'err');
+    if (m) add(null, m[1].replace(/`/g, "'"), 'err');
   }
-  if (!out.length && stderr.trim()) add(0, stderr.trim().split('\n').at(-1), 'err');
+  if (!out.length && stderr.trim()) add(null, stderr.trim().split('\n').at(-1), 'err');
   return out;
 
-  function add(line, message, severity) {
-    const k = `${line}:${message}`;
+  function add(at, message, severity) {
+    const { file = null, line = 0, prefix = '' } = at || {};
+    const k = `${file}:${line}:${prefix}${message}`;
     if (seen.has(k)) return;
     seen.add(k);
-    out.push({ line, message, severity });
+    out.push({ file, line, message: prefix + message, severity });
   }
 }
-
-const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

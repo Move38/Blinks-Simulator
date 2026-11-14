@@ -171,3 +171,23 @@ test('the browser toolchain builds the same bytes as the IDE\'s avr-gcc', async 
     }
   }
 });
+
+// The same for Custom Blinklib (blinklib:avr 1.4.3), with a game config that rebuilds its blinklib
+test('the browser toolchain builds Custom Blinklib games the same as the IDE\'s avr-gcc', async (t) => {
+  const { existsSync } = await import('node:fs');
+  const { nativeTools, GCC, BGA_SDK } = await import('./native-tools.mjs');
+  if (!existsSync(GCC) || !existsSync(BGA_SDK)) return t.skip('needs the Arduino IDE with avr-gcc 7.3.0 and Custom Blinklib 1.4.3');
+  const { wasmToolsFromPack } = await import('./wasm-tools.mjs');
+  const { buildSketch, withBios } = await import('../js/hardware/build.js');
+  const { sketchUnits } = await import('../js/hardware/sketch.js');
+  const wasm = await wasmToolsFromPack();
+  const bios = readFileSync(`${BGA_SDK}/bootloaders/BlinkBIOS.hex`, 'utf8');
+  const game = readFileSync(new URL('fixtures/Neighbors/Neighbors.ino', import.meta.url), 'utf8');
+  for (const config of [null, '#define BGA_CUSTOM_BLINKLIB_IR_DATAGRAM_LEN 5\n#define BGA_CUSTOM_BLINKLIB_SEND_PROBE_TIMEOUT_MS 300\n']) {
+    const units = sketchUnits({ 'Neighbors.ino': game, ...(config ? { 'config/blinklib_config.h': config } : {}) }, 'Neighbors.ino');
+    const w = await buildSketch(wasm, units, 'blink', { prebuiltCore: true, lib: 'bga' });
+    const n = await buildSketch(nativeTools(), units, 'blink', { lib: 'bga' });
+    assert.ok(w.ok && n.ok, w.stderr || n.stderr);
+    assert.deepEqual(withBios(w.gameHex, bios), withBios(n.gameHex, bios), config ? 'with a config' : 'without');
+  }
+});

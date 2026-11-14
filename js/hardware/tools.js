@@ -9,7 +9,7 @@
 // Which parts of the virtual file system each tool needs
 const SKIP = {
   cc1plus: ['/libs/', '/obj/', '/bios/'],
-  other: ['/sysroot/', '/core/', '/bios/'],
+  other: ['/sysroot/', '/core/', '/core-bga/', '/bios/'],
 };
 
 // `modules`: { cc1plus, as, ld, objcopy }, each { create, wasm } where `create`
