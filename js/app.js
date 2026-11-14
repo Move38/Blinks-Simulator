@@ -689,7 +689,7 @@ async function openExample(ex, from = null) {
   if (!await replaceOk(`the “${ex.title}” example`)) return;
   let text;
   try {
-    const res = await fetch('examples/' + ex.file);
+    const res = await fetch(new URL('../examples/' + ex.file, import.meta.url));
     if (!res.ok) throw new Error(res.status);
     text = await res.text();
   } catch (e) {

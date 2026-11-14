@@ -1,6 +1,8 @@
 # Blinks Playground
 
-Write code for [Blinks](https://move38.com) in C or with Scratch-style blocks, and watch it run on simulated Blinks right in your browser. **[Open the playground](https://learn.move38.com/)**
+Write code for [Blinks](https://move38.com) in C or with Scratch-style blocks, and watch it run on simulated Blinks right in your browser. **[Open the playground](https://learn.move38.com/play/)**
+
+New to programming? **[Light the Board](https://learn.move38.com/)** teaches it with Blinks, one level at a time, on the same simulated Blinks: six worlds of levels with live checks, hints, and a map that lights up as you go.
 
 - **Code or blocks.** Switch between the C code you'd load onto a Blink and a block editor. Changes in one show up in the other. Blocks cover light (named colors or your own red/green/blue mix), the button, neighbors (values and datagrams), timers, math, bits (shifts and masks, drawn as a strip of bits), logic, switch, variables (global or local), lists (C arrays, including lists of timers), grids (2D arrays, shown row by row), constants (#define and enum) and your own functions; anything else stays as editable C.
 - **Live.** Your sketch recompiles and restarts as you type, so you see every change right away.
@@ -49,7 +51,7 @@ It's a static site with no build step:
 
 ```sh
 npm start          # or: python3 tools/serve.py 8000
-# then open http://localhost:8000
+# then open http://localhost:8000 (Light the Board) or http://localhost:8000/play/
 ```
 
 Run the compiler and simulator tests with `npm test` (Node 20+).
@@ -57,8 +59,10 @@ Run the compiler and simulator tests with `npm test` (Node 20+).
 ## Project layout
 
 ```
-index.html, css/            the page
+index.html                  Light the Board, the learning path (js/learn/, css/learn.css)
+play/index.html, css/       the playground
 js/app.js                   wires the editor, compiler, simulation and console together
+js/learn/                   the learning path: its levels (worlds/), checks run on hidden Blinks, the map
 js/compiler/                preprocessor, parser, type checker and code generator (C++ -> JS)
 js/compiler/sdk.js          the blinklibs a sketch can be built against (Move38's, Custom Blinklib)
 js/runtime/blink.js         one Blink: blinklib + BIOS emulation
@@ -68,5 +72,5 @@ js/hardware/                hardware-exact mode: avr-gcc in a worker, the emulat
 js/hardware/toolchain/      what that mode downloads (built by hardware/make-toolchain.mjs)
 hardware/                   how hardware-exact mode was built and tested, and the tools to rebuild it
 examples/                   example sketches (.ino)
-test/                       tests for the compiler, the runtime and hardware-exact mode
+test/                       tests for the compiler, the runtime, hardware-exact mode and every level
 ```
