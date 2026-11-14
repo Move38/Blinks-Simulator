@@ -235,7 +235,7 @@ li.CodeMirror-hint-active { background: var(--blinks); color: #fff; }
 .pip.twist .pip-lbl { color: var(--star); }
 .eye { position: absolute; right: 5px; top: 5px; width: 24px; height: 24px; display: grid; place-items: center; border: 0; border-radius: 7px; background: none; color: var(--muted); cursor: pointer; }
 .eye:hover { color: var(--text); background: var(--panel-2); }
-.eye svg { width: 15px; height: 15px; }
+.eye svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 /* hidden: just the label and the eye */
 .pip.closed { width: auto; padding: 8px 38px 8px 12px; }
 .pip.closed .pip-felt, .pip.closed small { display: none; }
