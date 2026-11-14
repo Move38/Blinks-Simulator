@@ -114,8 +114,9 @@ export async function compileCore(tools, boardName = 'blink', { lib = 'move38', 
 // With `prebuiltCore`, blinklib's objects are used if they're already in coreDir().
 //
 // The Arduino IDE links Blinks games with link-time optimization, which this toolchain
-// doesn't have, and some games only fit with it. So a game that doesn't fit is built again
-// as one unit: every file of it and of blinklib #included into one, compiled with
+// doesn't have, and some games only fit with it. So a game that doesn't fit (the linker runs
+// out of room, or it's over the board's game size: the 328PB's link script has room for
+// more, but its boards.txt keeps games to what a 168PB can be sent) is built again as one unit: every file of it and of blinklib #included into one, compiled with
 // -fwhole-program, which shrinks it nearly as much (Hexxagon: 5632 bytes, against 5596
 // with LTO and 6580 without). `whole` says when that happened; pass `whole: true` to build
 // that way from the start.
@@ -158,7 +159,10 @@ export async function buildSketch(tools, sketch, boardName = 'blink', { prebuilt
     }
     return { ok: false, stage, stderr: e.stderr, log };
   }
-  return finish(tools, b, false, log);
+  const r = await finish(tools, b, false, log);
+  if (r.gameBytes <= b.maxGame) return r;
+  try { return await buildWhole(tools, b, units, core[0], log); }   // smaller, if still too big
+  catch (e) { if (e.stderr === undefined) throw e; return r; }
 }
 
 // The sketch and blinklib as one unit (see buildSketch); throws like tools.run if it doesn't build
