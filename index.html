@@ -2,182 +2,91 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Blinks Playground</title>
-<meta name="description" content="Write code for Blinks in C or with blocks and watch it run on simulated Blinks, right in your browser.">
-<meta name="theme-color" content="#14111b">
+<script>
+  // The playground used to live here. Links to it (a shared sketch, #s=…, or ?hardware) go on to /play/
+  if (/^#s=/.test(location.hash) || /[?&]hardware\b/.test(location.search)) location.replace('play/' + location.search + location.hash);
+</script>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Light the Board · Learn Blinks</title>
+<meta name="description" content="Learn to program Blinks, one level at a time, on simulated Blinks in your browser.">
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.css">
-<link rel="stylesheet" href="css/app.css">
+<link rel="stylesheet" href="css/learn.css">
 <link rel="stylesheet" href="css/upload.css">
 <link rel="stylesheet" href="css/blocks.css" onerror="this.remove()">
 </head>
 <body>
-<div class="app" id="app">
-  <header class="top">
-    <a class="brand" href="./" aria-label="Blinks Playground home">
-      <img class="logo" src="assets/blinks-logo.svg" alt="Blinks" width="73" height="32">
-    </a>
+<div class="app">
+  <header class="bar">
+    <a class="brand" href="#map" aria-label="Light the Board map"><img class="logo" src="assets/blinks-logo.svg" alt="Blinks" width="73" height="32"></a>
     <nav class="modes" aria-label="Learn or play">
-      <a href="learn/">Learn</a>
-      <a href="./" aria-current="page">Playground</a>
+      <a href="#map" aria-current="page">Learn</a>
+      <a href="play/">Playground</a>
     </nav>
-    <button type="button" class="btn ghost" id="examplesBtn" aria-haspopup="true" aria-expanded="false">
-      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 5h12M4 10h12M4 15h8" /></svg>
-      Examples
-    </button>
-    <div class="top-spacer"></div>
-    <label class="switch" title="Run your code automatically as you type">
-      <input type="checkbox" id="liveToggle" checked>
-      <span class="track"><span class="knob"></span></span>
-      <span class="switch-label">Live</span>
-    </label>
-    <button type="button" class="btn primary" id="runBtn" title="Run on all Blinks (⌘↵)">
-      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 4.5v11l9-5.5z" /></svg>
-      <span>Run</span>
-    </button>
-    <button type="button" class="btn icon ghost" id="menuBtn" aria-label="More" aria-haspopup="true" aria-expanded="false">
-      <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="4.5" cy="10" r="1.6" /><circle cx="10" cy="10" r="1.6" /><circle cx="15.5" cy="10" r="1.6" /></svg>
-    </button>
+    <span class="crumb" id="crumb" hidden><span class="dot"></span><span class="txt"></span></span>
+    <span class="sp"></span>
+    <a class="lnk" href="#map" id="mapLink" hidden><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2.5 5.2 7.5 3l5 2.2 5-2.2v11.8l-5 2.2-5-2.2-5 2.2zM7.5 3v11.8M12.5 5.2V17"/></svg>Map</a>
   </header>
 
-  <main class="work" id="work">
-    <section class="pane editor-pane" aria-label="Code">
-      <div class="pane-head">
-        <div class="seg" role="tablist" aria-label="Editor view">
-          <button type="button" role="tab" id="tabCode" aria-selected="true" data-view="code">
-            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7.5 6 3.5 10l4 4M12.5 6l4 4-4 4" /></svg>Code
-          </button>
-          <button type="button" role="tab" id="tabBlocks" aria-selected="false" data-view="blocks">
-            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 4h5v3h2V4h5v5H4zM4 11h12v5H4z" /></svg>Blocks
-          </button>
+  <!-- the map -->
+  <main class="map-view" id="mapView">
+    <div class="map-area"><svg id="mapSvg" viewBox="0 0 840 560" preserveAspectRatio="xMidYMid meet" aria-label="Map of worlds and levels"></svg></div>
+    <aside class="side" id="mapSide"></aside>
+  </main>
+
+  <!-- a level -->
+  <main class="level-view" id="levelView" hidden>
+    <section class="mission" id="mission" aria-label="Mission"></section>
+    <section class="editor-pane">
+      <div class="ed-bar">
+        <div class="seg" id="viewSeg" role="tablist" aria-label="Editor view">
+          <button role="tab" data-view="blocks">Blocks</button>
+          <button role="tab" data-view="split">Both</button>
+          <button role="tab" data-view="code">Code</button>
         </div>
-        <input class="sketch-name" id="sketchName" value="My sketch" placeholder="untitled" spellcheck="false" aria-label="Sketch name">
-        <div class="status" id="status" aria-live="polite"><span class="dot"></span><span class="txt">Ready</span></div>
+        <span class="run-chip" id="status"><i></i><span class="txt">Ready</span></span>
+        <span class="sp"></span>
+        <button class="link" id="resetCode" title="Put back the code this level started with">Start over</button>
       </div>
-      <div class="file-tabs" id="fileTabs" role="tablist" aria-label="Files" hidden></div>
-      <div class="editor-body">
+      <div class="ed-body" id="edBody">
+        <div id="blocks" class="view"></div>
         <div id="code" class="view"></div>
-        <div id="blocks" class="view" hidden></div>
+        <ol id="order" class="view order" hidden></ol>
+        <div class="shield" id="shield" hidden><span>Read only until you guess</span></div>
       </div>
     </section>
-
-    <div class="splitter" id="splitter" role="separator" aria-orientation="vertical" aria-label="Resize" tabindex="0"></div>
-
-    <section class="pane table-pane" aria-label="Blinks">
-      <div class="board-wrap" id="boardWrap">
-        <canvas id="board" tabindex="0" aria-label="Blinks table. Press the center of a Blink to use its button; drag a Blink by its rim to move it."></canvas>
-        <div class="hint" id="hint">Press the center to click · drag the rim to move · <kbd>R</kbd> rotates</div>
-        <div class="sim-flags" id="simFlags"></div>
-        <div class="dock">
-          <div class="pill">
-            <button type="button" class="ib" id="removeBlink" aria-label="Remove a Blink"><svg viewBox="0 0 20 20"><path d="M5 10h10" /></svg></button>
-            <span class="count" id="blinkCount">6</span>
-            <button type="button" class="ib" id="addBlink" aria-label="Add a Blink"><svg viewBox="0 0 20 20"><path d="M5 10h10M10 5v10" /></svg></button>
-            <span class="sep"></span>
-            <div class="layouts" id="layouts" role="group" aria-label="Arrange">
-              <button type="button" data-layout="solo" title="One Blink"><svg viewBox="0 0 24 24"><use href="#hx" x="12" y="12" /></svg></button>
-              <button type="button" data-layout="pair" title="Two Blinks"><svg viewBox="0 0 24 24"><use href="#hxs" x="8" y="9.5" /><use href="#hxs" x="16" y="14.5" /></svg></button>
-              <button type="button" data-layout="line" title="A line of four"><svg viewBox="0 0 24 24"><g transform="translate(12 12) scale(.84)"><use href="#hxt" x="-9" y="-5.25" /><use href="#hxt" x="-3" y="-1.75" /><use href="#hxt" x="3" y="1.75" /><use href="#hxt" x="9" y="5.25" /></g></svg></button>
-              <button type="button" data-layout="flower" title="Flower of seven"><svg viewBox="0 0 24 24"><use href="#hxt" x="12" y="12" /><use href="#hxt" x="12" y="5" /><use href="#hxt" x="18" y="8.5" /><use href="#hxt" x="18" y="15.5" /><use href="#hxt" x="12" y="19" /><use href="#hxt" x="6" y="15.5" /><use href="#hxt" x="6" y="8.5" /></svg></button>
-              <button type="button" data-layout="scatter" title="Scatter them apart"><svg viewBox="0 0 24 24"><use href="#hxt" x="5" y="6" /><use href="#hxt" x="17" y="5" /><use href="#hxt" x="11" y="13" /><use href="#hxt" x="5" y="19" /><use href="#hxt" x="19" y="18" /></svg></button>
-            </div>
-            <span class="sep"></span>
-            <button type="button" class="ib" id="shuffleRot" title="Turn every Blink a random way, like real Blinks on a table"><svg viewBox="0 0 20 20"><path d="M15.5 8.5A6 6 0 0 0 4.6 7M4.5 11.5A6 6 0 0 0 15.4 13M4.5 3.5v3.7h3.7M15.5 16.5v-3.7h-3.7" /></svg></button>
-            <button type="button" class="ib" id="debugBtn" aria-haspopup="menu" aria-expanded="false" title="Debug view"><svg viewBox="0 0 20 20"><path d="M3.5 17.5h13M6 14.5h5.5M8 5.5V2.8M6.6 2.8h2.8M5.6 5.5h4.8v3.9a2.4 2.4 0 0 1-4.8 0zM11.5 17.5a5.5 5.5 0 0 0 0-11h-1.1" /></svg></button>
-          </div>
-          <div class="pill">
-            <button type="button" class="ib" id="restartBtn" title="Restart all Blinks (like putting fresh batteries in)"><svg viewBox="0 0 20 20"><path d="M4.5 10a5.5 5.5 0 1 0 1.8-4.1M4.5 3.5v3.3h3.3" /></svg></button>
-            <button type="button" class="ib" id="pauseBtn" aria-label="Pause" title="Pause time"><svg viewBox="0 0 20 20"><path class="pz" d="M7 5v10M13 5v10" /><path class="pl" d="M7 4.8v10.4l8.2-5.2z" /></svg></button>
-            <button type="button" class="ib" id="stepBtn" title="Step forward 16 ms" disabled><svg viewBox="0 0 20 20"><path d="M5.5 4.8v10.4l7.2-5.2zM14.5 5v10" /></svg></button>
-            <button type="button" class="speed" id="speedBtn" aria-haspopup="menu" aria-expanded="false" title="Speed and clock drift"><span id="speedVal">1×</span><svg viewBox="0 0 10 10"><path d="M2.5 6.2 5 3.7l2.5 2.5" /></svg></button>
-            <button type="button" class="ib" id="hwBtn" aria-pressed="false" aria-label="Hardware-exact" title="Hardware-exact: compile with avr-gcc and run the real BlinkBIOS on emulated chips (downloads about 6 MB the first time)"><svg viewBox="0 0 20 20"><path d="M6.5 6.5h7v7h-7zM8.5 3.5v3M11.5 3.5v3M8.5 13.5v3M11.5 13.5v3M3.5 8.5h3M3.5 11.5h3M13.5 8.5h3M13.5 11.5h3" /></svg></button>
-            <span class="sep"></span>
-            <button type="button" class="ib" id="fullBtn" aria-pressed="false" aria-label="Full screen" title="Full screen: just the Blinks (F)"><svg viewBox="0 0 20 20"><path class="go" d="M3.5 7.5v-4h4M12.5 3.5h4v4M16.5 12.5v4h-4M7.5 16.5h-4v-4" /><path class="back" d="M7.5 3.5v4h-4M16.5 7.5h-4v-4M12.5 16.5v-4h4M3.5 12.5h4v4" /></svg></button>
-          </div>
+    <section class="table-pane">
+      <div class="felt">
+        <canvas id="board" tabindex="0" aria-label="Your Blinks. Press the center of a Blink to use its button."></canvas>
+        <span class="lbl">Your table</span>
+        <div class="pip" id="pip" hidden>
+          <span class="pip-lbl">Goal</span>
+          <button class="eye" id="goalEye" type="button" aria-pressed="false" title="Hide the goal" aria-label="Hide the goal"></button>
+          <div class="pip-felt"><canvas id="goalBoard" aria-label="The Goal Blink. Press it to see what it does."></canvas></div>
+          <small>Press it to poke it</small>
         </div>
+        <div class="table-btns">
+          <button class="tbtn" id="restart" title="Restart your Blinks" aria-label="Restart your Blinks"><svg viewBox="0 0 20 20"><path d="M4.5 10a5.5 5.5 0 1 0 1.8-4.1M4.5 3.5v3.3h3.3"/></svg></button>
+          <button class="tbtn" id="uploadBtn" title="Upload to a real Blink" aria-label="Upload to a real Blink"><svg viewBox="0 0 20 20"><path d="M10 12.8V3.6M6.4 7.2 10 3.6l3.6 3.6M4 12.4v3.1c0 .6.4 1 1 1h10c.6 0 1-.4 1-1v-3.1"/></svg></button>
+        </div>
+        <div class="locked-over" id="lockedOver" hidden>Run opens after you guess</div>
         <div class="bin" id="bin" hidden><svg viewBox="0 0 24 24"><path d="M5 7h14M10 4h4M7 7l1 13h8l1-13" /></svg></div>
-        <div class="inspector" id="inspector" hidden></div>
-        <div class="chip-tip" id="chipTip" hidden></div>
       </div>
-      <section class="console" id="console" aria-label="Console">
-        <div class="console-head">
-          <span class="console-title">Console</span>
-          <span class="ram" id="ram" title="Memory your global variables use, out of what a Blink has left after blinklib"></span>
-          <button type="button" class="link" id="clearConsole">Clear</button>
-          <button type="button" class="ib small" id="toggleConsole" aria-label="Collapse console" aria-expanded="true"><svg viewBox="0 0 20 20"><path d="M6 8l4 4 4-4" /></svg></button>
-        </div>
-        <ol class="console-body" id="consoleBody"></ol>
-        <form class="console-input" id="serialForm" hidden>
-          <input id="serialInput" autocomplete="off" spellcheck="false" placeholder="Type here to send to the Blink over Serial">
-        </form>
-      </section>
+      <div class="console">
+        <div class="console-head">Console</div>
+        <ul class="console-body" id="consoleBody"></ul>
+      </div>
     </section>
   </main>
 </div>
 
-<div class="popover examples-pop" id="examplesPop" hidden></div>
-<div class="popover menu-pop debug-pop" id="debugPop" role="menu" aria-label="Debug view" hidden>
-  <div class="debug-head">
-    <h3>Debug view</h3>
-    <div class="bits-switch" role="radiogroup" aria-label="Show face values as">
-      <button type="button" role="radio" data-bits="0" title="Face values as numbers">12</button>
-      <button type="button" role="radio" data-bits="1" title="Face values as bits: a filled dot is a 1" aria-label="Bits"><span class="bit-dots"><i class="on"></i><i></i><i class="on"></i></span></button>
-    </div>
-  </div>
-  <button type="button" role="menuitemradio" data-debug="none"><span class="t">None</span><span class="b">Just the Blinks</span></button>
-  <button type="button" role="menuitemradio" data-debug="tooltip"><span class="t">Tooltip</span><span class="b">Hover a Blink to see what each face sends and hears</span></button>
-  <button type="button" role="menuitemradio" data-debug="comms"><span class="t">Comms</span><span class="b">Show the value every face is sending, and datagrams as bubbles</span></button>
-</div>
-<div class="popover menu-pop time-pop" id="timePop" role="menu" aria-label="Time" hidden>
-  <h3>Speed</h3>
-  <div class="speed-row">
-    <button type="button" role="menuitemradio" data-speed="0.25">¼×</button>
-    <button type="button" role="menuitemradio" data-speed="0.5">½×</button>
-    <button type="button" role="menuitemradio" data-speed="1">1×</button>
-    <button type="button" role="menuitemradio" data-speed="2">2×</button>
-    <button type="button" role="menuitemradio" data-speed="4">4×</button>
-  </div>
-  <hr />
-  <h3>Clock drift <output id="driftVal" for="driftRange">±2.0%</output></h3>
-  <p class="pop-note">No two Blinks keep quite the same time. Each one's clock runs up to this much fast or slow.</p>
-  <div class="drift">
-    <input type="range" id="driftRange" min="0.5" max="10" step="0.1" value="2" aria-label="Clock drift in percent" />
-    <span class="drift-mark" aria-hidden="true">typical</span>
-  </div>
-</div>
-<div class="popover menu-pop debug-pop lib-pop" id="libPop" role="menu" aria-label="Blinks library" hidden></div>
-<div class="popover menu-pop" id="menuPop" hidden>
-  <button type="button" data-action="new">New sketch</button>
-  <button type="button" data-action="open">Open sketch files…</button>
-  <button type="button" data-action="github">Open from GitHub…</button>
-  <button type="button" data-action="download">Download</button>
-  <button type="button" data-action="upload" title="Write your sketch to a real Blink through a USBtinyISP programmer">Upload to a Blink…</button>
-  <button type="button" data-action="library">Blinks library…</button>
-  <button type="button" data-action="share">Copy share link</button>
-  <button type="button" data-action="arrangement" title="Copy where the Blinks are, to use as an example's starting arrangement">Copy arrangement</button>
-  <hr>
-  <button type="button" data-action="help">How the simulator works</button>
-</div>
-<input type="file" id="fileInput" accept=".ino,.cpp,.c,.h,.hpp,.txt" multiple hidden>
-<dialog class="help" id="helpDialog"></dialog>
-<dialog class="help confirm" id="confirmDialog"></dialog>
-<dialog class="help github" id="githubDialog" aria-label="Open from GitHub"></dialog>
-<dialog class="help upload" id="uploadDialog" aria-label="Upload to a Blink"></dialog>
-<div class="toast" id="toast" role="status" hidden></div>
-<div class="callout" id="callout" role="status" hidden></div>
-
-<svg width="0" height="0" style="position:absolute" aria-hidden="true">
-  <defs>
-    <path id="hx" d="M-8 0-4-6.9h8L8 0 4 6.9h-8z" />
-    <path id="hxs" d="M-5.5 0-2.75-4.75h5.5L5.5 0 2.75 4.75h-5.5z" />
-    <path id="hxt" d="M-3.6 0-1.8-3.1h3.6L3.6 0 1.8 3.1h-3.6z" />
-  </defs>
-</svg>
+<div class="scrim" id="modal" hidden><div class="modal" id="modalBody" role="dialog" aria-modal="true"></div></div>
+<div class="toast" id="toast" hidden></div>
+<dialog class="upload" id="uploadDialog" aria-label="Upload to a Blink"></dialog>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/clike/clike.min.js"></script>
@@ -186,6 +95,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/selection/active-line.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/comment/comment.min.js"></script>
-<script type="module" src="js/app.js"></script>
+<script type="module" src="js/learn/main.js"></script>
 </body>
 </html>
