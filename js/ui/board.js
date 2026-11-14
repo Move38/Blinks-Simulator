@@ -38,6 +38,7 @@ export class Board {
     this.lastTouched = null;
     this.dragging = null;
     this.bin = hooks.bin;
+    // hooks.fixed: Blinks can be pressed but not moved, turned or added (the learn page's Goal Blink)
     new ResizeObserver(() => this.resize()).observe(canvas.parentElement);
     this.resize();
     this.bindInput();
@@ -110,7 +111,7 @@ export class Board {
       try { cv.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
       const pr = { b: h.b, x0: x, y0: y, drag: false };
       this.presses.set(e.pointerId, pr);
-      if (h.rim) this.startDrag(pr, x, y);
+      if (h.rim && !this.hooks.fixed) this.startDrag(pr, x, y);
       else { h.b.press(true); h.b.pressedBy = (h.b.pressedBy || 0) + 1; this.hooks.onInteract?.(); }
     });
     cv.addEventListener('pointermove', e => {
@@ -121,7 +122,7 @@ export class Board {
         this.hover = h ? h.b : null;
         this.hoverChip = this.chipAt(x, y);
         this.hoverPt = [x, y];
-        cv.style.cursor = h ? (h.rim ? 'grab' : 'pointer') : 'default';
+        cv.style.cursor = h ? (h.rim && !this.hooks.fixed ? 'grab' : 'pointer') : 'default';
         return;
       }
       if (pr.drag && pr.b.drag) {
@@ -148,16 +149,16 @@ export class Board {
       e.preventDefault();
       const [x, y] = this.ptr(e);
       const h = this.hit(x, y);
-      if (h) { this.rotate(h.b, e.shiftKey ? -1 : 1); }
+      if (h && !this.hooks.fixed) { this.rotate(h.b, e.shiftKey ? -1 : 1); }
     });
     cv.addEventListener('dblclick', e => {
       const [x, y] = this.ptr(e);
-      if (this.hit(x, y)) return;
+      if (this.hooks.fixed || this.hit(x, y)) return;
       const [q, r] = this.p2h(x, y);
       if (!this.world.at(q, r)) { const b = this.world.addBlink(q, r, 0); if (b) { this.lastTouched = b; this.hooks.onLayout?.(); } }
     });
     window.addEventListener('keydown', e => {
-      if (!this.keyTarget(e)) return;
+      if (this.hooks.fixed || !this.keyTarget(e)) return;
       const b = this.hover || this.lastTouched;
       if (e.code === 'Space' && !e.repeat) {
         const t = b && this.world.blinks.includes(b) ? b : this.world.blinks[0];
