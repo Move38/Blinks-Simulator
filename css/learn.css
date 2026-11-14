@@ -228,9 +228,11 @@ li.CodeMirror-hint-active { background: var(--blinks); color: #fff; }
 .felt { position: relative; background: radial-gradient(ellipse at 50% 45%, #1a1524, var(--table) 70%); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
 .felt > canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; outline: none; }
 .felt .lbl { position: absolute; left: 14px; top: 12px; font-size: 11.5px; color: var(--muted); font-weight: 600; letter-spacing: .1em; text-transform: uppercase; pointer-events: none; }
-.restart { position: absolute; left: 10px; bottom: 10px; width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; border: 1px solid var(--line-2); background: rgba(29,24,39,.88); color: var(--muted); cursor: pointer; }
-.restart:hover { color: var(--text); }
-.restart svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+/* restart and upload, at the table's corner */
+.table-btns { position: absolute; left: 10px; bottom: 10px; display: flex; gap: 6px; }
+.tbtn { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; border: 1px solid var(--line-2); background: rgba(29,24,39,.88); color: var(--muted); cursor: pointer; }
+.tbtn:hover { color: var(--text); }
+.tbtn svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .pip { position: absolute; right: 12px; top: 12px; width: 140px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line-2); padding: 8px; display: grid; gap: 2px; justify-items: center; box-shadow: 0 10px 24px rgba(0,0,0,.4); z-index: 2; }
 .pip-lbl { font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--wc); }
 .pip.twist .pip-lbl { color: var(--star); }

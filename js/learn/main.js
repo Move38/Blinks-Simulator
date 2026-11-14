@@ -14,6 +14,7 @@ import { makeTable } from './table.js';
 import { runChecks, compileLevelCode } from './harness.js';
 import { createCodeEditor } from '../ui/editor.js';
 import { Console } from '../ui/console.js';
+import { openUploadDialog } from '../ui/upload.js';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -315,6 +316,37 @@ $('#resetCode').addEventListener('click', () => {
   runLive();
 });
 $('#restart').addEventListener('click', () => { table.restart(); goalTable.restart(); });
+
+// ---------------- upload to a real Blink ----------------
+// The code on the table, built with avr-gcc and written to a Blink through a USBtinyISP
+// (js/ui/upload.js). avr-gcc downloads the first time, about 6 MB.
+let toolchainLoading = null;
+function loadToolchain(onProgress) {
+  if (!toolchainLoading) {
+    toolchainLoading = import('../hardware/toolchain.js').then(async ({ Toolchain }) => {
+      const tc = new Toolchain();
+      await tc.load(p => toolchainLoading.onProgress?.(p));
+      return tc;
+    });
+    toolchainLoading.catch(() => { toolchainLoading = null; });
+  }
+  toolchainLoading.onProgress = onProgress;
+  return toolchainLoading;
+}
+function openUpload() {
+  if (!L) return;
+  const lv = L.level;
+  openUploadDialog($('#uploadDialog'), {
+    sketch: () => L?.code ?? '',
+    sdk: 'move38',
+    name: () => `${lv.id} ${lv.title}`,
+    board: state.uploadBoard,
+    setBoard: b => { state.uploadBoard = b; persist(); },
+    toolchain: loadToolchain,
+    onUploaded: text => con.add('info', text),
+  });
+}
+$('#uploadBtn').addEventListener('click', openUpload);
 
 function setStatus(kind, text) {
   const s = $('#status');
@@ -632,6 +664,7 @@ function finishModal({ starred, coasting, worldDone }) {
     <div class="acts">
       <a class="btn ghost" href="#map">Map</a>
       ${coasting ? `<button class="btn ghost" id="toBoss">Challenge the boss</button>` : ''}
+      ${lv.type === 'boss' && !starred ? `<button class="btn" id="toBlink">Play it on a real Blink</button>` : ''}
       ${!starred && lv.twist && !state.levels[lv.id]?.star ? `<button class="btn" id="twist">Try the twist</button>` : ''}
       ${next ? `<button class="btn primary" id="next">${lv.parent ? `Back to ${esc(lv.parent.id)}` : 'Next level'}</button>` : ''}
     </div>`);
@@ -647,6 +680,7 @@ function finishModal({ starred, coasting, worldDone }) {
     persist();
   }));
   $('#next')?.addEventListener('click', () => { delete $('#modal').dataset.sticky; closeModal(); go(next.id); });
+  $('#toBlink')?.addEventListener('click', () => { delete $('#modal').dataset.sticky; closeModal(); openUpload(); });
   $('#toBoss')?.addEventListener('click', () => { delete $('#modal').dataset.sticky; closeModal(); go(w.boss.id); });
   $('#twist')?.addEventListener('click', () => {
     delete $('#modal').dataset.sticky;

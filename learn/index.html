@@ -12,6 +12,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.css">
 <link rel="stylesheet" href="../css/learn.css">
+<link rel="stylesheet" href="../css/upload.css">
 <link rel="stylesheet" href="../css/blocks.css" onerror="this.remove()">
 </head>
 <body>
@@ -64,7 +65,10 @@
           <div class="pip-felt"><canvas id="goalBoard" aria-label="The Goal Blink. Press it to see what it does."></canvas></div>
           <small>Press it to poke it</small>
         </div>
-        <button class="restart" id="restart" title="Restart your Blinks"><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.4-5.7M4 4v4h4"/></svg></button>
+        <div class="table-btns">
+          <button class="tbtn" id="restart" title="Restart your Blinks" aria-label="Restart your Blinks"><svg viewBox="0 0 20 20"><path d="M4.5 10a5.5 5.5 0 1 0 1.8-4.1M4.5 3.5v3.3h3.3"/></svg></button>
+          <button class="tbtn" id="uploadBtn" title="Upload to a real Blink" aria-label="Upload to a real Blink"><svg viewBox="0 0 20 20"><path d="M10 12.8V3.6M6.4 7.2 10 3.6l3.6 3.6M4 12.4v3.1c0 .6.4 1 1 1h10c.6 0 1-.4 1-1v-3.1"/></svg></button>
+        </div>
         <div class="locked-over" id="lockedOver" hidden>Run opens after you guess</div>
         <div class="bin" id="bin" hidden><svg viewBox="0 0 24 24"><path d="M5 7h14M10 4h4M7 7l1 13h8l1-13" /></svg></div>
       </div>
@@ -78,6 +82,7 @@
 
 <div class="scrim" id="modal" hidden><div class="modal" id="modalBody" role="dialog" aria-modal="true"></div></div>
 <div class="toast" id="toast" hidden></div>
+<dialog class="upload" id="uploadDialog" aria-label="Upload to a Blink"></dialog>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/clike/clike.min.js"></script>
