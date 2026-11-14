@@ -293,11 +293,13 @@ function loadHardware() {
   return hwLoading;
 }
 
-// Swap the table's engine, keeping the Blinks where they are
-async function setEngine(engine) {
+// Swap the table's engine, keeping the Blinks where they are. `from`: the button that asked,
+// where anything that goes wrong is said
+async function setEngine(engine, from = null) {
   if (engine === 'hardware' && !hardwareSupports()) {
     con.add('info', hardwareUnsupported());
-    toast('Hardware-exact mode can’t build this sketch yet');
+    if (from) callout(hardwareUnsupported(), from);
+    else toast('Hardware-exact mode can’t build this sketch yet');
     engine = 'sim';
   }
   state.engine = engine;
@@ -311,7 +313,7 @@ async function setEngine(engine) {
     try { await loadHardware(); }
     catch (e) {
       con.add('err', `Hardware-exact mode didn't load: ${e.message}`);
-      toast('Hardware-exact mode didn’t load, so the simulator is still running');
+      callout('Hardware-exact mode didn’t load, so the simulator is still running. Check your internet connection and try again.', from);
       return setEngine('sim');
     }
     if (state.engine !== 'hardware') return;   // switched back while it loaded
@@ -364,7 +366,7 @@ async function hardwareBuild(load, force) {
 // unless the user has asked not to see that again
 $('#hwBtn').addEventListener('click', async () => {
   if (state.engine === 'hardware') return setEngine('sim');
-  if (!hardwareSupports()) return setEngine('hardware');   // says why it can't
+  if (!hardwareSupports()) return setEngine('hardware', $('#hwBtn'));   // says why it can't
   if (!state.hwExplained && !await ask('Your sketch is compiled with avr-gcc, the compiler the Arduino IDE uses, and every Blink becomes an emulated ATmega168PB running the real BlinkBIOS and blinklib.', 'Switch to hardware-exact', {
     title: 'Hardware-exact mode',
     points: [
@@ -375,7 +377,7 @@ $('#hwBtn').addEventListener('click', async () => {
     ],
     optOut: () => { state.hwExplained = true; saveState(); },
   })) return;
-  setEngine('hardware');
+  setEngine('hardware', $('#hwBtn'));
 });
 
 // ---------------- upload to a real Blink ----------------
@@ -523,28 +525,27 @@ async function getBlocks() {
 async function setView(view) {
   if (view === state.view && !setView.initial) return;
   setView.initial = false;
-  const note = $('#viewNote');
-  note.hidden = true;
+  $('#callout').hidden = true;
   if (view === 'blocks' && state.files) {
-    showNote('Blocks show sketches that are one file. This one has several, so it stays as code.', $('#tabBlocks'));
+    callout('Blocks show sketches that are one file. This one has several, so it stays as code.', $('#tabBlocks'));
     view = 'code';
   } else if (view === 'blocks') {
     let b;
     try { b = await getBlocks(); }
     catch (e) {
       console.error(e);
-      showNote('The block editor couldn\'t load. Check your internet connection and try again.', $('#tabBlocks'));
+      callout('The block editor couldn\'t load. Check your internet connection and try again.', $('#tabBlocks'));
       return;
     }
     if (state.blocksStale !== false || !state.blocksShown) {
       const res = b.setCode(state.code);
       if (!res.ok) {
-        showNote(`This code can't be shown as blocks yet: ${res.message}`, $('#tabBlocks'));
+        callout(`This code can't be shown as blocks yet: ${res.message}`, $('#tabBlocks'));
         return;
       }
       state.blocksStale = false;
       state.blocksShown = true;
-      if (res.lossy) showNote('Parts of this sketch don\'t have blocks yet, so they appear as C code blocks. They still run.', $('#tabBlocks'));
+      if (res.lossy) callout('Parts of this sketch don\'t have blocks yet, so they appear as C code blocks. They still run.', $('#tabBlocks'));
     }
   }
   state.view = view;
@@ -559,24 +560,33 @@ async function setView(view) {
 setView.initial = true;
 
 // A note about switching views, under the button that was clicked, so it answers the click
-function showNote(text, anchor) {
-  const note = $('#viewNote');
+// A message answering a button press, at that button: a warning stays until OK; with
+// `ok: false`, a confirmation fades like a toast. A button that isn't showing gets a toast.
+let calloutTimer = 0;
+function callout(text, anchor, { ok = true } = {}) {
+  if (!anchor || !anchor.getClientRects().length) { toast(text); return; }
+  const note = $('#callout');
   note.innerHTML = '';
   const span = document.createElement('span');
   span.textContent = text;
-  const close = document.createElement('button');
-  close.className = 'link';
-  close.textContent = 'OK';
-  close.onclick = () => { note.hidden = true; };
-  note.append(span, close);
+  note.append(span);
+  if (ok) {
+    const close = document.createElement('button');
+    close.className = 'link';
+    close.textContent = 'OK';
+    close.onclick = () => { note.hidden = true; };
+    note.append(close);
+  }
+  clearTimeout(calloutTimer);
+  if (!ok) calloutTimer = setTimeout(() => { note.hidden = true; }, 2600);
   note.hidden = false;
-  showNote.anchor = anchor;
-  placeNote();
+  callout.anchor = anchor;
+  placeCallout();
 }
 // Just below the button (above it if there's no room), inside the window, with the caret at the
 // button's middle. It follows the button when the page scrolls, as it does on a phone.
-function placeNote() {
-  const note = $('#viewNote'), anchor = showNote.anchor;
+function placeCallout() {
+  const note = $('#callout'), anchor = callout.anchor;
   if (note.hidden || !anchor) return;
   const a = anchor.getBoundingClientRect(), w = note.offsetWidth, h = note.offsetHeight;
   const left = Math.max(16, Math.min(a.left - 8, innerWidth - 16 - w));
@@ -586,8 +596,8 @@ function placeNote() {
   note.style.top = (above ? a.top - 10 - h : a.bottom + 10) + 'px';
   note.style.setProperty('--caret', Math.max(14, Math.min(w - 14, a.left + a.width / 2 - left)) + 'px');
 }
-addEventListener('resize', placeNote);
-addEventListener('scroll', placeNote, true);
+addEventListener('resize', placeCallout);
+addEventListener('scroll', placeCallout, true);
 
 document.querySelectorAll('.seg [data-view]').forEach(b => b.addEventListener('click', () => setView(b.dataset.view)));
 
@@ -723,7 +733,7 @@ function buildExamples() {
       b.querySelector('.t').textContent = ex.title;
       b.querySelector('.b').textContent = ex.blurb || ex.file.split('/').pop();
       if (ex.about) b.title = `${ex.about}\n\n${ex.players} ${ex.players === '1' ? 'player' : 'players'} · ${ex.time}`;
-      b.addEventListener('click', () => { closePopovers(); openExample(ex); });
+      b.addEventListener('click', () => { closePopovers(); openExample(ex, $('#examplesBtn')); });
       sec.append(b);
     }
     pop.append(sec);
@@ -785,7 +795,7 @@ function ask(message, okLabel, { title = '', points = [], optOut = null } = {}) 
 const title = () => state.name.trim() || 'untitled';
 const replaceOk = what => !modified() || ask(`Replace your changes to “${title()}” with ${what}? Download your sketch first if you want to keep it.`, 'Replace');
 
-async function openExample(ex) {
+async function openExample(ex, from = null) {
   if (!await replaceOk(`the “${ex.title}” example`)) return;
   let text;
   try {
@@ -793,7 +803,7 @@ async function openExample(ex) {
     if (!res.ok) throw new Error(res.status);
     text = await res.text();
   } catch (e) {
-    toast('Couldn\'t load that example');
+    callout(`Couldn’t load the “${ex.title}” example. Check your internet connection and try again.`, from);
     return;
   }
   loadSketch(text, ex.title, ex.layout);
@@ -851,11 +861,11 @@ $('#menuPop').addEventListener('click', async e => {
     openPopover($('#libPop'), $('#menuBtn'));
   } else if (a === 'share') {
     const url = await shareLink();
-    try { await navigator.clipboard.writeText(url); toast('Link copied — anyone with it can open this sketch'); }
+    try { await navigator.clipboard.writeText(url); callout('Link copied — anyone with it can open this sketch', $('#menuBtn'), { ok: false }); }
     catch (err) { prompt('Copy this link:', url); }
   } else if (a === 'arrangement') {
     const text = arrangementText();
-    try { await navigator.clipboard.writeText(text); toast('Arrangement copied: paste it into an example in js/examples.js'); }
+    try { await navigator.clipboard.writeText(text); callout('Arrangement copied: paste it into an example in js/examples.js', $('#menuBtn'), { ok: false }); }
     catch (err) { prompt('Copy this arrangement:', text); }
   } else if (a === 'help') {
     showHelp();

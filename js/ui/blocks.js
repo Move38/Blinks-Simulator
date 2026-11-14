@@ -309,9 +309,11 @@ function registerIcons(Blockly) {
   Blockly.registry.register(Blockly.registry.Type.ICON, String(Blockly.icons.CommentIcon.TYPE), CommentIcon, true);
 
   // Tooltips: the whole text, wrapped by the tooltip box (Blockly breaks it into 50-letter lines,
-  // which the box then wraps again)
+  // which the box then wraps again). Text after a blank line is a hint, in smaller type.
   Blockly.Tooltip.setCustomTooltip((div, element) => {
-    div.textContent = String(Blockly.Tooltip.getTooltipOfObject(element) ?? '');
+    const [text, ...hint] = String(Blockly.Tooltip.getTooltipOfObject(element) ?? '').split('\n\n');
+    div.textContent = text;
+    if (hint.length) div.appendChild(Object.assign(document.createElement('div'), { className: 'bkTipHint', textContent: hint.join('\n\n') }));
   });
 
   // A collapsed workspace comment shows its first line as a title (Blockly shows 9 letters and
@@ -681,9 +683,10 @@ function defineFields(Blockly) {
     doClassValidation_(v) { return /^[A-Za-z_]\w*$/.test(String(v)) ? String(v) : null; }
   }
 
-  // Eight bit cells, bit 7 on the left. `cells(block)` says how each looks: 'on' (a 1 or a bit of
-  // the value), 'off' (a 0), 'fill' (a 0 that a shift moved in), 'skip' (not used here). Shows
-  // where a shift moves bits, or which bits are taken. `editable` makes the cells clickable (a
+  // Eight bit cells, bit 7 on the left. `cells(block)` says how each looks: 'on' (a 1), 'off' (a
+  // 0), 'any' (a bit of a value that isn't known here: a pale cell, no digit), 'fill'
+  // (a 0 that a shift moved in), 'skip' (not used here). Shows where a shift moves bits, or which
+  // bits are taken. `editable` makes the cells clickable (a
   // literal you set bit by bit).
   class FieldBitStrip extends Blockly.Field {
     constructor(value, cells, arrow, editable) {
@@ -695,7 +698,8 @@ function defineFields(Blockly) {
       this.CURSOR = editable ? 'pointer' : 'default';
     }
     doClassValidation_(v) { const n = Math.floor(Number(v)); return Number.isFinite(n) ? Math.max(0, Math.min(255, n)) : null; }
-    initView() { this.group_ = Blockly.utils.dom.createSvgElement('g', {}, this.fieldGroup_); }
+    // bkBitEditable: the bits themselves take clicks (blocks.css gives them the pointing hand)
+    initView() { this.group_ = Blockly.utils.dom.createSvgElement('g', { class: this.EDITABLE ? 'bkBitStrip bkBitEditable' : 'bkBitStrip' }, this.fieldGroup_); }
     key_() {
       const b = this.getSourceBlock();
       return JSON.stringify([b ? this.cells_(b, this.getValue()) : [], this.arrow_ ? this.arrow_(b) : '', this.EDITABLE && this.getValue()]);
@@ -704,22 +708,27 @@ function defineFields(Blockly) {
       const g = this.group_;
       if (!g) return;
       const b = this.getSourceBlock();
-      const cells = b ? this.cells_(b, this.getValue()) : new Array(8).fill('on');
+      const cells = b ? this.cells_(b, this.getValue()) : new Array(8).fill('any');
       const arrow = this.arrow_ && b ? this.arrow_(b) : '';
       this.lastKey_ = this.key_();
       while (g.firstChild) g.removeChild(g.firstChild);
+      // a 1's digit is the color of a 0's cell: the block's color, lightened as the cell lightens it
+      const rgb = b && /^#[0-9a-f]{6}$/i.test(b.getColour()) ? b.getColour().match(/\w\w/g).map(h => parseInt(h, 16)) : null;
+      if (rgb) g.style.setProperty('--bit-one', `rgb(${rgb.map(c => Math.round(c + (255 - c) * 0.22)).join(',')})`);
       const W = 10, H = 16, GAP = 2, Y = 3, el = (name, attrs) => Blockly.utils.dom.createSvgElement(name, attrs, g);
-      const fill = { on: '#ffffff', off: 'rgba(255,255,255,.22)', fill: 'rgba(0,0,0,.25)', skip: 'rgba(255,255,255,.1)' };
+      const fill = { on: '#ffffff', any: 'rgba(255,255,255,.5)', off: 'rgba(255,255,255,.22)', fill: 'rgba(0,0,0,.25)', skip: 'rgba(255,255,255,.1)' };
       let x = 0;
       if (arrow === 'left') { el('text', { x: 0, y: Y + 12, class: 'bkBitArrow' }).textContent = '«'; x = 13; }
       cells.forEach((c, i) => {
         el('rect', { x, y: Y, width: W, height: H, rx: 2.5, fill: fill[c] || fill.off, stroke: c === 'fill' ? 'rgba(255,255,255,.45)' : 'none', 'stroke-dasharray': c === 'fill' ? '2 1.5' : '' });
-        if (c === 'fill') el('text', { x: x + W / 2, y: Y + 11.5, class: 'bkBitZero' }).textContent = '0';
-        x += W + (i === 3 ? GAP + 3 : GAP);   // a wider gap between the two halves
+        // each bit says what it is, faintly: a 1 a little darker than its cell, a 0 a little lighter;
+        // a 0 a shift moved in, more clearly
+        const digit = { on: ['1', 'bkBitOne'], off: ['0', 'bkBitOff'], fill: ['0', 'bkBitZero'] }[c];
+        if (digit) el('text', { x: x + W / 2, y: Y + 11.5, class: digit[1] }).textContent = digit[0];
+        x += W + GAP;   // a byte, eight in a row, as face values show
       });
       x -= GAP;
       if (arrow === 'right') { el('text', { x: x + 3, y: Y + 12, class: 'bkBitArrow' }).textContent = '»'; x += 13; }
-      if (this.EDITABLE) { el('text', { x: x + 6, y: Y + 12, class: 'bkBitValue' }).textContent = '= ' + this.getValue(); x += 6 + 8 * String(this.getValue()).length + 14; }
       this.size_ = new Blockly.utils.Size(x, H + 2 * Y);
     }
     // re-draw when what the cells show has changed
@@ -2185,10 +2194,10 @@ function defineBitBlocks(Blockly) {
         const n = known(b, 'B'), x = known(b, 'A'), left = b.getFieldValue('DIR') === 'LEFT';
         return Array.from({ length: 8 }, (_, k) => {
           const bit = 7 - k;
-          if (n == null || n < 0) return x == null ? 'on' : (x >> bit) & 1 ? 'on' : 'off';
+          if (n == null || n < 0) return x == null ? 'any' : (x >> bit) & 1 ? 'on' : 'off';
           const from = left ? bit - n : bit + n;
           if (from < 0 || from > 7) return 'fill';   // a byte: 0s move in at the ends
-          return x == null ? 'on' : (x >> from) & 1 ? 'on' : 'off';
+          return x == null ? 'any' : (x >> from) & 1 ? 'on' : 'off';
         });
       }, b => (b.getFieldValue('DIR') === 'LEFT' ? 'left' : 'right')), 'STRIP');
       this.setInputsInline(true);
@@ -2206,8 +2215,13 @@ function defineBitBlocks(Blockly) {
         .appendField('to').appendField(new Blockly.FieldNumber(1, 0, 15, 1), 'HI')
         .appendField('of');
       this.appendDummyInput().appendField(new FieldBitStrip(0, b => {
-        const lo = Number(b.getFieldValue('LO')), hi = Number(b.getFieldValue('HI'));
-        return Array.from({ length: 8 }, (_, k) => (7 - k >= Math.min(lo, hi) && 7 - k <= Math.max(lo, hi) ? 'on' : 'skip'));
+        // the bits taken: their values if the number is a plain one, as a shift shows them
+        const lo = Number(b.getFieldValue('LO')), hi = Number(b.getFieldValue('HI')), x = known(b, 'A');
+        return Array.from({ length: 8 }, (_, k) => {
+          const bit = 7 - k;
+          if (bit < Math.min(lo, hi) || bit > Math.max(lo, hi)) return 'skip';
+          return x == null ? 'any' : (x >> bit) & 1 ? 'on' : 'off';
+        });
       }), 'STRIP');
       this.setInputsInline(true);
       this.setOutput(true, N);
@@ -2222,7 +2236,8 @@ function defineBitBlocks(Blockly) {
       this.appendDummyInput().appendField(new FieldBitStrip(0, (b, v) => Array.from({ length: 8 }, (_, k) => ((v >> (7 - k)) & 1 ? 'on' : 'off')), null, true), 'BITS');
       this.setOutput(true, N);
       this.setStyle('bk_bits');
-      this.setTooltip('A number set bit by bit: click a square to turn that bit on or off. Bit 0 is the rightmost (worth 1), bit 7 the leftmost (worth 128).');
+      // the number it makes shows when hovered
+      this.setTooltip(() => `${this.getFieldValue('BITS')} in binary\n\nClick to toggle a bit on or off`);
     },
   };
 }
