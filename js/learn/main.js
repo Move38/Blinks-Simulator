@@ -189,9 +189,7 @@ function openLevel(level) {
   $('#pip').hidden = !goal?.ok;
   $('#pip').classList.toggle('wide', cells.length > 1);
   if (goal?.ok) showGoal(goal, 'Goal');
-  // the learner's Blinks sit below the Goal panel, never under it
-  table.board.hooks.margins = { top: goal?.ok ? $('#pip').offsetHeight + 24 : 44, bottom: 56, side: 28 };
-  table.board.fit(false);
+  setGoalHidden(!!state.hideGoal);
   $('#lockedOver').hidden = level.type !== 'predict';
 
   // the code: blocks, code or both, as the world teaches; an Order level shows its lines instead
@@ -210,6 +208,33 @@ function openLevel(level) {
   if (level.type !== 'predict') runLive();
   else setStatus('', 'Read the code, then guess');
 }
+
+// The learner's Blinks sit below the Goal panel, never under it
+function fitTable() {
+  const pip = $('#pip');
+  table.board.hooks.margins = { top: pip.hidden ? 44 : pip.offsetHeight + 24, bottom: 56, side: 28 };
+  table.board.fit(false);
+}
+
+// A learner can hide the Goal Blink, to work out the end result on their own. The choice stays.
+// Icons: Radix's eye-open and eye-closed (MIT, github.com/radix-ui/icons)
+const EYE_OPEN = '<svg viewBox="0 0 15 15" aria-hidden="true"><path d="M7.50002 3C10.6922 3 13.3435 4.70671 14.9239 7.23535C15.0124 7.37717 15.0235 7.55201 14.9571 7.70215L14.9239 7.76465C13.3435 10.2933 10.6922 12 7.50002 12C4.30788 12 1.65659 10.2933 0.0761963 7.76465C-0.0249881 7.6026 -0.0249956 7.3974 0.0761963 7.23535L0.227563 7C1.82294 4.60122 4.4078 3 7.50002 3ZM7.50002 4C4.80354 4 2.53299 5.37905 1.09963 7.5C2.53299 9.62094 4.80354 11 7.50002 11C10.1963 11 12.4661 9.62068 13.8994 7.5C12.4661 5.3793 10.1963 4 7.50002 4ZM7.50002 5.5C8.60459 5.5 9.50002 6.39543 9.50002 7.5C9.50002 8.60457 8.60459 9.5 7.50002 9.5C6.39545 9.5 5.50002 8.60457 5.50002 7.5C5.50002 6.39543 6.39545 5.5 7.50002 5.5Z" fill="currentColor"/></svg>';
+const EYE_CLOSED = '<svg viewBox="0 0 15 15" aria-hidden="true"><path d="M5.58284 12.5867C5.5113 12.8531 5.23703 13.0113 4.97054 12.9402C4.70421 12.8686 4.54496 12.5943 4.61605 12.3279L5.58284 12.5867ZM10.3826 12.3279C10.4539 12.5945 10.2956 12.8686 10.0291 12.9402C9.76261 13.0113 9.48834 12.8531 9.41681 12.5867L10.3826 12.3279ZM14.1375 6.15505C14.2977 5.98633 14.5595 5.94799 14.7644 6.07595C14.9692 6.20395 15.0496 6.45576 14.9685 6.6736L14.9236 6.76442C14.4845 7.46696 13.962 8.1052 13.3689 8.66188L14.5711 9.86402L14.6355 9.94214C14.7636 10.1362 14.7419 10.4002 14.5711 10.571C14.4003 10.7419 14.1363 10.7636 13.9422 10.6355L13.8641 10.571L12.5994 9.3064C11.8032 9.90116 10.9077 10.3602 9.93243 10.6492L10.3826 12.3279L9.89923 12.4568L9.41681 12.5867L8.95783 10.8777C8.48648 10.958 7.99975 10.9998 7.49983 10.9998C6.9991 10.9998 6.51194 10.9563 6.03987 10.8757L5.58284 12.5867L5.09945 12.4568L4.61605 12.3279L5.06527 10.6492C4.09036 10.3601 3.19423 9.90202 2.39829 9.30738L1.1356 10.571C0.940342 10.7662 0.623806 10.7662 0.428567 10.571C0.233426 10.3758 0.233415 10.0593 0.428567 9.86402L1.62973 8.66188C1.10375 8.1681 0.633248 7.61 0.227396 6.99977L0.0760295 6.76442L0.0311078 6.6736C-0.0498844 6.45577 0.0304399 6.20394 0.235208 6.07595C0.440189 5.94795 0.701937 5.98637 0.862159 6.15505L0.923682 6.23513L1.20102 6.65114C2.63903 8.68678 4.86748 9.99974 7.49983 9.99976C10.3076 9.99976 12.6564 8.50638 14.076 6.23513L14.1375 6.15505Z" fill="currentColor"/></svg>';
+function setGoalHidden(hide) {
+  const eye = $('#goalEye'), say = hide ? 'Show the goal' : 'Hide the goal';
+  $('#pip').classList.toggle('closed', hide);
+  eye.innerHTML = hide ? EYE_CLOSED : EYE_OPEN;
+  eye.setAttribute('aria-pressed', hide);
+  eye.title = say;
+  eye.setAttribute('aria-label', say);
+  if (!hide) goalTable.board.fit(false);
+  fitTable();
+}
+$('#goalEye').addEventListener('click', () => {
+  state.hideGoal = !state.hideGoal;
+  persist();
+  setGoalHidden(state.hideGoal);
+});
 
 // Run a compiled sketch on the Goal Blink, under a label: Goal, Twist or One idea
 function showGoal(compiled, label) {
@@ -628,7 +653,7 @@ function finishModal({ starred, coasting, worldDone }) {
     L.mode = 'twist'; L.done = false; L.checked = false; L.fails = [];
     // the Goal Blink plays the twist now: its answer, or one idea when it has many
     const tw = compileLevelCode(lv.twist.solution);
-    if (tw.ok) { $('#pip').hidden = false; showGoal(tw, lv.twist.open ? 'One idea' : 'Twist'); }
+    if (tw.ok) { $('#pip').hidden = false; showGoal(tw, lv.twist.open ? 'One idea' : 'Twist'); fitTable(); }
     renderMission();
     runLive();
   });
