@@ -188,7 +188,7 @@ function openLevel(level) {
   const goal = level.goal && level.type !== 'predict' ? compileLevelCode(level.goal) : null;
   $('#pip').hidden = !goal?.ok;
   $('#pip').classList.toggle('wide', cells.length > 1);
-  if (goal?.ok) { goalTable.reset(cells); goalTable.load(goal); goalTable.board.fit(false); }
+  if (goal?.ok) showGoal(goal, 'Goal');
   // the learner's Blinks sit below the Goal panel, never under it
   table.board.hooks.margins = { top: goal?.ok ? $('#pip').offsetHeight + 24 : 44, bottom: 56, side: 28 };
   table.board.fit(false);
@@ -209,6 +209,15 @@ function openLevel(level) {
   renderMission();
   if (level.type !== 'predict') runLive();
   else setStatus('', 'Read the code, then guess');
+}
+
+// Run a compiled sketch on the Goal Blink, under a label: Goal, Twist or One idea
+function showGoal(compiled, label) {
+  goalTable.reset(L.level.cells || [[0, 0]]);
+  goalTable.load(compiled);
+  goalTable.board.fit(false);
+  $('#pip .pip-lbl').textContent = label;
+  $('#pip').classList.toggle('twist', label !== 'Goal');
 }
 
 function closeLevel() {
@@ -617,6 +626,9 @@ function finishModal({ starred, coasting, worldDone }) {
     delete $('#modal').dataset.sticky;
     closeModal();
     L.mode = 'twist'; L.done = false; L.checked = false; L.fails = [];
+    // the Goal Blink plays the twist now: its answer, or one idea when it has many
+    const tw = compileLevelCode(lv.twist.solution);
+    if (tw.ok) { $('#pip').hidden = false; showGoal(tw, lv.twist.open ? 'One idea' : 'Twist'); }
     renderMission();
     runLive();
   });

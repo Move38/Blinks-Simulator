@@ -705,6 +705,7 @@ void loop() {
       fill: 'if (buttonSingleClicked()) {\n  mode = (mode + 1) % 3;\n}\nif (mode == 0) {\n  spin();\n} else if (mode == _) {\n  breathe();\n} else {\n  _______();\n}',
     },
     twist: {
+      open: true,   // many answers: the Goal Blink shows one idea
       brief: 'Add a fourth animation of your own: a flash, a comet, a sparkle, anything that moves and isn\'t spin, breathe or rainbow again. Three clicks show it, and a fourth click comes back to spin.',
       checks: [
         {

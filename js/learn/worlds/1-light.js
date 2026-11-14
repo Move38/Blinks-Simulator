@@ -283,6 +283,7 @@ void loop() {
       fill: 'setColor(makeColorRGB(250, 70, 22));\nsetColorOnFace(_____, 0);\nsetColorOnFace(WHITE, _);',
     },
     twist: {
+      open: true,   // many answers: the Goal Blink shows one idea
       brief: 'Give your badge a stripe of your own: make faces 0 and 3 a color you mix with makeColorRGB, not WHITE.',
       checks: [{
         say: 'Faces 0 and 3 are a color you mixed, the same on both',
