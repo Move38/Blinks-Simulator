@@ -6,7 +6,7 @@
 import { compile, compileSketch } from './compiler/index.js';
 import { SDKS, detectSdk } from './compiler/sdk.js';
 import { World, DRIFT } from './runtime/world.js';
-import { Board, LAYOUTS, nextCell, isQuiet } from './ui/board.js';
+import { Board, LAYOUTS, nextCell, isQuiet, bitGroup } from './ui/board.js';
 import { createCodeEditor } from './ui/editor.js';
 import { Console } from './ui/console.js';
 import { EXAMPLES, STARTER } from './examples.js';
@@ -1226,8 +1226,10 @@ function valueBits() {
 // A face value: its number, or its bits as dots, the highest first
 const faceValue = v => (state.bits ? bitDots(v) : v);
 function bitDots(v) {
+  const n = valueBits(), group = bitGroup(n);
   let dots = '';
-  for (let bit = valueBits() - 1; bit >= 0; bit--) dots += `<i class="${(v >> bit) & 1 ? 'on' : ''}"></i>`;
+  // a gap after each group (bitGroup)
+  for (let bit = n - 1; bit >= 0; bit--) dots += `<i class="${(v >> bit) & 1 ? 'on' : ''}${bit && bit % group === 0 ? ' gap' : ''}"></i>`;
   return `<span class="bit-dots" title="${v}">${dots}</span>`;
 }
 // Float the card above the Blink with its caret pointing down at it (below, if there's no room above)
