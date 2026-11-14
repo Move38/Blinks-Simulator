@@ -99,9 +99,12 @@ kbd { font: 600 10.5px var(--f-mono); padding: 1px 5px; border-radius: 4px; back
 
 .editor-body { position: relative; flex: 1; min-height: 0; }
 .view { position: absolute; inset: 0; }
-.view-note { position: absolute; left: 12px; right: 12px; bottom: 12px; z-index: 80; animation: view-note-in .25s ease-out; background: var(--panel-3); border: 1px solid var(--line-2); border-radius: 10px; padding: 9px 12px; font-size: 12.5px; color: var(--text); display: flex; gap: 10px; align-items: flex-start; box-shadow: 0 10px 30px rgba(0,0,0,.4); }
+/* a callout under the view button that was clicked, its caret pointing at the button (showNote) */
+.view-note { position: fixed; z-index: 150; width: max-content; max-width: min(340px, calc(100vw - 32px)); animation: view-note-in .2s ease-out; background: var(--panel-3); border: 1px solid var(--line-2); border-radius: 10px; padding: 9px 12px; font-size: 12.5px; line-height: 1.45; color: var(--text); display: flex; gap: 10px; align-items: flex-start; box-shadow: 0 10px 30px rgba(0,0,0,.45); }
+.view-note::before { content: ''; position: absolute; top: -6px; left: var(--caret, 24px); width: 10px; height: 10px; margin-left: -5px; background: var(--panel-3); border: solid var(--line-2); border-width: 1px 0 0 1px; transform: rotate(45deg); }
+.view-note.above::before { top: auto; bottom: -6px; border-width: 0 1px 1px 0; }
 .view-note button { margin-left: auto; flex: none; }
-@keyframes view-note-in { from { opacity: 0; transform: translateY(6px); } }
+@keyframes view-note-in { from { opacity: 0; transform: translateY(-4px); } }
 
 .splitter { cursor: col-resize; position: relative; touch-action: none; }
 .splitter::after { content: ""; position: absolute; top: 50%; left: 50%; width: 4px; height: 36px; margin: -18px 0 0 -2px; border-radius: 99px; background: var(--line); transition: background .15s; }

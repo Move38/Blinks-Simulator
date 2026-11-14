@@ -526,25 +526,25 @@ async function setView(view) {
   const note = $('#viewNote');
   note.hidden = true;
   if (view === 'blocks' && state.files) {
-    showNote('Blocks show sketches that are one file. This one has several, so it stays as code.');
+    showNote('Blocks show sketches that are one file. This one has several, so it stays as code.', $('#tabBlocks'));
     view = 'code';
   } else if (view === 'blocks') {
     let b;
     try { b = await getBlocks(); }
     catch (e) {
       console.error(e);
-      showNote('The block editor couldn\'t load. Check your internet connection and try again.');
+      showNote('The block editor couldn\'t load. Check your internet connection and try again.', $('#tabBlocks'));
       return;
     }
     if (state.blocksStale !== false || !state.blocksShown) {
       const res = b.setCode(state.code);
       if (!res.ok) {
-        showNote(`This code can't be shown as blocks yet: ${res.message}`);
+        showNote(`This code can't be shown as blocks yet: ${res.message}`, $('#tabBlocks'));
         return;
       }
       state.blocksStale = false;
       state.blocksShown = true;
-      if (res.lossy) showNote('Parts of this sketch don\'t have blocks yet, so they appear as C code blocks. They still run.');
+      if (res.lossy) showNote('Parts of this sketch don\'t have blocks yet, so they appear as C code blocks. They still run.', $('#tabBlocks'));
     }
   }
   state.view = view;
@@ -558,7 +558,8 @@ async function setView(view) {
 }
 setView.initial = true;
 
-function showNote(text) {
+// A note about switching views, under the button that was clicked, so it answers the click
+function showNote(text, anchor) {
   const note = $('#viewNote');
   note.innerHTML = '';
   const span = document.createElement('span');
@@ -569,17 +570,24 @@ function showNote(text) {
   close.onclick = () => { note.hidden = true; };
   note.append(span, close);
   note.hidden = false;
-  // along the bottom of the editor, clear of the block categories on the left and the trash can on
-  // the right
-  requestAnimationFrame(() => {
-    const blocks = $('#blocks');
-    const box = note.parentElement.getBoundingClientRect();
-    const at = sel => (!blocks.hidden && blocks.querySelector(sel)?.getBoundingClientRect()) || null;
-    const toolbox = at('.blocklyToolbox'), controls = [at('.blocklyTrash')].filter(r => r && r.width);
-    note.style.left = 12 + (toolbox ? toolbox.right - box.left : 0) + 'px';
-    note.style.right = 12 + (controls.length ? box.right - Math.min(...controls.map(r => r.left)) : 0) + 'px';
-  });
+  showNote.anchor = anchor;
+  placeNote();
 }
+// Just below the button (above it if there's no room), inside the window, with the caret at the
+// button's middle. It follows the button when the page scrolls, as it does on a phone.
+function placeNote() {
+  const note = $('#viewNote'), anchor = showNote.anchor;
+  if (note.hidden || !anchor) return;
+  const a = anchor.getBoundingClientRect(), w = note.offsetWidth, h = note.offsetHeight;
+  const left = Math.max(16, Math.min(a.left - 8, innerWidth - 16 - w));
+  const above = a.bottom + 10 + h > innerHeight - 8 && a.top - 10 - h >= 8;
+  note.classList.toggle('above', above);
+  note.style.left = left + 'px';
+  note.style.top = (above ? a.top - 10 - h : a.bottom + 10) + 'px';
+  note.style.setProperty('--caret', Math.max(14, Math.min(w - 14, a.left + a.width / 2 - left)) + 'px');
+}
+addEventListener('resize', placeNote);
+addEventListener('scroll', placeNote, true);
 
 document.querySelectorAll('.seg [data-view]').forEach(b => b.addEventListener('click', () => setView(b.dataset.view)));
 
