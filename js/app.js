@@ -408,6 +408,7 @@ function openUpload() {
     onUploaded: text => con.add('info', text),
   });
 }
+$('#uploadBtn').addEventListener('click', openUpload);
 
 // ---------------- code / blocks views ----------------
 async function getBlocks() {
