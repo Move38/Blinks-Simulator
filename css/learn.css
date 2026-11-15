@@ -103,7 +103,7 @@ code { font: 0.92em var(--f-mono); background: var(--panel-2); padding: 1px 5px;
 .pips { display: inline-flex; gap: 4px; }
 .pips i { width: 9px; height: 9px; border-radius: 50%; background: var(--panel-2); border: 1px solid var(--line-2); }
 .pips i.on { background: var(--sc, var(--blinks)); border-color: transparent; }
-.pips i.half { background: linear-gradient(90deg, var(--sc, var(--blinks)) 50%, var(--panel-2) 50%); border-color: transparent; }
+.pips i.part { background: conic-gradient(var(--sc, var(--blinks)) var(--f), var(--panel-2) 0) padding-box; }
 .side .pips { --sc: var(--wc); }
 .side .btn { width: 100%; }
 .side .btn.primary { justify-content: space-between; }
@@ -289,6 +289,17 @@ li.CodeMirror-hint-active { background: var(--blinks); color: #fff; }
 .modal textarea, .modal input { width: 100%; background: var(--bg); border: 1px solid var(--line-2); border-radius: 10px; color: var(--text); font: 12.5px/1.5 var(--f-mono); padding: 10px; }
 .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); max-width: min(560px, calc(100% - 32px)); background: #241e30; border: 1px solid #4a405e; border-radius: 14px; padding: 14px 16px; display: flex; gap: 14px; align-items: center; box-shadow: 0 18px 40px rgba(0,0,0,.55); z-index: 150; }
 .toast p { margin: 0; color: var(--muted); font-size: 13px; }
+/* a first-time pointer (the block drawers), with its arrow on the left, toward what it points at */
+.coach { position: fixed; z-index: 140; width: 230px; background: #fff7d6; color: #2a2337; border-radius: 12px; padding: 11px 13px 9px; box-shadow: 0 14px 34px rgba(0,0,0,.5); font-size: 13px; line-height: 1.4; pointer-events: auto; animation: coach-in .25s cubic-bezier(.2,.8,.2,1); }
+.coach::before { content: ""; position: absolute; left: -6px; top: 20px; width: 12px; height: 12px; background: inherit; transform: rotate(45deg); border-radius: 2px; }
+.coach b { display: block; font-size: 14px; }
+.coach p { margin: 3px 0 4px; color: #4b4160; }
+.coach .cat { font-weight: 700; color: #2a2337; }
+.coach .link { color: #7a5a00; font-weight: 600; padding: 0; }
+@keyframes coach-in { from { opacity: 0; translate: -8px 0; } }
+.coach-ring > .blocklyToolboxCategory { box-shadow: 0 0 0 2px #facc15; animation: coach-ring 1.4s ease-in-out infinite; }
+@keyframes coach-ring { 50% { box-shadow: 0 0 0 5px rgba(250,204,21,.25); } }
+@media (prefers-reduced-motion: reduce) { .coach, .coach-ring > .blocklyToolboxCategory { animation: none; } }
 .toast b { color: var(--text); display: block; font-size: 14px; }
 .toast .acts { flex: none; }
 

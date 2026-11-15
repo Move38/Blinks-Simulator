@@ -123,6 +123,7 @@ export async function openUploadDialog(d, { sketch, sdk, name, board, setBoard, 
       progress(1);
       const chipName = r.chip === 'atmega168pb' ? 'ATmega168PB' : 'ATmega328PB';
       say(`Uploaded “${title}” to a ${UPLOAD_BOARDS[choice].name} (${chipName})${r.fusesSet ? ', and set its fuses' : ''}.`, 'ok');
+      go.textContent = 'Upload again';
       onUploaded?.(`Uploaded “${title}” to a Blink with an ${chipName} (${built}): ${r.bytes} bytes of game and BIOS written and checked.`);
     } catch (e) {
       progress(null);
