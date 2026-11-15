@@ -5314,6 +5314,8 @@ export async function createBlocksEditor(container, { onChange } = {}) {
   const Blockly = await loadBlockly();
   const { generator } = install(Blockly);
   let ws, host = null;
+  let needed = null;   // the block types to keep bright in the drawers (guide()), or null for all
+  const drawerListeners = [];
 
   if (container) {
     loadCss();
@@ -5338,6 +5340,7 @@ export async function createBlocksEditor(container, { onChange } = {}) {
     });
     animateFlyout(ws.getToolbox()?.getFlyout());
     decorateRules(ws.getToolbox()?.getFlyout());
+    dimFlyout(ws.getToolbox()?.getFlyout(), () => needed);
     variablePencils(Blockly, ws, ws.getToolbox()?.getFlyout());
     safariPinch(Blockly, ws, host);
     addNavigation(ws, host);
@@ -5367,6 +5370,17 @@ export async function createBlocksEditor(container, { onChange } = {}) {
     });
   }
   const spacing = ws.rendered ? keepSpacing(Blockly, ws, () => loading) : { measure() {} };
+  // what the drawers do, for a learner's first-time pointers: a drawer opening or closing, and a
+  // block taken out of one
+  if (ws.rendered) {
+    ws.addChangeListener(e => {
+      if (loading || !drawerListeners.length) return;
+      let said = null;
+      if (e.type === Blockly.Events.TOOLBOX_ITEM_SELECT) said = { open: e.newItem || null };   // a drawer's name
+      else if (e.type === Blockly.Events.BLOCK_CREATE && !e.isUiEvent) said = { took: e.json?.type };
+      if (said) for (const fn of drawerListeners) fn(said);
+    });
+  }
   ws.addChangeListener(e => {
     if (loading || e.isUiEvent) {
       if (e.type === Blockly.Events.CLICK && e.targetType === 'block' && !loading) {
@@ -5434,6 +5448,75 @@ export async function createBlocksEditor(container, { onChange } = {}) {
       if (!ws.rendered) return;
       try { Blockly.getFocusManager().focusTree(ws); } catch (e) { ws.getParentSvg().focus && ws.getParentSvg().focus(); }
     },
+
+    // For the learning path, which keeps a learner's eye on the blocks a level needs:
+    // typesOf(src)  the type of each block a sketch is made of, a type once for each block (not the
+    //               numbers and colors in its slots), or null when it can't be shown as blocks
+    // guide(types)  dims the drawers and drawer blocks that aren't among `types`; null brightens all.
+    //               Dimmed blocks still work, for a learner who wants to explore
+    // drawerOf(t)   the drawer holding block type t: { name, el } (its row in the toolbox), or null
+    // drawerEl(t)   in the open drawer, the first block of type t, or the drawer itself when it has
+    //               none; null when no drawer is open
+    // onDrawer(fn)  fn({ open: name or null }) when a drawer opens or closes, fn({ took: type }) when
+    //               a block is added (dragged out of a drawer, most often)
+    typesOf(src) {
+      const r = importSketch(src);
+      return r.ok ? blockTypes(r.state) : null;
+    },
+    guide(types) {
+      needed = types ? new Set(types) : null;
+      const tb = ws.rendered && ws.getToolbox();
+      if (!tb) return;
+      for (const item of tb.getToolboxItems()) {
+        if (!item.getName || !item.getDiv?.()) continue;
+        item.getDiv().classList.toggle('bkDim', !!needed && ![...drawerTypes(ws, item)].some(t => needed.has(t)));
+      }
+      tb.getFlyout()?.isVisible() && tb.refreshSelection();
+    },
+    drawerOf(type) {
+      const tb = ws.rendered && ws.getToolbox();
+      const item = tb && tb.getToolboxItems().find(i => i.getName && drawerTypes(ws, i).has(type));
+      return item ? { name: item.getName(), el: item.getDiv() } : null;
+    },
+    drawerEl(type) {
+      const f = ws.rendered && ws.getToolbox()?.getFlyout();
+      if (!f || !f.isVisible()) return null;
+      return f.getWorkspace().getTopBlocks(true).find(b => b.type === type)?.getSvgRoot() || f.svgGroup_;
+    },
+    onDrawer(fn) { drawerListeners.push(fn); },
+  };
+}
+
+// The type of each block in a saved workspace, leaving out shadows (a slot's own number or color)
+function blockTypes(state) {
+  const types = [];
+  const walk = b => {
+    if (!b) return;
+    types.push(b.type);
+    for (const input of Object.values(b.inputs || {})) walk(input.block);
+    walk(b.next?.block);
+  };
+  for (const b of state.blocks?.blocks || []) walk(b);
+  return types;
+}
+
+// The block types in one drawer of the toolbox. A drawer that builds itself (Variables, Lists…)
+// is asked for what it holds now
+function drawerTypes(ws, item) {
+  let items = item.getContents?.() || [];
+  if (typeof items === 'string') items = ws.getToolboxCategoryCallback(items)?.(ws) || [];
+  return new Set(items.filter(i => i.type && String(i.kind).toLowerCase() === 'block').map(i => i.type));
+}
+
+// guide()'s dimming in an open drawer: each block a level doesn't need is drawn faded
+function dimFlyout(flyout, neededNow) {
+  if (!flyout) return;
+  const show = flyout.show.bind(flyout);
+  flyout.show = (...args) => {
+    const result = show(...args);
+    const needed = neededNow();
+    for (const b of flyout.getWorkspace().getTopBlocks(false)) b.getSvgRoot()?.classList.toggle('bkDim', !!needed && !needed.has(b.type));
+    return result;
   };
 }
 

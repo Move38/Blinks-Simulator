@@ -60,7 +60,6 @@ function renderSide(w) {
   if (open) for (let i = 0; i < 7 && !cont; i++) if (P.hexState(state, WORLDS, w, i) === 'open') cont = i === 6 ? w.boss : w.levels[i];
   cont = cont || P.nextLevel(state, WORLDS);
   const skills = Object.entries(SKILLS).filter(([k]) => WORLDS.some(x => [...x.levels, x.boss].some(l => (l.skills || []).includes(k))));
-  const pips = v => [0, 1, 2].map(i => `<i class="${v >= i + 1 ? 'on' : v > i ? 'half' : ''}"></i>`).join('');
   const arcade = WORLDS.filter(x => P.bossDone(state, x));
   side.innerHTML = `
     <div>
@@ -145,7 +144,7 @@ let blocks = null, blocksLoading = null;
 function getBlocks() {
   if (!blocksLoading) {
     blocksLoading = import('../ui/blocks.js').then(m => m.createBlocksEditor($('#blocks'), { onChange: code => codeChanged(code, 'blocks') }))
-      .then(b => (blocks = b));
+      .then(b => { b.onDrawer(drawerSaid); return (blocks = b); });
   }
   return blocksLoading;
 }
@@ -172,6 +171,7 @@ function openLevel(level) {
     code: draft ?? (level.order ? level.order.scrambled.join('\n') : level.start || ''),
     started: Date.now(), lastEdit: Date.now(), hints: 0, fails: [], firstTry: true, shown: false,
     guess: null, guessed: false, lastError: null, sameError: 0, nudged: false, bridgeOffered: false, done: false,
+    shuffles: {},
   };
   document.documentElement.style.setProperty('--wc', w.color);
   $('#mapView').hidden = true;
@@ -252,6 +252,7 @@ function closeLevel() {
   clearTimeout(liveTimer);
   clearTimeout(blocksTimer);
   clearPoint();
+  hideTip();
   L = null;
   table.unload();
   goalTable.unload();
@@ -277,8 +278,77 @@ async function setView(v, force) {
   for (const t of document.querySelectorAll('#viewSeg button')) t.setAttribute('aria-selected', t.dataset.view === v);
   editor.refresh();
   blocks?.resize();
+  guideBlocks();
 }
 document.querySelectorAll('#viewSeg button').forEach(b => b.addEventListener('click', () => setView(b.dataset.view)));
+
+// ---------------- the drawers, in the early worlds ----------------
+// In the worlds that start in blocks, the drawers fade the blocks a level doesn't need, so a
+// learner looks among a few instead of a hundred (they all still work). And the first time a level
+// needs a block its code doesn't have yet, a pointer shows how to open a drawer and take one out.
+const guided = lv => lv.world.view === 'blocks' && lv.type !== 'predict' && !lv.order;
+let tip = null;   // the pointer showing: { step: 'open' | 'take', drawer: { name, el } }
+function guideBlocks() {
+  if (!blocks) return;
+  if (!L || !guided(L.level)) { blocks.guide(null); return hideTip(); }
+  const lv = L.level;
+  const need = new Set([...(blocks.typesOf(lv.goal) || []), ...(L.mode === 'twist' && lv.twist?.solution ? blocks.typesOf(lv.twist.solution) || [] : [])]);
+  blocks.guide(need.size ? need : null);
+  if (state.tips?.drawer || view === 'code') return hideTip();
+  if (tip) return;
+  // a block the goal has more of than the code does now
+  const count = types => types.reduce((m, t) => m.set(t, (m.get(t) || 0) + 1), new Map());
+  const want = count(blocks.typesOf(lv.goal) || []), have = count(blocks.typesOf(L.code) || []);
+  const missing = [...want.keys()].find(t => want.get(t) > (have.get(t) || 0) && blocks.drawerOf(t));
+  if (missing) showTip({ step: 'open', drawer: blocks.drawerOf(missing), type: missing });
+}
+function drawerSaid(e) {
+  if (!tip) return;
+  if (e.took) {
+    state.tips = { ...state.tips, drawer: true };
+    persist();
+    return hideTip();
+  }
+  // another drawer opened, or the drawer closed: back to pointing at the drawer the block is in
+  const step = e.open === tip.drawer.name ? 'take' : 'open';
+  if (step !== tip.step) showTip({ ...tip, step });
+}
+function showTip(t) {
+  tip = t;
+  const el = $('#coach');
+  el.innerHTML = (t.step === 'open'
+    ? `<b>Blocks live in drawers.</b><p>Click <span class="cat">${esc(t.drawer.name)}</span> to open its drawer.</p>`
+    : `<b>Drag this block onto your code.</b><p>Bright blocks are the ones this level needs. The faded ones are for later.</p>`)
+    + '<button class="link" type="button">Got it</button>';
+  el.querySelector('button').onclick = () => { state.tips = { ...state.tips, drawer: true }; persist(); hideTip(); };
+  el.hidden = false;
+  for (const r of document.querySelectorAll('.coach-ring')) r.classList.remove('coach-ring');
+  if (t.step === 'open') t.drawer.el?.classList.add('coach-ring');
+  if (!placing) placeTip();
+}
+function hideTip() {
+  tip = null;
+  $('#coach').hidden = true;
+  for (const r of document.querySelectorAll('.coach-ring')) r.classList.remove('coach-ring');
+}
+// The pointer sits just right of what it points at, its arrow on its left edge, and follows it
+// as the page lays out (a drawer sliding open, the window resizing)
+let placing = false;
+function placeTip() {
+  if (!tip) { placing = false; return; }
+  placing = true;
+  const el = $('#coach');
+  const at = tip.step === 'open' ? tip.drawer.el : blocks?.drawerEl(tip.type);
+  const r = at?.getBoundingClientRect();
+  if (!r || !r.width || $('#blocks').hidden || !$('#modal').hidden) el.style.visibility = 'hidden';
+  else {
+    el.style.visibility = '';
+    const y = r.top + Math.min(r.height / 2, 24);
+    el.style.left = Math.min(r.right + 14, innerWidth - el.offsetWidth - 12) + 'px';
+    el.style.top = Math.max(12, Math.min(y - 26, innerHeight - el.offsetHeight - 12)) + 'px';
+  }
+  requestAnimationFrame(placeTip);
+}
 
 let liveTimer = 0, blocksTimer = 0;
 function codeChanged(code, from) {
@@ -533,11 +603,26 @@ function pointAt(line) {
 }
 function clearPoint() { $('#order').querySelector('.point')?.classList.remove('point'); if (pointed) { editor.cm.removeLineClass(pointed, 'background', 'cm-point-line'); pointed = null; } }
 
+// A question's answers in a shuffled order, so the right one isn't always A: the indexes of
+// `options` in the order to show them. Picked once a visit, so a re-render (a hint) keeps it.
+function shuffled(key, options) {
+  if (!L.shuffles[key]) {
+    const a = options.map((_, i) => i);
+    for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+    L.shuffles[key] = a;
+  }
+  return L.shuffles[key];
+}
+
+// A skill's mastery, 0 to 3, as three dots. Mastery rises by quarters, so a dot fills partway
+// as a pie, clockwise from the top.
+const pips = v => [0, 1, 2].map(i => v >= i + 1 ? '<i class="on"></i>' : v > i ? `<i class="part" style="--f:${Math.round((v - i) * 100)}%"></i>` : '<i></i>').join('');
+
 // ---------------- Predict ----------------
 function predictHtml() {
   const p = L.level.predict;
   return `<p style="margin:0;font-weight:600">${rich(p.q)}</p>
-    <div class="choices">${p.options.map((o, i) => `<button class="choice" data-i="${i}"><span class="l">${'ABCD'[i]}</span><span>${esc(o.text)}</span><span class="pics">${o.pics.map(f => blinkSvg(f, 10)).join('')}</span></button>`).join('')}</div>
+    <div class="choices">${shuffled('predict', p.options).map((i, k) => { const o = p.options[i]; return `<button class="choice" data-i="${i}"><span class="l">${'ABCD'[k]}</span><span>${esc(o.text)}</span><span class="pics">${o.pics.map(f => blinkSvg(f, 10)).join('')}</span></button>`; }).join('')}</div>
     <div id="why"></div>
     <div class="foot"><button class="btn primary" id="lockIn" disabled>Pick an answer</button></div>`;
 }
@@ -549,14 +634,14 @@ function bindPredict() {
     L.guess = +b.dataset.i;
     btns.forEach(x => x.classList.toggle('sel', x === b));
     $('#lockIn').disabled = false;
-    $('#lockIn').textContent = `Lock in ${'ABCD'[L.guess]} and run`;
+    $('#lockIn').textContent = `Lock in ${b.querySelector('.l').textContent} and run`;
   }));
   $('#lockIn').addEventListener('click', () => {
     if (L.guessed) return complete();
     L.guessed = true;
     const right = p.options[L.guess].right;
     L.firstTry = !!right;
-    btns.forEach((x, i) => { x.disabled = true; x.classList.remove('sel'); if (p.options[i].right) x.classList.add('right'); else if (i === L.guess) x.classList.add('wrong'); });
+    btns.forEach(x => { const i = +x.dataset.i; x.disabled = true; x.classList.remove('sel'); if (p.options[i].right) x.classList.add('right'); else if (i === L.guess) x.classList.add('wrong'); });
     $('#why').innerHTML = `<div class="why${right ? '' : ' wrong'}">${rich(p.options[L.guess].why)}${right ? '' : `<br><br>${rich(p.options.find(o => o.right).why.replace(/^Right\.\s*/, ''))}`}</div>`;
     $('#lockedOver').hidden = true;
     $('#shield').hidden = true;
@@ -570,7 +655,7 @@ function bindPredict() {
 // ---------------- a question to answer (Discover levels) ----------------
 function askHtml() {
   const a = L.level.ask;
-  return `<div class="q-ask"><p style="margin:0 0 8px;font-weight:600">${rich(a.q)}</p><div class="choices">${a.options.map((o, i) => `<button class="choice" data-ask="${i}"><span class="l">${'ABCD'[i]}</span><span>${rich(o)}</span><span></span></button>`).join('')}</div><div id="askWhy"></div></div>`;
+  return `<div class="q-ask"><p style="margin:0 0 8px;font-weight:600">${rich(a.q)}</p><div class="choices">${shuffled('ask', a.options).map((i, k) => `<button class="choice" data-ask="${i}"><span class="l">${'ABCD'[k]}</span><span>${rich(a.options[i])}</span><span></span></button>`).join('')}</div><div id="askWhy"></div></div>`;
 }
 function bindAsk() {
   const a = L.level.ask;
@@ -647,7 +732,7 @@ function finishModal({ starred, coasting, worldDone }) {
   const title = starred ? 'Star earned.' : lv.type === 'predict' ? (L.firstTry ? 'You called it.' : 'Now you know.') : worldDone ? `World ${w.n} done!` : DONE_TITLES[lv.parent ? 'bridge' : lv.type] || 'Done.';
   const skillRows = (lv.skills || []).map(s => {
     const v = state.skills[s] || 0;
-    return `<div style="display:grid;justify-items:end;gap:5px"><span class="muted" style="font-size:12px">${esc(SKILLS[s] || s)}</span><span class="pips" style="--sc:${w.color}">${[0, 1, 2].map(i => `<i class="${v >= i + 1 ? 'on' : v > i ? 'half' : ''}"></i>`).join('')}</span></div>`;
+    return `<div style="display:grid;justify-items:end;gap:5px"><span class="muted" style="font-size:12px">${esc(SKILLS[s] || s)}</span><span class="pips" style="--sc:${w.color}">${pips(v)}</span></div>`;
   }).join('');
   const offers = [];
   if (!starred && lv.twist && !state.levels[lv.id]?.star) offers.push(`<div class="offer star"><b>★ Twist</b><p>${rich(lv.twist.brief)}</p></div>`);
@@ -659,7 +744,7 @@ function finishModal({ starred, coasting, worldDone }) {
       <div><p class="eyebrow" style="color:${w.color}">Level ${esc(lv.id)}</p><h2>${esc(title)}</h2></div>
       <div style="display:flex;gap:14px">${starred ? '' : skillRows}</div>
     </div>
-    ${refl ? `<div class="q">${refl.code ? `<pre class="refl-code">${esc(refl.code)}</pre>` : ''}<b>${rich(refl.q)}</b>${refl.options.map((o, i) => `<button class="opt" data-r="${i}"><span class="l">${'ABC'[i]}</span>${rich(o)}</button>`).join('')}<div id="reflWhy"></div></div>` : ''}
+    ${refl ? `<div class="q">${refl.code ? `<pre class="refl-code">${esc(refl.code)}</pre>` : ''}<b>${rich(refl.q)}</b>${shuffled('reflect', refl.options).map((i, k) => `<button class="opt" data-r="${i}"><span class="l">${'ABCD'[k]}</span>${rich(refl.options[i])}</button>`).join('')}<div id="reflWhy"></div></div>` : ''}
     ${offers.length ? `<div class="offers">${offers.join('')}</div>` : ''}
     <div class="acts">
       <a class="btn ghost" href="#map">Map</a>
@@ -673,7 +758,7 @@ function finishModal({ starred, coasting, worldDone }) {
     if (L.reflected) return;
     L.reflected = true;
     const right = +b.dataset.r === refl.answer;
-    document.querySelectorAll('[data-r]').forEach((x, i) => { x.disabled = true; if (i === refl.answer) x.classList.add('right'); else if (x === b) x.classList.add('wrong'); });
+    document.querySelectorAll('[data-r]').forEach(x => { x.disabled = true; if (+x.dataset.r === refl.answer) x.classList.add('right'); else if (x === b) x.classList.add('wrong'); });
     $('#reflWhy').innerHTML = `<div class="why${right ? '' : ' wrong'}">${right ? '' : 'Not quite. '}${rich(refl.why)}</div>`;
     // a wrong answer takes a little off what the level added
     if (!right) for (const s of lv.skills || []) state.skills[s] = Math.max(0, (state.skills[s] || 0) - 0.25);
@@ -690,6 +775,7 @@ function finishModal({ starred, coasting, worldDone }) {
     const tw = compileLevelCode(lv.twist.solution);
     if (tw.ok) { $('#pip').hidden = false; showGoal(tw, lv.twist.open ? 'One idea' : 'Twist'); fitTable(); }
     renderMission();
+    guideBlocks();
     runLive();
   });
   document.querySelector('#modalBody a[href="#map"]').addEventListener('click', () => { delete $('#modal').dataset.sticky; closeModal(); });
