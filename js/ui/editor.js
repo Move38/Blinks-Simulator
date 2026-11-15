@@ -39,7 +39,8 @@ function defineMode() {
   }));
 }
 
-export function createCodeEditor(host, { onChange, onRun }) {
+// onCursor(from, to): the lines (from 1) the cursor or selection is on, when the person moves it
+export function createCodeEditor(host, { onChange, onRun, onCursor }) {
   defineMode();
   const cm = CodeMirror(host, {
     mode: 'text/x-blinks',
@@ -70,6 +71,38 @@ export function createCodeEditor(host, { onChange, onRun }) {
     if (silent) return;
     onChange(cm.getValue());
   });
+  cm.on('cursorActivity', () => {
+    if (silent || !onCursor) return;
+    clearMark();
+    const { from, to } = selection();
+    onCursor(from, to);
+  });
+  const selection = () => {
+    const a = cm.getCursor('from'), b = cm.getCursor('to');
+    // a selection ending at the start of a line doesn't take that line in
+    return { from: a.line + 1, to: Math.max(a.line, b.ch === 0 && b.line > a.line ? b.line - 1 : b.line) + 1 };
+  };
+
+  // lines marked as the ones a block beside the code is, or the ones a change to the blocks changed
+  let marked = [];   // their line handles, which follow the lines as the text changes
+  function clearMark() {
+    cm.operation(() => { for (const h of marked) cm.removeLineClass(h, 'background', 'cm-linked-line'); });
+    marked = [];
+  }
+  // ranges: [[from, to], ...] (from 1); the one `show` is scrolled into view, unless it already is
+  function mark(ranges, show = ranges[0]) {
+    clearMark();
+    const last = cm.lineCount() - 1, at = l => Math.max(0, Math.min(last, l - 1));
+    cm.operation(() => {
+      for (const [from, to] of ranges) for (let l = at(from); l <= Math.max(at(from), at(to)); l++) marked.push(cm.addLineClass(l, 'background', 'cm-linked-line'));
+    });
+    if (!show) return;
+    const a = at(show[0]), b = Math.max(a, at(show[1]));
+    const view = cm.getScrollInfo(), top = cm.heightAtLine(a, 'local'), bottom = cm.heightAtLine(b + 1, 'local');
+    if (top < view.top || bottom > view.top + view.clientHeight) cm.scrollIntoView({ from: { line: a, ch: 0 }, to: { line: b, ch: 0 } }, 40);
+  }
+  const markLines = (from, to = from) => mark([[from, to]]);
+
   cm.on('inputRead', (c, ch) => {
     if (ch.origin !== '+input' || cm.state.completionActive) return;
     const cur = cm.getCursor(), tok = cm.getTokenAt(cur);
@@ -144,6 +177,7 @@ export function createCodeEditor(host, { onChange, onRun }) {
     setValue(v, key = null) {
       silent = true;
       clearDiagnostics();
+      marked = [];
       docs.clear();
       cm.swapDoc(CodeMirror.Doc(v, 'text/x-blinks'));
       docKey = key;
@@ -154,6 +188,7 @@ export function createCodeEditor(host, { onChange, onRun }) {
       if (key === docKey) return;
       silent = true;
       clearDiagnostics();
+      clearMark();
       if (docKey !== null) docs.set(docKey, cm.getDoc());
       let d = docs.get(key);
       if (!d || d.getValue() !== v) d = CodeMirror.Doc(v, 'text/x-blinks');
@@ -161,6 +196,27 @@ export function createCodeEditor(host, { onChange, onRun }) {
       docKey = key;
       silent = false;
     },
+    // the text as `v`, changing only the part that differs (keeping the view and undo history), and
+    // marking the lines that changed
+    // marking the lines that changed, and showing the change nearest line `near`
+    update(v, near = null) {
+      const old = cm.getValue();
+      if (old === v) return;
+      let a = 0, b = 0;
+      while (a < old.length && a < v.length && old[a] === v[a]) a++;
+      while (b < old.length - a && b < v.length - a && old[old.length - 1 - b] === v[v.length - 1 - b]) b++;
+      const scroll = cm.getScrollInfo();
+      silent = true;
+      cm.replaceRange(v.slice(a, v.length - b), cm.posFromIndex(a), cm.posFromIndex(old.length - b), 'blocks');
+      cm.scrollTo(scroll.left, scroll.top);
+      silent = false;
+      const hunks = changedLines(old, v);
+      const away = h => (near == null ? 0 : near < h[0] ? h[0] - near : near > h[1] ? near - h[1] : 0);
+      mark(hunks, hunks.reduce((best, h) => (away(h) < away(best) ? h : best), hunks[0]));
+    },
+    markLines,
+    clearMark,
+    selection,
     setDiagnostics,
     clearDiagnostics,
     focusLine(line) {
@@ -171,6 +227,37 @@ export function createCodeEditor(host, { onChange, onRun }) {
     refresh: () => cm.refresh(),
     focus: () => cm.focus(),
   };
+}
+
+// The lines of `b` that differ from `a`, by the longest run of lines they share: [[from, to], ...]
+// (from 1). Where lines were only taken out, the line now in their place
+function changedLines(a, b) {
+  const x = a.split('\n'), y = b.split('\n');
+  let p = 0, s = 0;
+  while (p < x.length && p < y.length && x[p] === y[p]) p++;
+  while (s < x.length - p && s < y.length - p && x[x.length - 1 - s] === y[y.length - 1 - s]) s++;
+  const xs = x.slice(p, x.length - s), ys = y.slice(p, y.length - s), n = xs.length, m = ys.length;
+  const atLine = j => Math.min(y.length, p + j + 1);
+  if (n * m > 250000) return [[atLine(0), Math.max(atLine(0), y.length - s)]];
+  const L = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) L[i][j] = xs[i] === ys[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+  const hunks = [];
+  const add = line => {
+    const h = hunks[hunks.length - 1];
+    if (h && line <= h[1]) return;
+    if (h && line === h[1] + 1) h[1] = line;
+    else hunks.push([line, line]);
+  };
+  for (let i = 0, j = 0; i < n || j < m;) {
+    if (i < n && j < m && xs[i] === ys[j]) { i++; j++; }
+    else if (j < m && (i === n || L[i][j + 1] >= L[i + 1][j])) add(atLine(j++));
+    else {
+      // a line taken out: unless it was swapped for the line just before, mark the line now there
+      if (!(j > 0 && hunks.at(-1)?.[1] === atLine(j - 1))) add(atLine(j));
+      i++;
+    }
+  }
+  return hunks;
 }
 
 // `code` spans in messages

@@ -139,12 +139,22 @@ const tableEvents = {
 const table = makeTable($('#board'), { events: tableEvents, bin: $('#bin'), margins: { top: 44, bottom: 56, side: 28 } });
 const goalTable = makeTable($('#goalBoard'), { fixed: true, margins: { top: 4, bottom: 4, side: 4 } });
 
-const editor = createCodeEditor($('#code'), { onChange: code => codeChanged(code, 'code'), onRun: () => check() });
+const editor = createCodeEditor($('#code'), {
+  onChange: code => codeChanged(code, 'code'),
+  onRun: () => check(),
+  // in Both, the blocks the cursor is in are marked (once the blocks have caught up)
+  onCursor: (from, to) => { if (view === 'split' && blocks && blocks.stale === false) blocks.showLines(from, to); },
+});
 let blocks = null, blocksLoading = null;
 function getBlocks() {
   if (!blocksLoading) {
     blocksLoading = import('../ui/blocks.js').then(m => m.createBlocksEditor($('#blocks'), { onChange: code => codeChanged(code, 'blocks') }))
-      .then(b => { b.onDrawer(drawerSaid); return (blocks = b); });
+      .then(b => {
+        b.onDrawer(drawerSaid);
+        // in Both, a block picked marks its lines of code
+        b.onSelect(span => { if (view !== 'split') return; if (span) editor.markLines(span.line, span.last); else editor.clearMark(); });
+        return (blocks = b);
+      });
   }
   return blocksLoading;
 }
@@ -292,14 +302,17 @@ function guideBlocks() {
   if (!blocks) return;
   if (!L || !guided(L.level)) { blocks.guide(null); return hideTip(); }
   const lv = L.level;
-  const need = new Set([...(blocks.typesOf(lv.goal) || []), ...(L.mode === 'twist' && lv.twist?.solution ? blocks.typesOf(lv.twist.solution) || [] : [])]);
-  blocks.guide(need.size ? need : null);
+  // the goal's blocks, and any a level teaches that its goal doesn't show as blocks (a mix of red,
+  // green and blue shows as a color swatch)
+  const goal = [...(blocks.typesOf(lv.goal) || []), ...(lv.teaches || [])];
+  const need = new Set([...goal, ...(L.mode === 'twist' && lv.twist?.solution ? blocks.typesOf(lv.twist.solution) || [] : [])]);
+  // a block the goal has more of than the code does now: its drawer scrolls to it
+  const count = types => types.reduce((m, t) => m.set(t, (m.get(t) || 0) + 1), new Map());
+  const want = count(goal), have = count(blocks.typesOf(L.code) || []);
+  const missing = [...want.keys()].find(t => want.get(t) > (have.get(t) || 0) && blocks.drawerOf(t));
+  blocks.guide(need.size ? need : null, missing);
   if (state.tips?.drawer || view === 'code') return hideTip();
   if (tip) return;
-  // a block the goal has more of than the code does now
-  const count = types => types.reduce((m, t) => m.set(t, (m.get(t) || 0) + 1), new Map());
-  const want = count(blocks.typesOf(lv.goal) || []), have = count(blocks.typesOf(L.code) || []);
-  const missing = [...want.keys()].find(t => want.get(t) > (have.get(t) || 0) && blocks.drawerOf(t));
   if (missing) showTip({ step: 'open', drawer: blocks.drawerOf(missing), type: missing });
 }
 function drawerSaid(e) {
@@ -359,13 +372,20 @@ function codeChanged(code, from) {
   state.drafts[L.level.id] = code;
   persist();
   clearPoint();
-  if (from === 'blocks') editor.setValue(code);
+  // in Both, the code changes in place and shows which lines did
+  if (from === 'blocks') { if (view === 'split') editor.update(code, blocks?.pickedLines()?.line); else editor.setValue(code); }
   if (from === 'code' && blocks) {
     blocks.stale = true;
-    // in Both, the blocks follow the code once it compiles
+    // in Both, the blocks follow the code once it compiles, staying where they are and showing the
+    // blocks the cursor is in
     if (view === 'split') {
       clearTimeout(blocksTimer);
-      blocksTimer = setTimeout(() => { if (L && compileLevelCode(L.code).ok && blocks.setCode(L.code).ok) blocks.stale = false; }, 900);
+      blocksTimer = setTimeout(() => {
+        if (!L || view !== 'split' || !compileLevelCode(L.code).ok || !blocks.setCode(L.code, { keep: true }).ok) return;
+        blocks.stale = false;
+        const { from, to } = editor.selection();
+        blocks.showLines(from, to);
+      }, 900);
     }
   }
   clearTimeout(liveTimer);

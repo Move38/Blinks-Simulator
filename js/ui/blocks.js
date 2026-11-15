@@ -2739,6 +2739,14 @@ function makeGenerator(Blockly) {
     return free[depth];
   };
 
+  // While generateMapped() runs, each statement's code is wrapped in markers naming its block
+  G.marks_ = null;
+  G.marked = function (block, code) {
+    if (!this.marks_ || !block) return code;
+    const k = this.marks_.push(block.id) - 1;
+    return `\u0001${k}\u0002` + code.replace(/\n*$/, end => `\u0003${k}\u0004` + end);
+  };
+
   // Comments: a statement's own comment and those of the values inside it go above it
   G.scrub_ = function (block, code, thisOnly) {
     if (!block.outputConnection) {
@@ -2747,6 +2755,7 @@ function makeGenerator(Blockly) {
       if (c) notes.push(c);
       collectValueComments(block, notes);
       if (notes.length && code) code = notes.map(commentLines).join('') + code;
+      if (code) code = this.marked(block, code);
       if (!thisOnly && block.nextConnection) code += this.blockToCode(block.nextConnection.targetBlock());
     }
     return code;
@@ -3188,7 +3197,7 @@ function generateProgram(ws, G) {
     if (b.type === 'bk_c_top') {
       flush();
       const text = String(b.getFieldValue('CODE') ?? '').trimEnd();
-      if (text) parts.push(hatComment(b) + text);
+      if (text) parts.push(G.marked(b, hatComment(b) + text));
       continue;
     }
     if (LIST_SETUPS.includes(b.type) && !listSetups.has(b)) continue;
@@ -3204,12 +3213,12 @@ function generateProgram(ws, G) {
   const setups = of('bk_setup'), loops = of('bk_loop');
   if (setups.length || !DEFINES_SETUP.test(rawText)) {
     fresh();
-    parts.push(setups.map(hatComment).join('') + 'void setup() {\n' + setups.map(hatBody).join('') + '}');
+    parts.push(G.marked(setups[0], setups.map(hatComment).join('') + 'void setup() {\n' + setups.map(hatBody).join('') + '}'));
   }
 
   if (loops.length || !DEFINES_LOOP.test(rawText)) {
     fresh();
-    parts.push(loops.map(hatComment).join('') + 'void loop() {\n' + loops.map(hatBody).join('') + '}');
+    parts.push(G.marked(loops[0], loops.map(hatComment).join('') + 'void loop() {\n' + loops.map(hatBody).join('') + '}'));
   }
 
   // A function input in C. A list is `byte name[]` and a grid `byte name[][6]` (C needs a grid's
@@ -3252,12 +3261,33 @@ function generateProgram(ws, G) {
       }
       const value = G.valueToCode(d, 'RETURN', ORDER.NONE) || ({ bool: 'false', Color: 'OFF' }[ret] || '0');
       const retLine = G.prefixLines(notes.map(commentLines).join('') + `return ${value};\n`, G.INDENT);
-      parts.push(hatComment(d) + `${ret} ${name}(${params}) {\n${stack}${retLine}}`);
+      parts.push(G.marked(d, hatComment(d) + `${ret} ${name}(${params}) {\n${stack}${retLine}}`));
     } else {
-      parts.push(hatComment(d) + `void ${name}(${params}) {\n${stack}}`);
+      parts.push(G.marked(d, hatComment(d) + `void ${name}(${params}) {\n${stack}}`));
     }
   }
   return parts.join('\n\n') + '\n';
+}
+
+// The program, and the lines each statement block became: [{ id, line, last }], or null when
+// marking the blocks changed the code (then nothing is said rather than something wrong)
+function generateMapped(ws, G) {
+  const code = generateProgram(ws, G);
+  let marked, ids;
+  G.marks_ = [];
+  try { marked = generateProgram(ws, G); ids = G.marks_; } catch (e) { return { code, lines: null }; } finally { G.marks_ = null; }
+  const spans = new Map(), re = /\u0001(\d+)\u0002|\u0003(\d+)\u0004/g;
+  let plain = '', line = 1, at = 0, m;
+  while ((m = re.exec(marked))) {
+    const chunk = marked.slice(at, m.index);
+    plain += chunk;
+    line += chunk.split('\n').length - 1;
+    at = re.lastIndex;
+    if (m[1] != null) spans.set(m[1], { id: ids[m[1]], line, last: line });
+    else if (spans.has(m[2])) spans.get(m[2]).last = line;
+  }
+  plain += marked.slice(at);
+  return { code, lines: plain === code ? [...spans.values()] : null };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -3564,7 +3594,14 @@ class Importer {
     // Blockly treats names case-insensitively within a type
     return !this.vars.some(v => v.type === type && v.name !== name && v.name.toLowerCase() === name.toLowerCase());
   }
-  anchor(node, target) { this.anchors.push({ line: this.realLine(node.line), target }); return target; }
+  // (`last`: the last line the statement reaches, for lining blocks up with the code)
+  anchor(node, target) {
+    const line = this.realLine(node.line);
+    let last = line;
+    try { last = Math.max(line, this.realLine(this.exprRange(node)[1])); } catch (e) { /* the first line is enough */ }
+    this.anchors.push({ line, last, target });
+    return target;
+  }
 
   // `#define NAME value` where the value is a number or a named color: a define block. The tokens
   // after the name, on the directive's line (a comment there becomes the block's comment).
@@ -3859,7 +3896,7 @@ class Importer {
       this.rawRanges.push([a, b]);
       const text = this.src.slice(a, b).split('\n').map(l => l.trimEnd()).join('\n');
       const json = { type: 'bk_c_top', fields: { CODE: text } };
-      this.anchors.push({ line: this.lineOf(a), target: json });
+      this.anchors.push({ line: this.lineOf(a), last: this.lineOf(Math.max(a, b - 1)), target: json });
       tops.push(json);
       this.rawCount++;
       run = null;
@@ -3896,9 +3933,21 @@ class Importer {
       text, x: 0, y: -400 + i * 100, width: 360, height: Math.min(260, 40 + 18 * text.split('\n').length),
     }));
     return {
-      ok: true, lossy: this.rawCount > 0, notes,
+      ok: true, lossy: this.rawCount > 0, notes, lines: this.lineSpans(),
       state: { ...(workspaceComments.length ? { workspaceComments } : {}), blocks: { languageVersion: 0, blocks: tops }, variables },
     };
+  }
+
+  // The lines of the code each block came from: [{ id, line, last }], giving those blocks their ids
+  lineSpans() {
+    const spans = new Map();
+    for (const a of this.anchors) {
+      const s = spans.get(a.target), last = Math.max(a.line, a.last ?? a.line);
+      if (s) { s.line = Math.min(s.line, a.line); s.last = Math.max(s.last, last); }
+      else spans.set(a.target, { line: a.line, last });
+    }
+    let n = 0;
+    return [...spans].map(([json, s]) => ({ id: (json.id ??= 'bkl' + n++), ...s }));
   }
 
   wholeProgramAsC() {
@@ -5315,7 +5364,11 @@ export async function createBlocksEditor(container, { onChange } = {}) {
   const { generator } = install(Blockly);
   let ws, host = null;
   let needed = null;   // the block types to keep bright in the drawers (guide()), or null for all
+  let focus = null;    // the block type to scroll into view when its drawer opens (guide())
   const drawerListeners = [];
+  let lineMap = null;  // the lines of the code each block is: [{ id, line, last }], or null if unknown
+  let here = [];       // the blocks showLines() marks
+  const selectListeners = [];
 
   if (container) {
     loadCss();
@@ -5340,7 +5393,7 @@ export async function createBlocksEditor(container, { onChange } = {}) {
     });
     animateFlyout(ws.getToolbox()?.getFlyout());
     decorateRules(ws.getToolbox()?.getFlyout());
-    dimFlyout(ws.getToolbox()?.getFlyout(), () => needed);
+    dimFlyout(ws.getToolbox()?.getFlyout(), () => needed, () => focus);
     variablePencils(Blockly, ws, ws.getToolbox()?.getFlyout());
     safariPinch(Blockly, ws, host);
     addNavigation(ws, host);
@@ -5391,8 +5444,27 @@ export async function createBlocksEditor(container, { onChange } = {}) {
     }
     if (!onChange) return;
     clearTimeout(timer);
-    timer = setTimeout(() => onChange(getCode()), 300);
+    timer = setTimeout(() => {
+      const g = generateMapped(ws, generator);
+      lineMap = g.lines;
+      onChange(g.code);
+    }, 300);
   });
+  // a block picked out: its lines of code, for an editor showing the code beside it
+  const spanOf = b => {
+    for (; b; b = b.getParent()) { const s = lineMap?.find(x => x.id === b.id); if (s) return s; }
+    return null;
+  };
+  if (ws.rendered) {
+    ws.addChangeListener(e => {
+      if (loading || e.type !== Blockly.Events.SELECTED || !selectListeners.length) return;
+      const b = e.newElementId && ws.getBlockById(e.newElementId);
+      if (b) unmark();
+      const span = b ? spanOf(b) : null;
+      for (const fn of selectListeners) fn(span && { line: span.line, last: span.last });
+    });
+  }
+  const unmark = () => { for (const b of here) b.getSvgRoot()?.classList.remove('bkHere'); here = []; };
 
   const load = state => {
     loading = true;
@@ -5418,17 +5490,23 @@ export async function createBlocksEditor(container, { onChange } = {}) {
   load(STARTER);
 
   return {
-    setCode(src) {
+    // keep: stay where the view is (for code changing beside the blocks), not back at the top
+    setCode(src, { keep = false } = {}) {
+      const at = keep && ws.rendered && [ws.scrollX, ws.scrollY];
+      here = [];
+      lineMap = null;
       if (!String(src ?? '').trim()) { load(STARTER); return { ok: true, lossy: false, notes: [] }; }
       let r = importSketch(src);
       if (!r.ok) return { ok: false, message: r.message };
       try {
         load(r.state);
+        lineMap = r.lines || null;
       } catch (e) {
         console.warn('Blocks import fell back to C:', e);
         r = r.fallback();
         load(r.state);
       }
+      if (at && !pendingLayout) ws.scroll(...at);
       return { ok: true, lossy: r.lossy, notes: r.notes };
     },
     getCode,
@@ -5444,6 +5522,35 @@ export async function createBlocksEditor(container, { onChange } = {}) {
         spacing.measure();
       }
     },
+
+    // For code shown beside the blocks:
+    // showLines(from, to)  marks the blocks lines from..to of the code are (the innermost block
+    //               holding line `from`, or the blocks a selection of lines covers) and scrolls
+    //               them into view; showLines(null) unmarks
+    // onSelect(fn)  fn({ line, last }) when a block is picked, with the lines of code it is, or
+    //               fn(null) when nothing is, or its lines aren't known
+    // pickedLines() the lines of code the picked block is, { line, last }, or null
+    showLines(from, to = from) {
+      if (!ws.rendered) return;
+      unmark();
+      if (from == null || !lineMap) return;
+      const known = lineMap.map(s => ({ ...s, b: ws.getBlockById(s.id) })).filter(s => s.b && !s.b.isInFlyout);
+      let pick = to > from ? known.filter(s => s.line >= from && s.last <= to) : [];
+      pick = pick.filter(s => !pick.some(o => o !== s && o.line <= s.line && o.last >= s.last && (o.line < s.line || o.last > s.last)));
+      if (!pick.length) {
+        const holding = known.filter(s => s.line <= from && s.last >= from).sort((x, y) => (x.last - x.line) - (y.last - y.line));
+        if (holding[0]) pick = [holding[0]];
+      }
+      here = pick.map(s => s.b);
+      for (const b of here) b.getSvgRoot()?.classList.add('bkHere');
+      if (here.length) revealBlocks(ws, here);
+    },
+    onSelect(fn) { selectListeners.push(fn); },
+    pickedLines() {
+      const b = (Blockly.getSelected?.() ?? Blockly.common?.getSelected?.());
+      const span = b && b.workspace === ws ? spanOf(b) : null;
+      return span && { line: span.line, last: span.last };
+    },
     focus() {
       if (!ws.rendered) return;
       try { Blockly.getFocusManager().focusTree(ws); } catch (e) { ws.getParentSvg().focus && ws.getParentSvg().focus(); }
@@ -5452,8 +5559,9 @@ export async function createBlocksEditor(container, { onChange } = {}) {
     // For the learning path, which keeps a learner's eye on the blocks a level needs:
     // typesOf(src)  the type of each block a sketch is made of, a type once for each block (not the
     //               numbers and colors in its slots), or null when it can't be shown as blocks
-    // guide(types)  dims the drawers and drawer blocks that aren't among `types`; null brightens all.
-    //               Dimmed blocks still work, for a learner who wants to explore
+    // guide(types, focus)  dims the drawers and drawer blocks that aren't among `types`; null
+    //               brightens all. Dimmed blocks still work, for a learner who wants to explore. A
+    //               block of type `focus` is scrolled into view when its drawer opens
     // drawerOf(t)   the drawer holding block type t: { name, el } (its row in the toolbox), or null
     // drawerEl(t)   in the open drawer, the first block of type t, or the drawer itself when it has
     //               none; null when no drawer is open
@@ -5463,8 +5571,9 @@ export async function createBlocksEditor(container, { onChange } = {}) {
       const r = importSketch(src);
       return r.ok ? blockTypes(r.state) : null;
     },
-    guide(types) {
+    guide(types, focusType = null) {
       needed = types ? new Set(types) : null;
+      focus = focusType;
       const tb = ws.rendered && ws.getToolbox();
       if (!tb) return;
       for (const item of tb.getToolboxItems()) {
@@ -5508,14 +5617,37 @@ function drawerTypes(ws, item) {
   return new Set(items.filter(i => i.type && String(i.kind).toLowerCase() === 'block').map(i => i.type));
 }
 
+// Scroll the workspace just enough to show these blocks, if any of them is out of view
+function revealBlocks(ws, blocks) {
+  const rs = blocks.map(b => b.getBoundingRectangle());
+  const r = { top: Math.min(...rs.map(x => x.top)), bottom: Math.max(...rs.map(x => x.bottom)), left: Math.min(...rs.map(x => x.left)), right: Math.max(...rs.map(x => x.right)) };
+  const v = ws.getMetricsManager().getViewMetrics(true), pad = 24 / ws.scale;
+  let { top, left } = v;
+  if (r.top < v.top || r.bottom > v.top + v.height) top = r.top < v.top || r.bottom - r.top + 2 * pad > v.height ? r.top - pad : r.bottom + pad - v.height;
+  if (r.left < v.left || r.right > v.left + v.width) left = r.left - pad;
+  if (top === v.top && left === v.left) return;
+  ws.beginCanvasTransition();
+  ws.scroll(-left * ws.scale, -top * ws.scale);
+  setTimeout(() => ws.endCanvasTransition(), 400);
+}
+
 // guide()'s dimming in an open drawer: each block a level doesn't need is drawn faded
-function dimFlyout(flyout, neededNow) {
+function dimFlyout(flyout, neededNow, focusNow) {
   if (!flyout) return;
   const show = flyout.show.bind(flyout);
   flyout.show = (...args) => {
     const result = show(...args);
     const needed = neededNow();
-    for (const b of flyout.getWorkspace().getTopBlocks(false)) b.getSvgRoot()?.classList.toggle('bkDim', !!needed && !needed.has(b.type));
+    const fw = flyout.getWorkspace();
+    for (const b of fw.getTopBlocks(false)) b.getSvgRoot()?.classList.toggle('bkDim', !!needed && !needed.has(b.type));
+    // the focus block, below the fold of a long drawer, is scrolled up into view (once the toolbox
+    // has scrolled the drawer back to its start)
+    const focus = focusNow(), b = focus && fw.getTopBlocks(true).find(b => b.type === focus);
+    if (b) requestAnimationFrame(() => {
+      if (!fw.scrollbar || b.isDisposed() || !flyout.isVisible()) return;
+      const view = fw.getMetricsManager().getViewMetrics(), y = b.getRelativeToSurfaceXY().y * fw.scale;
+      if (y + b.getHeightWidth().height * fw.scale > view.top + view.height) fw.scrollbar.setY(y - 16 * fw.scale);
+    });
     return result;
   };
 }

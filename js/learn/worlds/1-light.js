@@ -230,7 +230,8 @@ void loop() {
     },
     {
       id: '1.6', type: 'build', title: 'Mix your own', skills: ['light'],
-      brief: 'Named colors are just the start. makeColorRGB(red, green, blue) mixes any color from three numbers, each 0 to 255. Mix Move38\'s orange: red 250, green 70, blue 22.',
+      teaches: ['bk_color_rgb'],   // its goal shows as a color swatch, but this is the mixing block
+      brief: 'Named colors are just the start. The mix red green blue block, makeColorRGB(red, green, blue) in code, mixes any color from three numbers, each 0 to 255. Mix Move38\'s orange: red 250, green 70, blue 22.',
       start: `void setup() {
   setColor(makeColorRGB(255, 255, 255));
 }
@@ -261,6 +262,7 @@ void loop() {
   ],
   boss: {
     id: '1.★', type: 'boss', title: 'Badge', skills: ['light', 'faces', 'order'],
+    teaches: ['bk_color_rgb'],
     brief: 'Make a Move38 badge from an empty sketch: every face Move38 orange (250, 70, 22), except faces 0 and 3, which are WHITE.',
     start: `void setup() {
 }

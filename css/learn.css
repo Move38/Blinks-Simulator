@@ -208,6 +208,7 @@ code { font: 0.92em var(--f-mono); background: var(--panel-2); padding: 1px 5px;
 .cm-blinks-color { font-weight: 600; }
 .cm-err-line { background: rgba(255,93,108,.09); }
 .cm-run-line { background: rgba(255,93,108,.14); }
+.cm-linked-line { background: rgba(255,213,74,.1); box-shadow: inset 3px 0 0 #FFD54A; }
 .cm-err-mark { text-decoration: underline wavy rgba(255,93,108,.8); text-underline-offset: 3px; }
 .cm-point-line { background: rgba(250,204,21,.13); box-shadow: inset 3px 0 0 var(--star); }
 .gutter-err, .gutter-warn { width: 8px; height: 8px; border-radius: 50%; margin: 7px 0 0 4px; }
