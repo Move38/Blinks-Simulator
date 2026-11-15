@@ -33,7 +33,7 @@ const state = {
   file: saved.file ?? saved.main ?? null,
   sdk: SDKS[saved.sdk] ? saved.sdk : 'move38',   // which blinklib the sketch is written for (compiler/sdk.js)
   name: saved.name ?? 'My sketch',
-  view: saved.view === 'blocks' ? 'blocks' : 'code',
+  view: ['blocks', 'split'].includes(saved.view) ? saved.view : 'code',
   live: saved.live ?? true,
   debug: DEBUG_MODES.includes(saved.debug) ? saved.debug : saved.faces ? 'comms' : 'tooltip',
   bits: saved.bits === true,        // face values shown as bits (dots) instead of numbers
@@ -129,9 +129,17 @@ const editor = createCodeEditor($('#code'), {
     if (state.files) state.files[state.file] = code;
     state.blocksStale = true;
     codeChanged();
+    // with both showing, the blocks follow the code once typing pauses, if it can be shown as blocks
+    if (state.view === 'split') {
+      clearTimeout(blocksTimer);
+      blocksTimer = setTimeout(() => {
+        if (state.view === 'split' && state.blocksStale && blocks?.setCode(state.code).ok) state.blocksStale = false;
+      }, 900);
+    }
   },
   onRun: () => run(true),
 });
+let blocksTimer = 0;
 
 let blocks = null;            // lazily created block editor
 let blocksLoading = null;
@@ -412,39 +420,43 @@ async function getBlocks() {
   return blocks;
 }
 
+// 'code', 'blocks', or 'split': both, the blocks above the code
 async function setView(view) {
   if (view === state.view && !setView.initial) return;
   setView.initial = false;
   $('#callout').hidden = true;
-  if (view === 'blocks' && state.files) {
-    callout('Blocks show sketches that are one file. This one has several, so it stays as code.', $('#tabBlocks'));
+  const tab = view === 'split' ? $('#tabSplit') : $('#tabBlocks');
+  if (view !== 'code' && state.files) {
+    callout('Blocks show sketches that are one file. This one has several, so it stays as code.', tab);
     view = 'code';
-  } else if (view === 'blocks') {
+  } else if (view !== 'code') {
     let b;
     try { b = await getBlocks(); }
     catch (e) {
       console.error(e);
-      callout('The block editor couldn\'t load. Check your internet connection and try again.', $('#tabBlocks'));
+      callout('The block editor couldn\'t load. Check your internet connection and try again.', tab);
       return;
     }
     if (state.blocksStale !== false || !state.blocksShown) {
       const res = b.setCode(state.code);
       if (!res.ok) {
-        callout(`This code can't be shown as blocks yet: ${res.message}`, $('#tabBlocks'));
+        callout(`This code can't be shown as blocks yet: ${res.message}`, tab);
         return;
       }
       state.blocksStale = false;
       state.blocksShown = true;
-      if (res.lossy) callout('Parts of this sketch don\'t have blocks yet, so they appear as C code blocks. They still run.', $('#tabBlocks'));
+      if (res.lossy) callout('Parts of this sketch don\'t have blocks yet, so they appear as C code blocks. They still run.', tab);
     }
   }
   state.view = view;
-  $('#code').hidden = view !== 'code';
-  $('#blocks').hidden = view !== 'blocks';
+  $('#code').hidden = view === 'blocks';
+  $('#blocks').hidden = view === 'code';
+  $('.editor-body').classList.toggle('split', view === 'split');
   $('#tabCode').setAttribute('aria-selected', view === 'code');
+  $('#tabSplit').setAttribute('aria-selected', view === 'split');
   $('#tabBlocks').setAttribute('aria-selected', view === 'blocks');
-  if (view === 'code') { editor.refresh(); }
-  else { blocks.resize(); }
+  if (view !== 'blocks') editor.refresh();
+  if (view !== 'code') blocks.resize();
   saveState();
 }
 setView.initial = true;
@@ -714,12 +726,12 @@ function loadSketch(sketch, name, layout, sdk) {
   editor.setValue(state.code, state.file);
   renderFileTabs();
   renderFlags();
-  if (state.files && state.view === 'blocks') setView('code');
+  if (state.files && state.view !== 'code') setView('code');
   con.clear();
   if (layout) setCells(Array.isArray(layout) ? layout : LAYOUTS[layout](world.blinks.length).map(([q, r]) => [q, r, 0]));
   runtimeDiags.clear();
   run(true);
-  if (state.view === 'blocks') { state.view = 'code'; setView('blocks'); }
+  if (state.view !== 'code') { const v = state.view; state.view = 'code'; setView(v); }
   saveState();
 }
 
