@@ -130,13 +130,19 @@ const editor = createCodeEditor($('#code'), {
     state.blocksStale = true;
     codeChanged();
     // with both showing, the blocks follow the code once typing pauses, if it can be shown as blocks
+    // (staying where they are, and showing the blocks the cursor is in)
     if (state.view === 'split') {
       clearTimeout(blocksTimer);
       blocksTimer = setTimeout(() => {
-        if (state.view === 'split' && state.blocksStale && blocks?.setCode(state.code).ok) state.blocksStale = false;
+        if (state.view !== 'split' || !state.blocksStale || !blocks?.setCode(state.code, { keep: true }).ok) return;
+        state.blocksStale = false;
+        const { from, to } = editor.selection();
+        blocks.showLines(from, to);
       }, 900);
     }
   },
+  // with both showing, the blocks the cursor is in are marked (once the blocks have caught up)
+  onCursor: (from, to) => { if (state.view === 'split' && blocks && !state.blocksStale) blocks.showLines(from, to); },
   onRun: () => run(true),
 });
 let blocksTimer = 0;
@@ -411,10 +417,16 @@ async function getBlocks() {
       onChange: code => {
         state.code = code;
         state.blocksStale = false;
-        editor.setValue(code);
+        // beside the blocks, the code changes in place and shows which lines did
+        if (state.view === 'split') editor.update(code, blocks?.pickedLines()?.line);
+        else editor.setValue(code);
         codeChanged();
       },
-    }));
+    })).then(b => {
+      // a block picked beside the code marks its lines
+      b.onSelect(span => { if (state.view !== 'split') return; if (span) editor.markLines(span.line, span.last); else editor.clearMark(); });
+      return b;
+    });
   }
   blocks = await blocksLoading;
   return blocks;

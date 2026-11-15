@@ -146,6 +146,7 @@ kbd { font: 600 10.5px var(--f-mono); padding: 1px 5px; border-radius: 4px; back
 .cm-blinks-color { font-weight: 600; }
 .cm-err-line { background: rgba(255,93,108,.09); }
 .cm-run-line { background: rgba(255,93,108,.14); }
+.cm-linked-line { background: rgba(255,213,74,.1); box-shadow: inset 3px 0 0 #FFD54A; }
 .cm-err-mark { text-decoration: underline wavy rgba(255,93,108,.8); text-underline-offset: 3px; }
 .gutter-err { width: 8px; height: 8px; border-radius: 50%; background: var(--err); margin: 7px 0 0 4px; }
 .gutter-warn { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); margin: 7px 0 0 4px; }

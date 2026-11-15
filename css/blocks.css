@@ -67,6 +67,9 @@
 .bk-host .blocklyToolboxCategoryContainer.bkDim:has(.bkCatSelected) { opacity: .75; }
 .bk-host .blocklyFlyout .bkDim { opacity: .3; transition: opacity .15s ease; }
 .bk-host .blocklyFlyout .bkDim:hover { opacity: .7; }
+/* the blocks the code's cursor is in, when the code shows beside them: outlined in gold, which
+   shows on every block color, as their lines of code are when a block is picked */
+.bk-host .bkHere > .blocklyPath { stroke: #FFD54A; stroke-width: 3px; filter: drop-shadow(0 0 4px rgba(255,213,74,.7)); }
 
 /* Flyout */
 .bk-host .blocklyFlyoutBackground { fill: #231d30; fill-opacity: .97; }
