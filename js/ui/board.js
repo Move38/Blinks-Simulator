@@ -3,7 +3,9 @@
  *   press the center  -> the Blink's button (held for as long as you hold)
  *   drag the rim      -> move it; drop it on the bin to remove it
  *   right-click / R / → -> rotate it 60° clockwise (with Shift or ⌥, or ←: counterclockwise)
- *   hooks.rotateBtn    -> a button that turns the selected Blink, and flips to counterclockwise while ⌥ is held
+ *   hooks.rotateBtn    -> a button that turns the selected Blink, and flips to counterclockwise while ⌥ is held;
+ *                         with hooks.onRotateAll, it turns every Blink (onRotateAll) while none is selected
+ *   press the table / Esc -> let go of the selected Blink
  *   double-click table -> add a Blink there
  */
 
@@ -107,7 +109,7 @@ export class Board {
       if (e.button === 2) return;
       const [x, y] = this.ptr(e);
       const h = this.hit(x, y);
-      if (!h) return;
+      if (!h) { this.lastTouched = null; return; }
       e.preventDefault();
       cv.focus({ preventScroll: true });
       this.lastTouched = h.b;
@@ -173,6 +175,8 @@ export class Board {
         // ⌥R types ® on a Mac, so match the key's place too
         e.preventDefault();
         this.rotate(b, e.shiftKey || e.altKey ? -1 : 1);
+      } else if (e.key === 'Escape' && this.lastTouched && document.activeElement === this.cv) {
+        this.lastTouched = null;
       } else if ((e.key === 'ArrowRight' || e.key === 'ArrowLeft') && b && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault();
         this.rotate(b, e.key === 'ArrowRight' ? 1 : -1);
@@ -200,29 +204,39 @@ export class Board {
   }
 
   // A button that turns the selected Blink clockwise, or counterclockwise while ⌥ (Alt) is held,
-  // its arrow flipping to match. It keeps the table's focus, so the Blink stays selected.
+  // its arrow flipping to match. It keeps the table's focus, so the Blink stays selected. With
+  // hooks.onRotateAll it's also the button for every Blink: that's what it does while none is selected.
   bindRotateBtn(btn) {
-    const tip = ccw => `Rotate the selected Blink ${ccw ? 'counterclockwise (⌥R or ←)' : 'clockwise (R or →) · hold ⌥ to turn it the other way'}`;
-    const flip = ccw => {
-      if (btn.classList.contains('ccw') === ccw && btn.title) return;
+    const all = this.hooks.onRotateAll;
+    let alt = false;
+    this.syncRotateBtn = () => {
+      const one = !!this.selected(), ccw = one && alt;
+      const key = one + ',' + ccw;
+      if (btn.dataset.mode === key) return;
+      btn.dataset.mode = key;
+      btn.classList.toggle('one', one);
       btn.classList.toggle('ccw', ccw);
-      btn.title = tip(ccw);
-      btn.setAttribute('aria-label', ccw ? 'Rotate counterclockwise' : 'Rotate clockwise');
+      if (!all) btn.disabled = !one;
+      const back = all ? ' · press the table or Esc to let go, then this turns them all' : '';
+      btn.title = !one ? (all ? 'Turn every Blink a random way, like real Blinks on a table · select a Blink to turn just that one' : 'Select a Blink to rotate it')
+        : ccw ? `Rotate the selected Blink counterclockwise (⌥R or ←)${back}` : `Rotate the selected Blink clockwise (R or →) · hold ⌥ to turn it the other way${back}`;
+      btn.setAttribute('aria-label', !one ? (all ? 'Turn every Blink a random way' : 'Rotate') : ccw ? 'Rotate counterclockwise' : 'Rotate clockwise');
     };
-    flip(false);
-    window.addEventListener('keydown', e => { if (e.key === 'Alt') flip(true); });
-    window.addEventListener('keyup', e => { if (e.key === 'Alt') flip(false); });
-    window.addEventListener('blur', () => flip(false));
+    const setAlt = a => { alt = a; this.syncRotateBtn(); };
+    window.addEventListener('keydown', e => { if (e.key === 'Alt') setAlt(true); });
+    window.addEventListener('keyup', e => { if (e.key === 'Alt') setAlt(false); });
+    window.addEventListener('blur', () => setAlt(false));
     // ⌥ may have gone down while the window was elsewhere: the pointer knows
-    btn.addEventListener('pointermove', e => flip(e.altKey));
+    btn.addEventListener('pointermove', e => { if (e.altKey !== alt) setAlt(e.altKey); });
     for (const ev of ['pointerdown', 'mousedown']) btn.addEventListener(ev, e => e.preventDefault());   // don't take focus from the table
     btn.addEventListener('click', e => {
       const b = this.selected();
-      if (!b) return;
+      if (!b) { all?.(); return; }
       this.rotate(b, e.altKey || e.shiftKey ? -1 : 1);
       this.cv.focus({ preventScroll: true });
     });
     this.rotateBtn = btn;
+    this.syncRotateBtn();
   }
 
   startDrag(pr, x, y) {
@@ -274,7 +288,7 @@ export class Board {
 
   // ---------- drawing ----------
   draw(now) {
-    if (this.rotateBtn) { const off = !this.selected(); if (this.rotateBtn.disabled !== off) this.rotateBtn.disabled = off; }
+    this.syncRotateBtn?.();
     const v = this.view, t = this.target;
     const k = 0.2;
     v.S += (t.S - v.S) * k; v.OX += (t.OX - v.OX) * k; v.OY += (t.OY - v.OY) * k;

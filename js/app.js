@@ -104,6 +104,8 @@ let world = new World(events);
 const board = new Board($('#board'), world, {
   bin: $('#bin'),
   rotateBtn: $('#rotateBtn'),
+  // with no Blink selected, the rotate button turns every Blink a random way, like real Blinks on a table
+  onRotateAll: () => { for (const b of world.blinks) b.rot = Math.floor(Math.random() * 6); saveState(); },
   onInteract: () => $('#hint').style.opacity = 0,
   onLayout: refit => { updateCount(); saveState(); if (refit) board.fit(); },
 });
@@ -952,10 +954,6 @@ document.querySelectorAll('#layouts [data-layout]').forEach(btn => btn.addEventL
   const n = world.blinks.length;
   setCells(LAYOUTS[btn.dataset.layout](n).map(([q, r]) => [q, r, 0]));
 }));
-$('#shuffleRot').addEventListener('click', () => {
-  for (const b of world.blinks) b.rot = Math.floor(Math.random() * 6);
-  saveState();
-});
 // debug view: none, a tooltip on hover, or every face's sent value drawn on the Blinks
 function setDebug(mode) {
   state.debug = mode;
