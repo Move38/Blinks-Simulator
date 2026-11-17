@@ -103,6 +103,7 @@ let world = new World(events);
 
 const board = new Board($('#board'), world, {
   bin: $('#bin'),
+  rotateBtn: $('#rotateBtn'),
   onInteract: () => $('#hint').style.opacity = 0,
   onLayout: refit => { updateCount(); saveState(); if (refit) board.fit(); },
 });
@@ -1266,7 +1267,7 @@ function showHelp() {
     <ul>
       <li>Press the center of a Blink to press its button. <kbd>Space</kbd> presses the last Blink you touched.</li>
       <li>Drag a Blink by its rim to move it. Drop it on the bin to remove it. Double-click the table to add one.</li>
-      <li>Right-click or press <kbd>R</kbd> to rotate a Blink. Real Blinks can be turned any way, so test your game with rotated Blinks.</li>
+      <li>Right-click or press <kbd>R</kbd> or <kbd>→</kbd> to rotate a Blink, and <kbd>⌥R</kbd> or <kbd>←</kbd> to turn it back. Real Blinks can be turned any way, so test your game with rotated Blinks.</li>
       <li>The debug button under the table picks what you see: <b>Tooltip</b> shows what each face sends and hears when you hover a Blink, <b>Comms</b> shows every face's value on the Blinks themselves (blue when a neighbor hears it), and each datagram as a bubble showing its bytes. It ends in a green check when the neighbor gets it, a red X when it's dropped because the last one wasn't read yet, and is grey when nobody is there. The switch at the top right of that menu shows face values as numbers or as six dots, their bits, highest first: a lit dot is a 1.</li>
       <li>Real Blinks don't keep exactly the same time: each one's clock runs a little fast or slow. The simulator does the same, so timers on different Blinks drift apart. The speed menu (under the table) has a slider to make the drift bigger or smaller.</li>
       <li>The full screen button at the end of the controls under the table, or <kbd>F</kbd>, hides the code and the console so the table fills the screen. Press it again, or <kbd>Esc</kbd>, to come back.</li>

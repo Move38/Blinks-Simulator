@@ -136,7 +136,7 @@ const tableEvents = {
   onWarn: (b, message, line) => con.add('warn', message, { who: b.id, line }),
   onSerial: (b, text) => con.add('out', text, { who: b.id }),
 };
-const table = makeTable($('#board'), { events: tableEvents, bin: $('#bin'), margins: { top: 44, bottom: 56, side: 28 } });
+const table = makeTable($('#board'), { events: tableEvents, bin: $('#bin'), rotateBtn: $('#rotateBtn'), margins: { top: 44, bottom: 56, side: 28 } });
 const goalTable = makeTable($('#goalBoard'), { fixed: true, margins: { top: 4, bottom: 4, side: 4 } });
 
 const editor = createCodeEditor($('#code'), {

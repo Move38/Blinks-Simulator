@@ -180,6 +180,8 @@ li.CodeMirror-hint-active .sig { color: rgba(255,255,255,.8); }
 .ib:disabled { opacity: .35; cursor: default; }
 .ib.toggle[aria-pressed="true"], .ib.on { background: rgba(250,70,22,.18); color: var(--blinks-2); }
 .ib.small { width: 26px; height: 26px; }
+.ib.rot svg { transition: transform .15s; }
+.ib.rot.ccw svg { transform: scaleX(-1); }
 .ib.small svg { width: 16px; height: 16px; }
 #pauseBtn .pl { display: none; fill: currentColor; stroke: none; }
 #pauseBtn.paused .pl { display: block; }

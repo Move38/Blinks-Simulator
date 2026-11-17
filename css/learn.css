@@ -232,7 +232,10 @@ li.CodeMirror-hint-active { background: var(--blinks); color: #fff; }
 /* restart and upload, at the table's corner */
 .table-btns { position: absolute; left: 10px; bottom: 10px; display: flex; gap: 6px; }
 .tbtn { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; border: 1px solid var(--line-2); background: rgba(29,24,39,.88); color: var(--muted); cursor: pointer; }
-.tbtn:hover { color: var(--text); }
+.tbtn:hover:not(:disabled) { color: var(--text); }
+.tbtn:disabled { opacity: .35; cursor: default; }
+.tbtn.rot svg { transition: transform .15s; }
+.tbtn.rot.ccw svg { transform: scaleX(-1); }
 .tbtn svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .pip { position: absolute; right: 12px; top: 12px; width: 140px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line-2); padding: 8px; display: grid; gap: 2px; justify-items: center; box-shadow: 0 10px 24px rgba(0,0,0,.4); z-index: 2; }
 .pip-lbl { font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--wc); }
