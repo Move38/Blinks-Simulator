@@ -230,11 +230,14 @@ li.CodeMirror-hint-active .sig { color: rgba(255,255,255,.8); }
 .console-head { display: flex; align-items: center; gap: 10px; padding: 6px 8px 6px 14px; border-bottom: 1px solid var(--line); min-height: 39px; }
 .console-title { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; font-weight: 700; color: var(--muted); }
 .ram { margin-left: auto; font: 500 11.5px var(--f-mono); color: var(--muted); display: flex; align-items: center; gap: 8px; white-space: nowrap; min-width: 0; overflow: hidden; }
-.ram .bar { width: 64px; height: 5px; border-radius: 99px; background: var(--panel-2); overflow: hidden; }
-.ram .bar i { display: block; height: 100%; background: var(--ok); border-radius: 99px; }
-.ram.high .bar i { background: var(--warn); }
+.ram .bar { width: 72px; height: 5px; border-radius: 99px; background: var(--panel-2); overflow: hidden; display: flex; flex: none; }
+.ram .bar i { display: block; height: 100%; background: var(--ok); flex: none; }
+/* blinklib's and the BIOS's share of RAM, there before the sketch's */
+.ram .bar i.sys { background: var(--muted); opacity: .45; }
+.ram .bar i.sys + i { margin-left: 1px; }
+.ram.high .bar i:not(.sys) { background: var(--warn); }
 .ram.over { color: var(--err); }
-.ram.over .bar i { background: var(--err); }
+.ram.over .bar i:not(.sys) { background: var(--err); }
 .link { border: 0; background: none; color: var(--muted); font-size: 12px; cursor: pointer; padding: 4px 6px; border-radius: 6px; }
 .link:hover { color: var(--text); background: var(--panel-2); }
 .console-body { list-style: none; margin: 0; padding: 6px 0; overflow-y: auto; flex: 1; font: 12.5px/1.55 var(--f-mono); scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }

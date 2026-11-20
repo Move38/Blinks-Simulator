@@ -9,6 +9,7 @@ import { buildSketch, withBios, BOARDS } from '../js/hardware/build.js';
 import { inoToCpp, parseDiagnostics } from '../js/hardware/sketch.js';
 import { readElf, blinklibSymbols, memoryUse } from '../js/hardware/elf.js';
 import { HardwareWorld } from '../js/hardware/world.js';
+import { RAM_SYSTEM } from '../js/compiler/index.js';
 
 const dir = new URL('../js/hardware/toolchain/', import.meta.url);
 const NAMES = { cc1plus: 'cc1plus', as: 'avr-as', ld: 'avr-ld', objcopy: 'avr-objcopy' };
@@ -75,6 +76,13 @@ test('flash and RAM are counted like the Arduino IDE, and blinklib\'s variables 
   assert.ok(r.use.flash > 1500 && r.use.flash < 2500, `flash ${r.use.flash}`);
   assert.ok(r.use.ram > 600 && r.use.ram < 800, `RAM ${r.use.ram}`);
   assert.ok(r.program.symbols.faces > 0x100 && r.program.symbols.now > 0x100, JSON.stringify(r.program.symbols));
+});
+
+// the simulator's RAM meter takes blinklib's and the BIOS's share from here
+test('an empty sketch uses RAM_SYSTEM bytes of RAM, all blinklib\'s and the BIOS\'s', async () => {
+  const r = await build('void setup() {}\nvoid loop() {}\n');
+  assert.ok(r.ok);
+  assert.equal(r.use.ram, RAM_SYSTEM);
 });
 
 test('a flower of hardware Blinks hears its neighbors, and loses one that moves away', async () => {

@@ -11,9 +11,11 @@ import { CompileError, LINE_FILE, tokenize } from './lexer.js';
 import { SDKS, sdkConfig, sdkBuiltins } from './sdk.js';
 import * as H from './rt.js';
 
-// Rough RAM budget: a Blink has 1024 bytes of RAM and blinklib + the BIOS need about 694 of them.
+// A Blink (ATmega168PB) has 1024 bytes of RAM. Move38's blinklib and the BIOS's shared blocks take
+// 693 of them before a sketch declares anything: what avr-gcc's build of an empty sketch uses
+// (test/hardware.test.mjs checks it). The sketch's globals and the stack share the rest.
 export const RAM_TOTAL = 1024;
-export const RAM_SYSTEM = 694;
+export const RAM_SYSTEM = 693;
 
 export function compile(source, opts = {}) {
   if (opts.sdk && opts.sdk !== 'move38') return compileSketch({ files: { 'sketch.ino': source }, main: 'sketch.ino', sdk: opts.sdk });
@@ -83,7 +85,8 @@ function run(build) {
       lineMap: gen.lineMap,
       warnings: dedupe(warnings),
       errors: [],
-      ram: { used: gen.ram.globals, budget: RAM_TOTAL - (ramSystem ?? RAM_SYSTEM) },
+      // used: the sketch's globals; system: blinklib's and the BIOS's; budget: what's left for the sketch
+      ram: { used: gen.ram.globals, system: ramSystem ?? RAM_SYSTEM, total: RAM_TOTAL, budget: RAM_TOTAL - (ramSystem ?? RAM_SYSTEM) },
       serialInput: gen.serialInput,
       functions: gen.functions,
       globals: gen.globals,

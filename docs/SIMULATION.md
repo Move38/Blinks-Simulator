@@ -43,7 +43,7 @@ The reference for blinklib behavior is the Move38 SDK 1.2.0 (`blinklib.cpp`, `bl
    - **Checks.** Every loop back-edge decrements a budget. 3 million iterations in one `setup()` or `loop()` call stops the Blink with "this loop never ends". Array indexes, face numbers, null pointers and division by zero are also checked. They warn and then carry on with the AVR result, or crash the Blink when there is no sensible result.
 4. **Build the factory.** The generated code is wrapped in `new Function('env', js)`. Each Blink calls it with its own memory and runtime, so every Blink has separate globals and state.
 
-`compile()` also reports RAM use: user globals against a budget of 1024 − 694 = 330 bytes, the space blinklib and the BIOS leave free.
+`compile()` also reports RAM use: the sketch's globals, and the 693 of the Blink's 1024 bytes that Move38's blinklib and the BIOS's shared blocks take first, which leaves 331 for the globals and the stack. The 693 is what avr-gcc's build of an empty sketch uses (the IR receive buffers 305, blinklib's `faces` 264, the pixel buffer 49, and smaller blocks); a hardware-mode test checks it. The meter under the table shows all three parts, as the Arduino IDE counts RAM, in both modes.
 
 ### Sketches of several files
 
@@ -189,7 +189,7 @@ Each Blink starts with its millisecond counter and frame phase at random offsets
 | LED frame (`loop()` at most once a frame) | 7.68 ms, ~130 Hz | BIOS pixel timer: 6 faces × 5 × 256 µs |
 | Sleep relay delay | 50 ms | **simulator only** |
 | Clock drift | ±2% (0.5–10% on the slider) | **estimate** |
-| User RAM budget | 330 bytes | **estimate** (1024 − 694) |
+| RAM for blinklib and the BIOS | 693 of 1024 bytes, leaving 331 | avr-gcc build of an empty sketch |
 
 ## 5. Where it differs from real Blinks
 
@@ -219,11 +219,11 @@ The items are ordered roughly by how likely they are to make a game behave diffe
 ### Memory
 
 - **There are 64 KB instead of 1 KB.**
-  - The RAM meter compares globals with the 330-byte budget, but nothing stops a sketch that goes over it.
-  - The stack is not counted at all. Deep recursion, large local arrays or long call chains can overflow a real Blink's stack while running fine here. On hardware, the stack watcher halts the Blink with an error code.
+  - The RAM meter adds the sketch's globals to blinklib's 693 bytes and turns red past 1024, but nothing stops a sketch that goes over it.
+  - The stack is not counted at all; the meter only warns when fewer than 64 bytes are left for it. Deep recursion, large local arrays or long call chains can overflow a real Blink's stack while running fine here. On hardware, the stack watcher halts the Blink with an error code.
   - A runaway recursion is still caught here, much later, as "out of memory".
 - **The RAM meter is approximate.**
-  - The 694 bytes for the system are an estimate.
+  - The 693 bytes for the system are measured for Move38's blinklib; Custom Blinklib's figure is worked out from its settings.
   - Every global counts, including `const` scalars that avr-gcc folds away. `PROGMEM` tables and `F("...")` strings also count, though on hardware they live in flash.
   - So the meter tends to over-count for sketches that use those.
 - **Uninitialized locals are 0.** On hardware they hold whatever was left on the stack. A sketch that forgets to initialize a local can work here and misbehave on a Blink.

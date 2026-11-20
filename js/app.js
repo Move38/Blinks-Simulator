@@ -3,7 +3,7 @@
  * Blinks and the console together. Everything runs in the browser.
  */
 
-import { compile, compileSketch } from './compiler/index.js';
+import { compile, compileSketch, RAM_SYSTEM } from './compiler/index.js';
 import { SDKS, detectSdk } from './compiler/sdk.js';
 import { World, DRIFT } from './runtime/world.js';
 import { Board, LAYOUTS, nextCell, isQuiet, bitGroup } from './ui/board.js';
@@ -255,22 +255,33 @@ function setStatus(kind, text) {
 }
 $('#status').addEventListener('click', () => { if ($('#status').classList.contains('err') && statusLine) jumpTo(statusFile, statusLine); });
 
+// RAM is shown as the whole chip, the way the Arduino IDE counts it: blinklib's and the BIOS's
+// share, there before the sketch declares anything, then the sketch's globals, then what's left
+// for the stack (local variables and function calls), which neither mode can measure.
+// ram: { used (the sketch's), system, total }
+const STACK_LOW = 64;   // fewer bytes than this left for the stack: warn
 function showRam(ram, flash) {
   const el = $('#ram');
-  const pct = ram.used / ram.budget;
-  el.className = 'ram' + (pct > 1 ? ' over' : pct > 0.8 ? ' high' : '');
-  const bar = p => `<span class="bar"><i style="width:${Math.min(100, p * 100).toFixed(1)}%"></i></span>`;
+  const { used, system, total } = ram;
+  const free = total - system - used;
+  el.className = 'ram' + (free < 0 ? ' over' : free < STACK_LOW ? ' high' : '');
+  const pc = n => (Math.max(0, Math.min(1, n)) * 100).toFixed(1) + '%';
+  const ramBar = `<span class="bar"><i class="sys" style="width:${pc(system / total)}"></i><i style="width:${pc(used / total)}"></i></span>`;
+  // on a narrow screen the bars and the totals (.of) are hidden
+  const ramText = `<span>RAM ${system + used}<span class="of"> / ${total} B</span></span>${ramBar}`;
+  const ramTitle = `RAM, out of the ${total} B a Blink has: ${system} B for blinklib and the BIOS, ${used} B for your global variables, `
+    + (free < 0
+      ? `${-free} B too many. This sketch would not fit on a real Blink.`
+      : `${free} B left for the stack (local variables and function calls).`
+        + (free < STACK_LOW ? ' That\'s very little: a real Blink could run out of memory while it runs.' : ''));
   if (flash) {
-    // hardware-exact: what avr-gcc's build really uses, counted like the Arduino IDE (blinklib and the BIOS's shared memory included)
-    // on a narrow screen the budgets (.of) are hidden
-    el.innerHTML = `<span>Flash ${flash.used}<span class="of"> / ${flash.budget} B</span></span>${bar(flash.used / flash.budget)}<span>RAM ${ram.used}<span class="of"> / ${ram.budget} B</span></span>${bar(pct)}`;
-    el.title = 'Flash: the game\'s code and constants, out of the space a Blink keeps for a game. RAM: global variables, blinklib\'s and the BIOS\'s included; the rest is left for the stack.';
+    // hardware-exact: what avr-gcc's build really uses
+    el.innerHTML = `<span>Flash ${flash.used}<span class="of"> / ${flash.budget} B</span></span><span class="bar"><i style="width:${pc(flash.used / flash.budget)}"></i></span>${ramText}`;
+    el.title = `Flash: the game's code and constants, ${flash.used} of the ${flash.budget} B a Blink keeps for a game. ` + ramTitle;
     return;
   }
-  el.innerHTML = `<span>RAM ${ram.used} / ${ram.budget} B</span>${bar(pct)}`;
-  el.title = pct > 1
-    ? 'Your global variables use more memory than a Blink has left after blinklib. This sketch would not fit on a real Blink.'
-    : 'Memory used by your global variables (and strings), out of about what a Blink has left after blinklib.';
+  el.innerHTML = ramText;
+  el.title = ramTitle;
 }
 
 // ---------------- hardware-exact mode ----------------
@@ -357,7 +368,8 @@ async function hardwareBuild(load, force) {
     errors: avrDiags(r, 'err'),
     warnings: avrDiags(r, 'warn'),
     serialInput: /\bSerial\b/.test(state.files ? Object.values(state.files).join('\n') : code),
-    ram: { used: r.ramUsed, budget: r.ramBudget },
+    // avr-gcc counts blinklib's and the BIOS's RAM with the sketch's; the meter shows them apart
+    ram: { used: Math.max(0, r.ramUsed - RAM_SYSTEM), system: Math.min(r.ramUsed, RAM_SYSTEM), total: r.ramBudget },
     flash: { used: r.flashUsed, budget: r.flashBudget },
   };
   if (!r.ok && !res.errors.length) res.errors.push({ line: 0, message: 'avr-gcc couldn\'t build this sketch' });
@@ -1254,7 +1266,7 @@ function showHelp() {
     <p>Your sketch is compiled in the browser by a C++ compiler built for Blinks, then every Blink on the table runs its own copy, with its own memory, just like real hardware.</p>
     <h3>Just like a real Blink</h3>
     <ul>
-      <li><code>int</code> is 16 bits, <code>long</code> is 32 bits and numbers overflow the same way. A Blink has about ${1024 - 694} bytes of memory for your variables.</li>
+      <li><code>int</code> is 16 bits, <code>long</code> is 32 bits and numbers overflow the same way. A Blink has 1024 bytes of memory; blinklib uses ${RAM_SYSTEM} of them, leaving ${1024 - RAM_SYSTEM} for your variables and the stack.</li>
       <li>The button follows the Blinks BIOS: 330&nbsp;ms to tell clicks apart, long press after 1.2&nbsp;s. Holding a Blink that is alone for 3&nbsp;s shares its game; 6&nbsp;s puts the group to sleep.</li>
       <li>Faces send their value about every loop. A face counts as expired 200&nbsp;ms after it last heard anything, and <code>getLastValueReceivedOnFace()</code> keeps the old value.</li>
       <li><code>random()</code> gives every Blink the same numbers until you call <code>randomize()</code>, which takes half a second.</li>
