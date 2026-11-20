@@ -1,0 +1,83 @@
+# Blinks Playground
+
+> A browser simulator for Blinks, Move38's hexagonal game pieces. Each Blink has six faces, six RGB LEDs, one button and infrared on every face for talking to the Blinks it touches. You write a sketch in Arduino-style C++ (or with Scratch-style blocks) and the playground compiles it and runs it on a table of simulated Blinks. The simulator emulates blinklib and the BlinkBIOS, so a sketch that works here should work on real Blinks.
+
+- Playground: https://learn.move38.com/play/
+- Light the Board, a learning path for ages 10–14 (six worlds of levels, no account needed): https://learn.move38.com/
+- Source: https://github.com/jbobrow/Blinks-Simulator
+
+## Writing a Blinks sketch
+
+A sketch has `setup()` (runs once) and `loop()` (runs about 110 times a second on a Blink alone, slower with neighbors). There is no `main()` and nothing to `#include` for the core API. A minimal sketch:
+
+```cpp
+void setup() {
+}
+
+void loop() {
+  if (buttonSingleClicked()) {
+    setColor(makeColorHSB(random(255), 255, 255));
+  }
+}
+```
+
+The API, as the simulator supports it (Move38 SDK 1.2.0):
+
+- Faces are numbered 0–5 clockwise. `FACE_COUNT` is 6 and `FOREACH_FACE(f) { ... }` loops over them.
+- Color: `setColor(c)`, `setColorOnFace(c, face)`, `makeColorRGB(r, g, b)` and `makeColorHSB(h, s, b)` (each 0–255), `dim(c, brightness)`, `lighten(c, amount)`. Named colors: `RED`, `ORANGE`, `YELLOW`, `GREEN`, `CYAN`, `BLUE`, `MAGENTA`, `WHITE`, `OFF`. Colors are stored at 5 bits a channel.
+- Button: `buttonPressed()`, `buttonReleased()`, `buttonSingleClicked()`, `buttonDoubleClicked()`, `buttonMultiClicked()` with `buttonClickCount()`, `buttonLongPressed()` (1.2 s), `buttonLongLongPressed()`, and `buttonDown()` for the current state. The event functions return true once per event and then clear.
+- Neighbors: `setValueSentOnFace(value, face)`, `setValueSentOnAllFaces(value)`, `getLastValueReceivedOnFace(face)`, `didValueOnFaceChange(face)`, `isValueReceivedOnFaceExpired(face)` (true when nobody is touching that face), `isAlone()`. Face values are 0–63; larger values send 63. A face keeps sending its value until it is changed.
+- Datagrams, for more than one number: `sendDatagramOnFace(data, length, face)` (up to 16 bytes), `isDatagramReadyOnFace(face)`, `getDatagramLengthOnFace(face)`, `getDatagramOnFace(face)`, `markDatagramReadOnFace(face)`. An unread datagram blocks the next one on that face, so always mark it read.
+- Time: `millis()` (it stays the same for the whole of one `loop()`), and `Timer`: `Timer t; t.set(ms); t.isExpired(); t.getRemaining(); t.add(ms); t.never();`.
+- Random: `random(max)` returns 0 to max inclusive, `randomWord()`. Every Blink gives the same sequence until `randomize()` is called, which takes about half a second.
+- Other: `map()`, `sin8_C()`, `startState()`, `hasWoken()`, `getSerialNumberByte(n)`, Arduino's `min()`, `max()`, `abs()`, `constrain()`, avr-libc math and `string.h` basics.
+- Printing goes to the playground's console: `#include "Serial.h"`, declare `ServicePortSerial Serial;`, call `Serial.begin()` in `setup()`, then `Serial.println(x)`.
+
+Things that are different from ordinary Arduino:
+
+- There is no `delay()`. It would freeze the Blink and stop it talking to its neighbors. Use a `Timer` and check `isExpired()` in `loop()`.
+- There are no pins: no `pinMode()`, `digitalWrite()`, `analogRead()` or `tone()`. No `micros()` or `randomSeed()` either.
+- `int` is 16 bits, `long` is 32, and `float` and `double` are both 32-bit, as on the ATmega168PB.
+- A sketch gets about 330 bytes of RAM for its globals. Keep arrays small.
+- The simulator's compiler doesn't support templates, class inheritance, destructors, static class members, operator overloading or `goto`.
+
+## Using the playground
+
+- Press a Blink's center to press its button; hold for a long press. Drag a Blink by its rim to move it; drop it on the bin to remove it. Right-click (or press R) to rotate one. Double-click the table to add a Blink. Ctrl/⌘ + Enter runs the sketch; it also recompiles as you type.
+- The debug button under the table shows what each face sends and hears.
+- The chip button switches on hardware-exact mode: avr-gcc in the browser, and each Blink an emulated ATmega168PB running the real BlinkBIOS and blinklib. `https://learn.move38.com/play/?hardware` opens with it on.
+- ⋯ → Open from GitHub loads a sketch from any public repository, folder or `.ino` link.
+
+### Making a link that opens a sketch
+
+A share link carries the sketch in the URL, so it can be handed to someone as is: `https://learn.move38.com/play/#s=p` followed by the base64url encoding (no `=` padding) of this UTF-8 JSON:
+
+```json
+{ "n": "My sketch", "c": "void setup() {}\nvoid loop() { setColor(GREEN); }" }
+```
+
+`n` is the sketch's name and `c` its code. Optional: `b`, the table, as a list of `[q, r, rotation]` hex cells in axial coordinates (seven Blinks in a flower when it's left out). The playground's own Share button makes the same link, compressed (`#s=z…`).
+
+### Light the Board
+
+Levels open at `https://learn.move38.com/#level/<id>`, for example `#level/1.1`. Each level has live checks and hints. The learners are 10 to 14 years old and new to programming: when helping one, give a hint or ask a question before writing the answer for them.
+
+## Docs
+
+- [How the simulator works](https://github.com/jbobrow/Blinks-Simulator/blob/master/docs/SIMULATION.md): the compiler, the emulated blinklib and BIOS, timing and IR constants, and every known difference from real Blinks
+- [Hardware-exact mode](https://github.com/jbobrow/Blinks-Simulator/blob/master/hardware/README.md): how the emulated chip works and what it doesn't cover yet
+- [README](https://github.com/jbobrow/Blinks-Simulator/blob/master/README.md): features, table controls and the project layout
+
+## Examples
+
+- [Lessons](https://github.com/jbobrow/Blinks-Simulator/tree/master/examples/learn): ten short sketches, from lighting a Blink to spreading a message across the table
+- [SDK examples](https://github.com/jbobrow/Blinks-Simulator/tree/master/examples/sdk): Move38's examples for buttons, timers, colors and datagrams
+- [Arcade games](https://github.com/jbobrow/Blinks-Simulator/tree/master/examples/arcade): ten games for one Blink
+- [Move38 games](https://github.com/jbobrow/Blinks-Simulator/tree/master/examples/games): Move38's published games, most of them for a table of Blinks
+
+## Optional
+
+- [Bloop spec](https://github.com/jbobrow/Blinks-Simulator/blob/master/docs/BLOOP.md): a proposed Blink with a speaker (`setNote()`, `playNote()`), in beta
+- [Sound examples](https://github.com/jbobrow/Blinks-Simulator/tree/master/examples/sound): sketches for Bloops
+- [Custom Blinklib](https://github.com/brunoga/blinklib): Bruno Albuquerque's alternative blinklib, which the playground also runs
+- [The API in code](https://github.com/jbobrow/Blinks-Simulator/blob/master/js/compiler/builtins.js): every function the simulator knows, with its C signature
